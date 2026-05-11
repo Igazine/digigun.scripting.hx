@@ -55,6 +55,7 @@ fiber:HOLD:P3:Fibers discussion (Haxe coroutine strategy)
 @20260511T0803:antigravity:ACT:implemented automated Test Runner in test/wren/TestRunner.hx; verified with initial suite
 @20260511T0811:antigravity:ACT:implemented full Module system with import/as support; switched to -L digigun.scripting.hx inclusion
 @20260511T0817:antigravity:ACT:created comprehensive README.md describing the library architecture and use cases
+@20260511T0903:antigravity:ACT:added performance caveats and interpretation model details to README.md
 
 @ref
 >>urls

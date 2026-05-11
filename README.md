@@ -51,6 +51,17 @@ The first fully-featured scripting engine implemented in this library is **Wren*
 >
 > Wren is a lightweight, fast, and embeddable scripting language with a simple syntax and a focus on performance. It is a great choice for embedding into Haxe applications due to its small footprint and ease of integration. It also lacks the *quirks* of other scripting languages (eg. ECMAScript or even TypeScript) which makes it a perfect candidate for a **scripting foundation** as it avoids many of the pitfalls of its more well-known cousins. Although Wren's syntax is different, conceptually it builds on very similar principles and foundations as Haxe, so Haxe developers can feel immediately at home with its clean, modern syntax.
 
+> [!IMPORTANT]
+>
+> #### Performance & Interpretation Model
+>
+> This implementation utilizes a high-level **AST-based Interpreter** model rather than a Bytecode JIT or AOT compilation. While this ensures maximum compatibility across all Haxe targets (including HashLink, JavaScript, and C++), it introduces certain performance caveats:
+> - **Overhead**: Every script operation involves AST traversal and dynamic dispatch, which is slower than native Haxe code or low-level bytecode VMs.
+> - **Target Logic**: This library is designed for **high-level orchestration**, plugin logic, and UI definitions. It is **not recommended** for performance-critical inner loops or core engine logic where microsecond latency is required.
+> - **Memory**: Interpretation involves more object allocations for frames and expressions compared to compiled models.
+>
+> Use this library to bring **flexibility** to your app, but keep your **heavy lifting** in native Haxe.
+
 ### Usage Example
 
 ```haxe
