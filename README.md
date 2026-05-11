@@ -43,7 +43,7 @@ The library provides a set of common abstractions for:
 
 ## 🕊️ Implementation: Wren
 
-The first fully-featured scripting engine implemented in this library is **Wren**—a small, fast, class-based concurrent scripting language.
+The first fully-featured scripting engine implemented in this library is **Wren**—a small, fast, class-based concurrent scripting language (https://wren.io/).
 
 ### Usage Example
 
