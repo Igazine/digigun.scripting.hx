@@ -28,7 +28,7 @@ haxelib dev digigun.scripting.hx path/to/repo
 ```
 Alternativey you can checkout the repo directly:
 ```bash
-haxelib git digigun.scripting.hx https://github.com/Igazine/digigun.scripting.hx.git
+haxelib git digigun.scripting.hx https://github.com/Igazine/digigun.scripting.hx
 ```
 
 ## 🛠️ Core Concepts
