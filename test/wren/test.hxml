@@ -1,0 +1,6 @@
+-L digigun.scripting.hx
+-cp test/wren
+
+-main TestWren
+
+--interp

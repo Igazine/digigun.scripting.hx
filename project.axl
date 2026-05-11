@@ -1,0 +1,64 @@
+@meta
+id: digigun-wren-hx
+v: 0.2
+name: Wren Interpreter (Haxe)
+created: @20260511T0552
+modified: @20260511T0811
+agents: antigravity
+tags: haxe|wren|scripting|interpreter
+
+@state
+status: WIP
+focus: comprehensive test suite expansion and spec parity
+phase: testing
+blockers: ~
+last_act: ACT:implemented full Module system (import/export/scoping) and verified with Test Runner
+next_act: import more official Wren tests and begin Fibers planning
+err: ~
+>>mem
+target: haxe-eval|node-js
+haxe_ver: #4.3
+
+@plan
+>>core
+engine:DONE:P0:Core Lexer, Parser, and AST Interpreter
+foreign:DONE:P0:Foreign Class and Method binding
+props:DONE:P0:Property Setters/Getters
+super:DONE:P0:Inheritance and super call resolution
+this:DONE:P0:Implicit this method calls
+interp:DONE:P0:String interpolation
+modules:DONE:P0:Module system (import, export, resolution)
+>>stdlib
+core-wren:DONE:P1:Basic Object and Class in Core.wren
+list-ext:DONE:P1:List extensions (add, insert, removeAt, etc.)
+map-ext:DONE:P1:Map extensions (keys, values, containsKey, etc.)
+str-ext:DONE:P1:String extensions (startsWith, endsWith, etc.)
+>>verification
+test-runner:DONE:P1:Implement automated test runner (.wren + expected output)
+test-suite:WIP:P1:Import and run official Wren test suite
+fiber:HOLD:P3:Fibers discussion (Haxe coroutine strategy)
+
+@ctx
+>>stack
+> Haxe 4.3+, Eval/Node.js/C++ targets
+> Pure Haxe, no external dependencies (like tink_core)
+>>workflow
+> maintain spec parity with official Wren
+> all P0 features must pass TestWren.hx before commit
+! session:start => check project.axl for focus and next_act
+
+@log
+@20260511T0552:antigravity:ACT:initialized project.axl via axl-init skill
+@20260511T0552:antigravity:NOTE:verified core engine stability with complex foreign inheritance test
+@20260511T0758:antigravity:ACT:implemented String, Bool, and Num extensions in Core.wren and verified with TestWren.hx
+@20260511T0801:antigravity:NOTE:prioritized Test Runner and Modules; Fibers moved to planning phase due to Haxe complexity
+@20260511T0803:antigravity:ACT:implemented automated Test Runner in test/wren/TestRunner.hx; verified with initial suite
+@20260511T0811:antigravity:ACT:implemented full Module system with import/as support; switched to -L digigun.scripting.hx inclusion
+@20260511T0817:antigravity:ACT:created comprehensive README.md describing the library architecture and use cases
+
+@ref
+>>urls
+wren-spec: :https://wren.io/
+>>paths
+src: ./src
+test: ./test

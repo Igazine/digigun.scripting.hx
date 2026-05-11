@@ -1,0 +1,17 @@
+{
+  "name": "digigun.scripting.hx",
+  "url": "https://github.com/digigun/digigun.scripting.hx",
+  "license": "MIT",
+  "tags": [
+    "scripting",
+    "wren"
+  ],
+  "description": "The Wren programming language on Haxe.",
+  "version": "0.0.1",
+  "classPath": "src",
+  "releasenote": "Initial release.",
+  "contributors": [
+    "Igazine"
+  ],
+  "dependencies": {}
+}
