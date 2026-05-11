@@ -45,6 +45,8 @@ The library provides a set of common abstractions for:
 
 The first fully-featured scripting engine implemented in this library is **Wren**—a small, fast, class-based concurrent scripting language (https://wren.io/).
 
+> [!NOTE]
+>
 > #### Why Wren?
 >
 > Wren is a lightweight, fast, and embeddable scripting language with a simple syntax and a focus on performance. It is a great choice for embedding into Haxe applications due to its small footprint and ease of integration. It also lacks the *quirks* of other scripting languages (eg. ECMAScript or even TypeScript) which makes it a perfect candidate for a **scripting foundation** as it avoids many of the pitfalls of its more well-known cousins. Although the language is different, Haxe developers can immediately feel at home with its clean, modern syntax.
