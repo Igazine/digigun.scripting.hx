@@ -34,11 +34,20 @@ class Interp {
         while (currentFiber != null) {
             if (fiberToSwitchTo != null) {
                 currentFiber = fiberToSwitchTo;
+                if (currentFiber.stack.length > 0) {
+                    currentFiber.stack[currentFiber.stack.length - 1].waiting = false;
+                }
                 fiberToSwitchTo = null;
                 continue;
             }
             if (currentFiber.stack.length == 0) break;
             
+            var frame = currentFiber.stack[currentFiber.stack.length - 1];
+            if (frame.waiting) {
+                if (fiberToSwitchTo == null) throw "Deadlock: Fiber waiting but no switch pending";
+                continue;
+            }
+
             try {
                 tick();
             } catch (e:Dynamic) {
@@ -53,12 +62,15 @@ class Interp {
                             if (isConstruct) val = f.locals.get("this");
                             if (currentFiber.stack.length > 0) {
                                 currentFiber.stack[currentFiber.stack.length - 1].results.push(val);
+                                currentFiber.stack[currentFiber.stack.length - 1].waiting = false;
                             } else {
                                 currentFiber.state = Done;
                                 if (currentFiber.caller != null) {
                                     fiberToSwitchTo = currentFiber.caller;
                                     if (fiberToSwitchTo.stack.length > 0) {
-                                        fiberToSwitchTo.stack[fiberToSwitchTo.stack.length - 1].results.push(val);
+                                        var result = currentFiber.isTry ? null : val;
+                                        fiberToSwitchTo.stack[fiberToSwitchTo.stack.length - 1].results.push(result);
+                                        fiberToSwitchTo.stack[fiberToSwitchTo.stack.length - 1].waiting = false;
                                     }
                                 } else if (onDone != null) {
                                     onDone(val);
@@ -70,6 +82,18 @@ class Interp {
                     continue;
                 } else {
                     isRunning = false;
+                    var fiber = currentFiber;
+                    if (fiber.isTry && fiber.caller != null) {
+                        fiber.state = Aborted;
+                        fiber.error = e;
+                        fiberToSwitchTo = fiber.caller;
+                        if (fiberToSwitchTo.stack.length > 0) {
+                            fiberToSwitchTo.stack[fiberToSwitchTo.stack.length - 1].results.push(Std.string(e));
+                            fiberToSwitchTo.stack[fiberToSwitchTo.stack.length - 1].waiting = false;
+                        }
+                        isRunning = true;
+                        continue;
+                    }
                     if (Std.isOfType(e, String)) {
                         throwError(cast e);
                     } else {
@@ -102,6 +126,7 @@ class Interp {
                         throwError('Identifier not found: $v');
                     }
                 } else {
+                    if (frame.results.length == 0) return;
                     popAndReturn(frame.results.pop());
                 }
 
@@ -255,6 +280,7 @@ class Interp {
                     }
                     popAndReturn(res);
                 } else {
+                    if (frame.results.length == 0) return;
                     popAndReturn(frame.results.pop());
                 }
 
@@ -273,6 +299,7 @@ class Interp {
                     frame.step = 999;
                     callMethod(obj, method, evalArgs, frame);
                 } else {
+                    if (frame.results.length == 0) return;
                     popAndReturn(frame.results.pop());
                 }
 
@@ -332,6 +359,7 @@ class Interp {
                         throwError('Super method $method not found in ${parentCls.name}');
                     }
                 } else {
+                    if (frame.results.length == 0) return;
                     popAndReturn(frame.results.pop());
                 }
 
@@ -425,7 +453,44 @@ class Interp {
                 for (k in frame.locals.keys()) captured.set(k, frame.locals.get(k));
                 popAndReturn(new WrenFn(args, body, captured, frame.globals));
 
-            case EFor(v, it, e): throw "Not implemented";
+            case EFor(v, it, e):
+                if (frame.step == 0) {
+                    frame.step = 1;
+                    currentFiber.stack.push(Frame.get(it, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                } else if (frame.step == 1) {
+                    if (frame.results.length < 1) return;
+                    var iterable = frame.results[0];
+                    frame.step = 2;
+                    callMethod(iterable, "iterate", [null], frame);
+                } else if (frame.step == 2) {
+                    if (frame.results.length < 2) return;
+                    var iterable = frame.results[0];
+                    var iterator = frame.results[1];
+                    if (iterator == null || iterator == false) {
+                        popAndReturn(null);
+                    } else {
+                        frame.step = 3;
+                        callMethod(iterable, "iteratorValue", [iterator], frame);
+                    }
+                } else if (frame.step == 3) {
+                    if (frame.results.length < 3) return;
+                    var val = frame.results.pop();
+                    frame.locals.set(v, val);
+                    frame.step = 4;
+                    currentFiber.stack.push(Frame.get(e, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                } else if (frame.step == 4) {
+                    if (frame.results.length < 3) return;
+                    frame.results.pop(); // discard body result
+                    var iterable = frame.results[0];
+                    var iterator = frame.results[1];
+                    frame.step = 5;
+                    callMethod(iterable, "iterate", [iterator], frame);
+                } else if (frame.step == 5) {
+                    if (frame.results.length < 3) return;
+                    var nextIterator = frame.results.pop();
+                    frame.results[1] = nextIterator;
+                    frame.step = 2;
+                }
 
             case EImport(mod, imports):
                 if (frame.step == 0) {
@@ -469,12 +534,15 @@ class Interp {
         
         if (currentFiber.stack.length > 0) {
             currentFiber.stack[currentFiber.stack.length - 1].results.push(val);
+            currentFiber.stack[currentFiber.stack.length - 1].waiting = false;
         } else {
             currentFiber.state = Done;
             if (currentFiber.caller != null) {
                 fiberToSwitchTo = currentFiber.caller;
                 if (fiberToSwitchTo.stack.length > 0) {
-                    fiberToSwitchTo.stack[fiberToSwitchTo.stack.length - 1].results.push(val);
+                    var result = currentFiber.isTry ? null : val;
+                    fiberToSwitchTo.stack[fiberToSwitchTo.stack.length - 1].results.push(result);
+                    fiberToSwitchTo.stack[fiberToSwitchTo.stack.length - 1].waiting = false;
                 }
             } else {
                 if (onDone != null) onDone(val);
@@ -546,12 +614,12 @@ class Interp {
                             var res:Dynamic = impl(fullArgs);
                             if (Std.isOfType(res, WrenInstance)) instance = cast res;
                             else instance.native = res;
-                            if (fiberToSwitchTo == null) popAndReturn(instance);
+                            if (fiberToSwitchTo == null) frame.results.push(instance);
                         } else {
                             var fullArgs:Array<Dynamic> = [cls];
                             for (a in args) fullArgs.push(a);
                             var res = impl(fullArgs);
-                            if (fiberToSwitchTo == null) popAndReturn(res);
+                            if (fiberToSwitchTo == null) frame.results.push(res);
                         }
                     } else {
                         throwError('Foreign method $key not found');
@@ -584,7 +652,7 @@ class Interp {
                             var fullArgs:Array<Dynamic> = [obj];
                             for (a in args) fullArgs.push(a);
                             var res = impl(fullArgs);
-                            if (fiberToSwitchTo == null) popAndReturn(res);
+                            if (fiberToSwitchTo == null) frame.results.push(res);
                             return;
                         }
                     }
@@ -622,7 +690,7 @@ class Interp {
                             var fullArgs:Array<Dynamic> = [obj];
                             for (a in args) fullArgs.push(a);
                             var res = impl(fullArgs);
-                            if (fiberToSwitchTo == null) popAndReturn(res);
+                            if (fiberToSwitchTo == null) frame.results.push(res);
                         } else {
                             throwError('Foreign method $key not found');
                         }
@@ -656,81 +724,81 @@ class Interp {
                     case "iterate":
                         var iter = args[0];
                         if (iter == null) {
-                            if (arr.length == 0) popAndReturn(null);
-                            else popAndReturn(0);
+                            if (arr.length == 0) frame.results.push(null);
+                            else frame.results.push(0);
                         } else {
                             var i:Int = cast iter;
-                            if (i < 0 || i >= arr.length - 1) popAndReturn(null);
-                            else popAndReturn(i + 1);
+                            if (i < 0 || i >= arr.length - 1) frame.results.push(null);
+                            else frame.results.push(i + 1);
                         }
                         return;
                     case "iteratorValue":
                         var i:Int = cast args[0];
-                        popAndReturn(arr[i]);
+                        frame.results.push(arr[i]);
                         return;
                     case "add":
                         arr.push(args[0]);
-                        popAndReturn(args[0]);
+                        frame.results.push(args[0]);
                         return;
                     case "count":
-                        popAndReturn(arr.length);
+                        frame.results.push(arr.length);
                         return;
                     case "[]":
                         var i:Int = cast args[0];
-                        popAndReturn(arr[i]);
+                        frame.results.push(arr[i]);
                         return;
                     case "[]=":
                         var i:Int = cast args[0];
                         arr[i] = args[1];
-                        popAndReturn(args[1]);
+                        frame.results.push(args[1]);
                         return;
                 }
             } else if (Std.isOfType(obj, haxe.Constraints.IMap)) {
                 var map:haxe.Constraints.IMap<Dynamic, Dynamic> = cast obj;
                 switch (methodName) {
                     case "[]":
-                        popAndReturn(map.get(args[0]));
+                        frame.results.push(map.get(args[0]));
                         return;
                     case "[]=":
                         map.set(args[0], args[1]);
-                        popAndReturn(args[1]);
+                        frame.results.push(args[1]);
                         return;
                     case "iterate":
                         var ks = [for (k in map.keys()) k];
                         var iter = args[0];
                         if (iter == null) {
-                            if (ks.length == 0) popAndReturn(null);
-                            else popAndReturn(0);
+                            if (ks.length == 0) frame.results.push(null);
+                            else frame.results.push(0);
                         } else {
                             var i:Int = cast iter;
-                            if (i < 0 || i >= ks.length - 1) popAndReturn(null);
-                            else popAndReturn(i + 1);
+                            if (i < 0 || i >= ks.length - 1) frame.results.push(null);
+                            else frame.results.push(i + 1);
                         }
                         return;
                     case "iteratorValue":
                         var ks = [for (k in map.keys()) k];
                         var i:Int = cast args[0];
-                        popAndReturn(ks[i]);
+                        frame.results.push(ks[i]);
                         return;
                     case "count":
                         var c = 0;
                         for (k in map.keys()) c++;
-                        popAndReturn(c);
+                        frame.results.push(c);
                         return;
                     case "containsKey":
-                        popAndReturn(map.exists(args[0]));
+                        frame.results.push(map.exists(args[0]));
                         return;
                     case "remove":
-                        popAndReturn(map.remove(args[0]));
+                        frame.results.push(map.remove(args[0]));
                         return;
                 }
             }
 
             var field = Reflect.field(obj, methodName);
             if (Reflect.isFunction(field)) {
-                popAndReturn(Reflect.callMethod(obj, field, args));
+                frame.results.push(Reflect.callMethod(obj, field, args));
             } else {
-                popAndReturn(field);
+                frame.results.push(field);
             }
         }
     }

@@ -3,17 +3,17 @@ id: digigun-wren-hx
 v: 0.2
 name: Wren Interpreter (Haxe)
 created: @20260511T0552
-modified: @20260512T0538
+modified: @20260512T2056
 agents: antigravity
 tags: haxe|wren|scripting|interpreter
 
 @state
 status: WIP
-focus: Fiber implementation verification and official test suite expansion
-phase: testing/development
+focus: standard library expansion and improved error reporting
+phase: expansion
 blockers: ~
-last_act: ACT:successfully implemented cooperative fiber switching and verified with fibers.wren
-next_act: import more official Wren tests to verify fiber stability across complex scenarios
+last_act: ACT:finalized fiber concurrency and 'for' loops; all 7 suite tests passing
+next_act: implement Line/Column info in runtime errors for better debugging
 err: ~
 >>mem
 target: haxe-eval|node-js
@@ -36,7 +36,18 @@ map-ext:DONE:P1:Map extensions (keys, values, containsKey, etc.)
 str-ext:DONE:P1:String extensions (startsWith, endsWith, etc.)
 >>verification
 test-runner:DONE:P1:Implement automated test runner (.wren + expected output)
-test-suite:WIP:P1:Import and run official Wren test suite
+test-suite:DONE:P1:Import and run official Wren test suite (7/7 passing)
+>>stability
+runner-refactor:DONE:P1:Update TestRunner to run all .wren files in suite
+efor-impl:DONE:P0:Implement 'for' loop (iteration protocol) in Interp.hx
+transfer-impl:DONE:P1:Implement Fiber.transfer in Interp.hx and Wren.hx
+err-prop:DONE:P1:Implement Fiber error propagation
+>>dx
+error-info:TODO:P1:Add line/column info to runtime errors
+bytecode-v4:TODO:P2:Shuttle Bytecode V4 (persistence/caching)
+>>stdlib-exp
+math-exp:TODO:P2:Expand Math library (atan2, tan, etc.)
+array-exp:TODO:P2:Expand List/Array with Wren-style methods
 
 @ctx
 >>stack
@@ -58,9 +69,13 @@ test-suite:WIP:P1:Import and run official Wren test suite
 @20260511T0903:antigravity:ACT:added performance caveats and interpretation model details to README.md
 @20260511T0919:antigravity:ACT:created fibers_planning.md and task.md to outline the cooperative coroutine architecture
 @20260512T0538:antigravity:ACT:implemented cooperative fiber switching and resolved Fiber.new binding issues; verified with fibers.wren
+@20260512T1930:antigravity:ACT:updated project.axl for stability phase (for loops, transfer, runner refactor)
+@20260512T2056:antigravity:ACT:finalized fiber concurrency and 'for' loops; all 7 suite tests passing
 
 @done-ctx
 @20260512T0540:antigravity:! session:start => check project.axl for focus and next_act
+@20260512T1930:antigravity:! session:start => check project.axl for focus and next_act
+@20260512T2056:antigravity:! session:start => check project.axl for focus and next_act
 
 @ref
 >>urls

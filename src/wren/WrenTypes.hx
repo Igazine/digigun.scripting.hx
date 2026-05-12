@@ -60,6 +60,7 @@ class WrenFiber extends WrenInstance {
     public var caller:WrenFiber;
     public var state:FiberState = Starting;
     public var error:Dynamic;
+    public var isTry:Bool = false;
 
     public function new(?cls:WrenClass) {
         super(cls);

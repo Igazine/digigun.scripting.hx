@@ -23,4 +23,8 @@ class Fiber is Object {
     foreign call(v)
     foreign transfer()
     foreign transfer(v)
+    foreign try()
+    foreign error
+    foreign state
+    foreign static abort(msg)
 }

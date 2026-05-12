@@ -110,26 +110,7 @@ class Parser {
                 var seq = parseExpr();
                 expect(TParenClose);
                 var body = parseStatement();
-                
-                // Transform to while loop:
-                // {
-                //   var _it = null
-                //   while (_it = seq.iterate(_it)) {
-                //     var v = seq.iteratorValue(_it)
-                //     body
-                //   }
-                // }
-                var itName = "_it" + t.pos.line + "_" + t.pos.col;
-                var itVar = mk(EVar(itName, mk(EValue(null), t.pos), false), t.pos);
-                var itIdent = mk(EIdent(itName), t.pos);
-                
-                var cond = mk(EAssign(itIdent, mk(ECall(seq, "iterate", [itIdent]), t.pos)), t.pos);
-                var vVar = mk(EVar(vName, mk(ECall(seq, "iteratorValue", [itIdent]), t.pos), false), t.pos);
-                
-                var whileBody = mk(EBlock([vVar, body], false), t.pos);
-                var whileLoop = mk(EWhile(cond, whileBody), t.pos);
-                
-                return mk(EBlock([itVar, whileLoop], false), t.pos);
+                return mk(EFor(vName, seq, body), t.pos);
             case TReturn:
 
                 next();
@@ -149,6 +130,16 @@ class Parser {
                 throw 'Expected class after foreign at ${fpos.line}:${fpos.col}, but got ${peek().def}';
 
 
+            case TBraceOpen:
+                next();
+                var exprs = [];
+                skipNewlines();
+                while (!is(TBraceClose) && !is(TEof)) {
+                    exprs.push(parseStatement());
+                    skipNewlines();
+                }
+                expect(TBraceClose);
+                return mk(EBlock(exprs, true), t.pos);
             default:
                 return parseExpr();
         }

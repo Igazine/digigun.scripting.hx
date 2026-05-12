@@ -54,6 +54,10 @@ class Wren {
                 foreign call(v)
                 foreign transfer()
                 foreign transfer(v)
+                foreign try()
+                foreign error
+                foreign state
+                foreign static abort(msg)
             }
 
             class List is Object {
@@ -156,22 +160,19 @@ class Wren {
         });
 
         bindForeignMethod("Fiber", "yield", true, 0, (args) -> {
-            var fiber = interp.currentFiber;
-            if (fiber.caller != null) {
-                interp.fiberToSwitchTo = fiber.caller;
-                fiber.state = Suspended;
-            }
+            var caller = interp.currentFiber.caller;
+            if (caller == null) throw "Cannot yield from the root fiber";
+            interp.fiberToSwitchTo = caller;
+            interp.currentFiber.state = Suspended;
             return null;
         });
 
         bindForeignMethod("Fiber", "yield", true, 1, (args) -> {
-            var fiber = interp.currentFiber;
-            if (fiber.caller != null) {
-                interp.fiberToSwitchTo = fiber.caller;
-                fiber.state = Suspended;
-                // Pass value back to caller's results
-                if (fiber.caller.stack.length > 0) fiber.caller.stack[fiber.caller.stack.length - 1].results.push(args[1]);
-            }
+            var caller = interp.currentFiber.caller;
+            if (caller == null) throw "Cannot yield from the root fiber";
+            interp.fiberToSwitchTo = caller;
+            interp.currentFiber.state = Suspended;
+            if (caller.stack.length > 0) caller.stack[caller.stack.length - 1].results.push(args[1]);
             return null;
         });
 
@@ -181,6 +182,7 @@ class Wren {
             fiber.caller = interp.currentFiber;
             interp.fiberToSwitchTo = fiber;
             fiber.state = Running;
+            if (fiber.stack.length > 0) fiber.stack[fiber.stack.length - 1].results.push(null);
             return null;
         });
 
@@ -190,13 +192,60 @@ class Wren {
             fiber.caller = interp.currentFiber;
             interp.fiberToSwitchTo = fiber;
             fiber.state = Running;
-            // Pass value to fiber's results
             if (fiber.stack.length > 0) fiber.stack[fiber.stack.length - 1].results.push(args[1]);
             return null;
         });
 
-        // Math
+        bindForeignMethod("Fiber", "transfer", false, 0, (args) -> {
+            var fiber:WrenFiber = cast args[0];
+            if (fiber.state == Done || fiber.state == Aborted) throw "Cannot transfer to a finished fiber";
+            interp.fiberToSwitchTo = fiber;
+            fiber.state = Running;
+            if (fiber.stack.length > 0) fiber.stack[fiber.stack.length - 1].results.push(null);
+            return null;
+        });
 
+        bindForeignMethod("Fiber", "transfer", false, 1, (args) -> {
+            var fiber:WrenFiber = cast args[0];
+            if (fiber.state == Done || fiber.state == Aborted) throw "Cannot transfer to a finished fiber";
+            interp.fiberToSwitchTo = fiber;
+            fiber.state = Running;
+            if (fiber.stack.length > 0) fiber.stack[fiber.stack.length - 1].results.push(args[1]);
+            return null;
+        });
+
+        bindForeignMethod("Fiber", "abort", true, 1, (args) -> {
+            throw args[1];
+            return null;
+        });
+
+        bindForeignMethod("Fiber", "try", false, 0, (args) -> {
+            var fiber:WrenFiber = cast args[0];
+            if (fiber.state == Done || fiber.state == Aborted) throw "Cannot try a finished fiber";
+            fiber.caller = interp.currentFiber;
+            fiber.isTry = true;
+            interp.fiberToSwitchTo = fiber;
+            fiber.state = Running;
+            return null;
+        });
+
+        bindForeignMethod("Fiber", "error", false, 0, (args) -> {
+            var fiber:WrenFiber = cast args[0];
+            return fiber.error != null ? Std.string(fiber.error) : null;
+        });
+
+        bindForeignMethod("Fiber", "state", false, 0, (args) -> {
+            var fiber:WrenFiber = cast args[0];
+            return switch (fiber.state) {
+                case Starting: "other";
+                case Running: "running";
+                case Suspended: "suspended";
+                case Done: "done";
+                case Aborted: "error";
+            }
+        });
+
+        // Math
         bindForeignMethod("Math", "pi", true, 0, (args) -> Math.PI);
         bindForeignMethod("Math", "sin", true, 1, (args) -> Math.sin(args[1]));
         bindForeignMethod("Math", "cos", true, 1, (args) -> Math.cos(args[1]));
@@ -214,41 +263,46 @@ class Wren {
         bindForeignMethod("String", "toString", false, 0, (args) -> args[0]);
 
         // List
-        bindForeignMethod("List", "count", false, 0, (args) -> (cast args[0] : Array<Dynamic>).length);
-        bindForeignMethod("List", "add", false, 1, (args) -> { (cast args[0] : Array<Dynamic>).push(args[1]); return args[1]; });
-        bindForeignMethod("List", "insert", false, 2, (args) -> { (cast args[0] : Array<Dynamic>).insert(cast args[1], args[2]); return args[2]; });
-        bindForeignMethod("List", "removeAt", false, 1, (args) -> (cast args[0] : Array<Dynamic>).splice(cast args[1], 1)[0]);
-        bindForeignMethod("List", "clear", false, 0, (args) -> { (cast args[0] : Array<Dynamic>).splice(0, (cast args[0] : Array<Dynamic>).length); return null; });
-        bindForeignMethod("List", "toString", false, 0, (args) -> Std.string(args[0]));
+        bindForeignMethod("List", "count", false, 0, (args) -> {
+            var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
+            return arr.length;
+        });
+        bindForeignMethod("List", "add", false, 1, (args) -> {
+            var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
+            arr.push(args[1]);
+            return args[1];
+        });
+        bindForeignMethod("List", "insert", false, 2, (args) -> {
+            var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
+            arr.insert(cast args[1], args[2]);
+            return args[2];
+        });
+        bindForeignMethod("List", "removeAt", false, 1, (args) -> {
+            var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
+            return arr.splice(cast args[1], 1)[0];
+        });
         bindForeignMethod("List", "iterate", false, 1, (args) -> {
-            var arr:Array<Dynamic> = cast args[0];
+            var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
             var iter = args[1];
             if (iter == null) return arr.length == 0 ? null : 0;
             var i:Int = cast iter;
             if (i < 0 || i >= arr.length - 1) return null;
             return i + 1;
         });
-        bindForeignMethod("List", "iteratorValue", false, 1, (args) -> (cast args[0] : Array<Dynamic>)[cast args[1]]);
+        bindForeignMethod("List", "iteratorValue", false, 1, (args) -> {
+            var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
+            return arr[cast args[1]];
+        });
 
         // Map
         bindForeignMethod("Map", "count", false, 0, (args) -> {
+            var map:haxe.Constraints.IMap<Dynamic, Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
             var c = 0;
-            for (k in (cast args[0] : haxe.Constraints.IMap<Dynamic, Dynamic>).keys()) c++;
+            for (k in map.keys()) c++;
             return c;
         });
-        bindForeignMethod("Map", "keys", false, 0, (args) -> [for (k in (cast args[0] : haxe.Constraints.IMap<Dynamic, Dynamic>).keys()) k]);
-        bindForeignMethod("Map", "values", false, 0, (args) -> [for (v in (cast args[0] : haxe.Constraints.IMap<Dynamic, Dynamic>).iterator()) v]);
-        bindForeignMethod("Map", "clear", false, 0, (args) -> {
-            var map = (cast args[0] : haxe.Constraints.IMap<Dynamic, Dynamic>);
-            var ks = [for (k in map.keys()) k];
-            for (k in ks) map.remove(k);
-            return null;
-        });
-        bindForeignMethod("Map", "containsKey", false, 1, (args) -> (cast args[0] : haxe.Constraints.IMap<Dynamic, Dynamic>).exists(args[1]));
-        bindForeignMethod("Map", "remove", false, 1, (args) -> (cast args[0] : haxe.Constraints.IMap<Dynamic, Dynamic>).remove(args[1]));
-        bindForeignMethod("Map", "toString", false, 0, (args) -> Std.string(args[0]));
         bindForeignMethod("Map", "iterate", false, 1, (args) -> {
-            var map:haxe.Constraints.IMap<Dynamic, Dynamic> = cast args[0];
+            var map:haxe.Constraints.IMap<Dynamic, Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
             var ks = [for (k in map.keys()) k];
             var iter = args[1];
             if (iter == null) return ks.length == 0 ? null : 0;
@@ -257,11 +311,14 @@ class Wren {
             return i + 1;
         });
         bindForeignMethod("Map", "iteratorValue", false, 1, (args) -> {
-            var map:haxe.Constraints.IMap<Dynamic, Dynamic> = cast args[0];
+            var map:haxe.Constraints.IMap<Dynamic, Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
             var ks = [for (k in map.keys()) k];
             return ks[cast args[1]];
         });
-
+        bindForeignMethod("Map", "containsKey", false, 1, (args) -> {
+            var map:haxe.Constraints.IMap<Dynamic, Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
+            return map.exists(args[1]);
+        });
 
         // Num
         bindForeignMethod("Num", "toString", false, 0, (args) -> Std.string(args[0]));

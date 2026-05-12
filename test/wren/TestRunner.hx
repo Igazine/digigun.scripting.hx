@@ -27,7 +27,15 @@ class TestRunner {
             return;
         }
 
-        var files = FileSystem.readDirectory(suiteDir);
+        var args = Sys.args();
+        var files:Array<String> = [];
+        if (args.length > 0) {
+            files = [args[0]];
+        } else {
+            files = FileSystem.readDirectory(suiteDir);
+            files.sort(Reflect.compare);
+        }
+
         var passed = 0;
         var total = 0;
 
@@ -35,9 +43,10 @@ class TestRunner {
         Sys.println("---------------------------");
 
         for (file in files) {
-            if (file == "fibers.wren") {
+            var fullPath = file.startsWith(suiteDir) ? file : suiteDir + "/" + file;
+            if (fullPath.endsWith(".wren") && !file.startsWith("mod_")) {
                 total++;
-                if (runTest(suiteDir + "/" + file)) {
+                if (runTest(fullPath)) {
                     passed++;
                 }
             }

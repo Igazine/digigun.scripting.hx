@@ -18,6 +18,7 @@ class Frame {
     public var methodName:String;
     public var methodClass:WrenClass;
     public var globals:Map<String, Dynamic>;
+    public var waiting:Bool = false;
 
     public function new() {}
 
@@ -34,6 +35,7 @@ class Frame {
         f.methodName = methodName;
         f.methodClass = methodClass;
         f.obj = null;
+        f.waiting = false;
         return f;
     }
 
