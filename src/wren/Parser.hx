@@ -181,6 +181,7 @@ class Parser {
                 var cName = "new";
                 if (is(TIdent(null))) cName = switch(next().def) { case TIdent(v): v; default: "new"; };
                 var args = parseArgs();
+                if (match(TForeign)) isForeign = true;
                 var body = null;
                 if (!isForeign && (is(TBraceOpen) || !is(TNewline))) {
                     body = parseStatement();
@@ -429,8 +430,7 @@ class Parser {
                         skipNewlines();
                     }
                     expect(TBraceClose);
-                    if (closureArgs.length > 0) return parseAccess(mk(EClosure(closureArgs, mk(EBlock(exprs, true), t.pos)), t.pos));
-                    return parseAccess(mk(EBlock(exprs, true), t.pos));
+                    return parseAccess(mk(EClosure(closureArgs, mk(EBlock(exprs, true), t.pos)), t.pos));
                 }
 
                 var k = parseExpr();
@@ -453,8 +453,7 @@ class Parser {
                         skipNewlines();
                     }
                     expect(TBraceClose);
-                    if (closureArgs.length > 0) return parseAccess(mk(EClosure(closureArgs, mk(EBlock(exprs, true), t.pos)), t.pos));
-                    return parseAccess(mk(EBlock(exprs, true), t.pos));
+                    return parseAccess(mk(EClosure(closureArgs, mk(EBlock(exprs, true), t.pos)), t.pos));
                 }
 
 

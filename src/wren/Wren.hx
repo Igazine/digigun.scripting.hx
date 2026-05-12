@@ -43,30 +43,28 @@ class Wren {
                 foreign endsWith(suffix)
                 foreign toString
             }
+            
             class Fn is Object {}
 
+            class Fiber is Object {
+                construct new(fn) foreign
+                foreign static yield()
+                foreign static yield(v)
+                foreign call()
+                foreign call(v)
+                foreign transfer()
+                foreign transfer(v)
+            }
 
             class List is Object {
                 foreign count
-                foreign add(item)
-                foreign insert(index, item)
+                foreign add(val)
+                foreign insert(index, val)
                 foreign removeAt(index)
                 foreign clear()
                 foreign toString
                 foreign iterate(iter)
                 foreign iteratorValue(iter)
-                map(fn) {
-                    var res = []
-                    for (item in this) res.add(fn.call(item))
-                    return res
-                }
-                where(fn) {
-                    var res = []
-                    for (item in this) {
-                        if (fn.call(item)) res.add(item)
-                    }
-                    return res
-                }
             }
 
             class Map is Object {
@@ -80,7 +78,28 @@ class Wren {
                 foreign iterate(iter)
                 foreign iteratorValue(iter)
             }
-            class Math is Object {
+
+            class Num is Object {
+                foreign toString
+                foreign abs
+                foreign ceil
+                foreign floor
+                foreign sqrt
+            }
+
+            class Bool is Object {
+                foreign toString
+            }
+
+            class Null is Object {
+                toString { \"null\" }
+            }
+
+            class System {
+                foreign static print(value)
+            }
+
+            class Math {
                 foreign static pi
                 foreign static sin(x)
                 foreign static cos(x)
@@ -89,21 +108,6 @@ class Wren {
                 foreign static abs(x)
                 foreign static ceil(x)
                 foreign static floor(x)
-            }
-            class Bool is Object {
-                foreign toString
-            }
-            class Num is Object {
-                foreign static pi
-                foreign abs
-                foreign ceil
-                foreign floor
-                foreign sqrt
-                foreign toString
-            }
-            class Null is Object {
-                toString { \"null\" }
-
             }
 
             class Range {
@@ -127,13 +131,11 @@ class Wren {
                 }
                 iteratorValue(iter) { iter }
             }
-            class System {
-
-                foreign static print(value)
-            }
         ";
+
         bindForeignMethod("System", "print", true, 1, (args) -> {
             var val = args[1];
+            trace("PRINT: " + val);
             onPrint(val == null ? "null" : Std.string(val));
             return null;
         });
@@ -142,6 +144,56 @@ class Wren {
         bindForeignMethod("Object", "type", false, 0, (args) -> interp.getClass(args[0]));
         bindForeignMethod("Class", "name", false, 0, (args) -> (cast args[0] : WrenClass).name);
         bindForeignMethod("Class", "supertype", false, 0, (args) -> (cast args[0] : WrenClass).parent);
+
+        // Fiber
+        bindForeignMethod("Fiber", "new", true, 1, (args) -> {
+            if (!Std.isOfType(args[1], WrenFn)) throw "Argument must be a function";
+            var fn:WrenFn = cast args[1];
+            var instance:WrenInstance = cast args[0];
+            var fiber = new WrenFiber(instance.cls);
+            fiber.stack = [Frame.get(fn.body, fn.closure, false, true, false, "fiber", null, fn.globals)];
+            return fiber;
+        });
+
+        bindForeignMethod("Fiber", "yield", true, 0, (args) -> {
+            var fiber = interp.currentFiber;
+            if (fiber.caller != null) {
+                interp.fiberToSwitchTo = fiber.caller;
+                fiber.state = Suspended;
+            }
+            return null;
+        });
+
+        bindForeignMethod("Fiber", "yield", true, 1, (args) -> {
+            var fiber = interp.currentFiber;
+            if (fiber.caller != null) {
+                interp.fiberToSwitchTo = fiber.caller;
+                fiber.state = Suspended;
+                // Pass value back to caller's results
+                if (fiber.caller.stack.length > 0) fiber.caller.stack[fiber.caller.stack.length - 1].results.push(args[1]);
+            }
+            return null;
+        });
+
+        bindForeignMethod("Fiber", "call", false, 0, (args) -> {
+            var fiber:WrenFiber = cast args[0];
+            if (fiber.state == Done || fiber.state == Aborted) throw "Cannot call a finished fiber";
+            fiber.caller = interp.currentFiber;
+            interp.fiberToSwitchTo = fiber;
+            fiber.state = Running;
+            return null;
+        });
+
+        bindForeignMethod("Fiber", "call", false, 1, (args) -> {
+            var fiber:WrenFiber = cast args[0];
+            if (fiber.state == Done || fiber.state == Aborted) throw "Cannot call a finished fiber";
+            fiber.caller = interp.currentFiber;
+            interp.fiberToSwitchTo = fiber;
+            fiber.state = Running;
+            // Pass value to fiber's results
+            if (fiber.stack.length > 0) fiber.stack[fiber.stack.length - 1].results.push(args[1]);
+            return null;
+        });
 
         // Math
 

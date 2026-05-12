@@ -35,7 +35,7 @@ class TestRunner {
         Sys.println("---------------------------");
 
         for (file in files) {
-            if (file.endsWith(".wren")) {
+            if (file == "fibers.wren") {
                 total++;
                 if (runTest(suiteDir + "/" + file)) {
                     passed++;

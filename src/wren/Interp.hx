@@ -4,33 +4,26 @@ import wren.AST;
 import wren.WrenTypes;
 import wren.Error;
 
-
-
-
-
-
-
-
 class Interp {
-    public var stack:Array<Frame> = [];
+    public var currentFiber:WrenFiber;
+    public var fiberToSwitchTo:WrenFiber;
     public var globals:Map<String, Dynamic> = new Map();
     public var foreignMethods:Map<String, Array<Dynamic>->Dynamic> = new Map();
     public var moduleLoader:String->String;
     public var modules:Map<String, Map<String, Dynamic>> = new Map();
 
-
-    
     var onDone:Dynamic->Void;
     var isRunning:Bool = false;
 
     public function new() {
-        // Initialize basic globals/built-ins if needed
     }
 
     public function execute(expr:Expr, onDone:Dynamic->Void):Void {
         this.onDone = onDone;
-        var initialLocals = new Map<String, Dynamic>();
-        stack = [Frame.get(expr, initialLocals, false, false, false, null, null, globals)];
+        var fiber = new WrenFiber(globals.get("Fiber"));
+        fiber.state = Running;
+        fiber.stack = [Frame.get(expr, new Map(), false, false, false, null, null, globals)];
+        this.currentFiber = fiber;
         run();
     }
 
@@ -38,31 +31,43 @@ class Interp {
         if (isRunning) return;
         isRunning = true;
         
-        while (stack.length > 0) {
-            try {
-                var frame = stack[stack.length - 1];
-
-                tick();
+        while (currentFiber != null) {
+            if (fiberToSwitchTo != null) {
+                currentFiber = fiberToSwitchTo;
+                fiberToSwitchTo = null;
+                continue;
             }
-
- catch (e:Dynamic) {
+            if (currentFiber.stack.length == 0) break;
+            
+            try {
+                tick();
+            } catch (e:Dynamic) {
                 if (e != null && Reflect.hasField(e, "__isWrenReturn")) {
                     var val = Reflect.field(e, "value");
-                    while (stack.length > 0) {
-                        var f = stack.pop();
+                    while (currentFiber.stack.length > 0) {
+                        var f = currentFiber.stack.pop();
                         var isFunc = f.isFunction;
-                    var isConstruct = f.isConstruct;
-                    f.release();
-                    if (isFunc) {
-                        if (isConstruct) val = f.locals.get("this");
-                        
-                        if (stack.length > 0) stack[stack.length - 1].results.push(val);
-                        else if (onDone != null) onDone(val);
-                        break;
+                        var isConstruct = f.isConstruct;
+                        f.release();
+                        if (isFunc) {
+                            if (isConstruct) val = f.locals.get("this");
+                            if (currentFiber.stack.length > 0) {
+                                currentFiber.stack[currentFiber.stack.length - 1].results.push(val);
+                            } else {
+                                currentFiber.state = Done;
+                                if (currentFiber.caller != null) {
+                                    fiberToSwitchTo = currentFiber.caller;
+                                    if (fiberToSwitchTo.stack.length > 0) {
+                                        fiberToSwitchTo.stack[fiberToSwitchTo.stack.length - 1].results.push(val);
+                                    }
+                                } else if (onDone != null) {
+                                    onDone(val);
+                                }
+                            }
+                            break;
+                        }
                     }
-
-                    }
-                    continue; // Continue the main loop
+                    continue;
                 } else {
                     isRunning = false;
                     if (Std.isOfType(e, String)) {
@@ -73,18 +78,13 @@ class Interp {
                 }
             }
         }
-        
         isRunning = false;
     }
 
-
-
     function tick() {
-        var frame = stack[stack.length - 1];
+        var frame = currentFiber.stack[currentFiber.stack.length - 1];
         var e = frame.expr;
         switch (e.def) {
-
-
             case EValue(v):
                 popAndReturn(v);
             
@@ -108,7 +108,7 @@ class Interp {
             case EReturn(expr):
                 if (expr != null && frame.step == 0) {
                     frame.step = 1;
-                    stack.push(Frame.get(expr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(expr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else {
                     var val = expr != null ? frame.results.pop() : null;
                     throw { __isWrenReturn: true, value: val };
@@ -118,7 +118,7 @@ class Interp {
                 if (frame.step < exprs.length) {
                     var idx = frame.step;
                     frame.step++;
-                    stack.push(Frame.get(exprs[idx], frame.locals, isScope ? true : frame.isBlock, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(exprs[idx], frame.locals, isScope ? true : frame.isBlock, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else {
                     popAndReturn(frame.results.length > 0 ? frame.results.pop() : null);
                 }
@@ -127,11 +127,10 @@ class Interp {
                 var t = frame.locals.get("this");
                 popAndReturn(t);
 
-
             case EGet(objExpr, field):
                 if (frame.step == 0) {
                     frame.step = 1;
-                    stack.push(Frame.get(objExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(objExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else {
                     var obj = frame.results.pop();
                     if (Std.isOfType(obj, WrenInstance)) {
@@ -145,10 +144,10 @@ class Interp {
             case ESet(objExpr, field, valExpr):
                 if (frame.step == 0) {
                     frame.step = 1;
-                    stack.push(Frame.get(objExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(objExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == 1) {
                     frame.step = 2;
-                    stack.push(Frame.get(valExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(valExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else {
                     var val = frame.results.pop();
                     var obj = frame.results.pop();
@@ -165,7 +164,7 @@ class Interp {
             case EAssign(target, expr):
                 if (frame.step == 0) {
                     frame.step = 1;
-                    stack.push(Frame.get(expr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(expr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == 1) {
                     var val = frame.results[0];
                     switch (target.def) {
@@ -174,7 +173,7 @@ class Interp {
                             popAndReturn(val);
                         case EGet(objExpr, field):
                             frame.step = 2;
-                            stack.push(Frame.get(objExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                            currentFiber.stack.push(Frame.get(objExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                         default: throw "Invalid assignment target";
                     }
                 } else if (frame.step == 2) {
@@ -192,11 +191,10 @@ class Interp {
                     }
                 }
 
-
             case EVar(name, expr, isStatic):
                 if (expr != null && frame.step == 0) {
                     frame.step = 1;
-                    stack.push(Frame.get(expr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(expr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else {
                     var val = expr != null ? frame.results.pop() : null;
                     if (!frame.isBlock && !frame.isFunction) {
@@ -210,10 +208,10 @@ class Interp {
             case EBinop(op, e1, e2):
                 if (frame.step == 0) {
                     frame.step = 1;
-                    stack.push(Frame.get(e1, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(e1, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == 1) {
                     frame.step = 2;
-                    stack.push(Frame.get(e2, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(e2, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == 2) {
                     var v2 = frame.results.pop();
                     var v1 = frame.results.pop();
@@ -256,32 +254,27 @@ class Interp {
                         default: throwError('Unknown operator $op');
                     }
                     popAndReturn(res);
-
                 } else {
                     popAndReturn(frame.results.pop());
                 }
-
 
             case ECall(objExpr, method, args):
                 if (frame.step == 0) {
                     frame.step = 1;
-                    stack.push(Frame.get(objExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(objExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step <= args.length) {
                     var argIdx = frame.step - 1;
                     frame.step++;
-                    stack.push(Frame.get(args[argIdx], frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(args[argIdx], frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == args.length + 1) {
                     var evalArgs = [];
                     for (i in 0...args.length) evalArgs.unshift(frame.results.pop());
                     var obj = frame.results.pop();
-                    frame.step = 999; // Finished calling
-
+                    frame.step = 999;
                     callMethod(obj, method, evalArgs, frame);
                 } else {
-
                     popAndReturn(frame.results.pop());
                 }
-
 
             case EClass(name, fields, methods, parent, isForeign):
                 var pCls = parent != null ? frame.globals.get(parent) : null;
@@ -294,36 +287,29 @@ class Interp {
                 if (!hasConstruct) {
                     mMap.set("new", { args: [], body: { def: EBlock([], true), pos: {line:0, col:0} }, isStatic: false, isConstruct: true, isForeign: false });
                 }
-
                 var cls = new WrenClass(name, [for (f in fields) f.name], mMap, pCls, isForeign, frame.globals);
-
                 frame.globals.set(name, cls);
                 popAndReturn(cls);
-
-
 
             case ESuper(method, args):
                 if (frame.step < args.length) {
                     var argIdx = frame.step;
                     frame.step++;
-                    stack.push(Frame.get(args[argIdx], frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(args[argIdx], frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == args.length) {
                     var evalArgs = [];
                     for (i in 0...args.length) evalArgs.unshift(frame.results.pop());
                     var obj = resolve("this", frame.locals, frame.globals);
-                    
                     if (frame.methodClass == null || frame.methodClass.parent == null) {
                         throwError("Cannot call super from this context");
                     }
-                    
                     var parentCls = frame.methodClass.parent;
                     var m = findMethod(parentCls, method);
-                    
                     if (m != null) {
                         frame.step = 999;
                         if (m.isForeign) {
-                             // Handle foreign super?
-                             var key = '${parentCls.name}.${(m.isStatic || m.isConstruct) ? "static " : ""}${method}(${args.length})';
+                             var sig = '${method}(${args.length})';
+                             var key = '${parentCls.name}.${(m.isStatic || m.isConstruct) ? "static " : ""}${sig}';
                              var impl = foreignMethods.get(key);
                              if (impl != null) {
                                  var fullArgs:Array<Dynamic> = [obj];
@@ -332,7 +318,7 @@ class Interp {
                                  if (m.isConstruct && Std.isOfType(obj, WrenInstance)) {
                                      cast(obj, WrenInstance).native = res;
                                  }
-                                 popAndReturn(res);
+                                 if (fiberToSwitchTo == null) popAndReturn(res);
                              } else {
                                  throwError('Foreign super method $key not found');
                              }
@@ -340,7 +326,7 @@ class Interp {
                             var newLocals = new Map<String, Dynamic>();
                             newLocals.set("this", obj);
                             for (i in 0...m.args.length) newLocals.set(m.args[i], evalArgs[i]);
-                            stack.push(Frame.get(m.body, newLocals, false, true, m.isConstruct, '${parentCls.name}.${method}', parentCls, parentCls.globals));
+                            currentFiber.stack.push(Frame.get(m.body, newLocals, false, true, m.isConstruct, '${parentCls.name}.${method}', parentCls, parentCls.globals));
                         }
                     } else {
                         throwError('Super method $method not found in ${parentCls.name}');
@@ -349,24 +335,23 @@ class Interp {
                     popAndReturn(frame.results.pop());
                 }
 
-
-
             case EArrayDecl(values):
                 if (frame.step < values.length) {
                     var idx = frame.step;
                     frame.step++;
-                    stack.push(Frame.get(values[idx], frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(values[idx], frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else {
                     var res = [];
                     for (i in 0...values.length) res.unshift(frame.results.pop());
                     popAndReturn(res);
                 }
+
             case EMapDecl(keys, values):
                 if (frame.step < keys.length * 2) {
                     var idx = Std.int(frame.step / 2);
                     var isVal = frame.step % 2 == 1;
                     frame.step++;
-                    stack.push(Frame.get(isVal ? values[idx] : keys[idx], frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(isVal ? values[idx] : keys[idx], frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else {
                     var res = new Map<Dynamic, Dynamic>();
                     for (i in 0...keys.length) {
@@ -380,36 +365,37 @@ class Interp {
             case EIf(cond, e1, e2):
                 if (frame.step == 0) {
                     frame.step = 1;
-                    stack.push(Frame.get(cond, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(cond, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == 1) {
                     var v = frame.results.pop();
                     frame.step = 2;
-                    if (v == true) stack.push(Frame.get(e1, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
-                    else if (e2 != null) stack.push(Frame.get(e2, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    if (v == true) currentFiber.stack.push(Frame.get(e1, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    else if (e2 != null) currentFiber.stack.push(Frame.get(e2, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                     else popAndReturn(null);
                 } else {
                     popAndReturn(frame.results.pop());
                 }
+
             case EWhile(cond, body):
                 if (frame.step == 0) {
                     frame.step = 1;
-                    stack.push(Frame.get(cond, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(cond, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == 1) {
                     var v = frame.results.pop();
                     if (v != false && v != null) {
                         frame.step = 2;
-                        stack.push(Frame.get(body, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                        currentFiber.stack.push(Frame.get(body, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                     } else {
                         popAndReturn(null);
                     }
                 } else {
-
                     frame.step = 0;
                 }
+
             case EUnop(op, e):
                 if (frame.step == 0) {
                     frame.step = 1;
-                    stack.push(Frame.get(e, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(e, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else {
                     var v = frame.results.pop();
                     var res:Dynamic = switch (op) {
@@ -417,16 +403,15 @@ class Interp {
                         case "-": -v;
                         case "~": ~(cast v : Int);
                         default: throwError('Unknown unary operator $op');
-
-
                     }
                     popAndReturn(res);
                 }
+
             case EInterpolation(exprs):
                 if (frame.step < exprs.length) {
                     var idx = frame.step;
                     frame.step++;
-                    stack.push(Frame.get(exprs[idx], frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    currentFiber.stack.push(Frame.get(exprs[idx], frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else {
                     var parts = [];
                     for (i in 0...exprs.length) parts.unshift(frame.results.pop());
@@ -434,6 +419,7 @@ class Interp {
                     for (p in parts) res += Std.string(p);
                     popAndReturn(res);
                 }
+
             case EClosure(args, body):
                 var captured = new Map<String, Dynamic>();
                 for (k in frame.locals.keys()) captured.set(k, frame.locals.get(k));
@@ -452,12 +438,10 @@ class Interp {
                             var parser = new Parser(lexer.tokenize());
                             var ast = parser.parse();
                             frame.step = 1;
-                            
                             var newGlobals = new Map<String, Dynamic>();
                             for (k in globals.keys()) newGlobals.set(k, globals.get(k));
-                            
                             modules.set(mod, newGlobals);
-                            stack.push(Frame.get(ast, new Map(), false, false, false, null, null, newGlobals));
+                            currentFiber.stack.push(Frame.get(ast, new Map(), false, false, false, null, null, newGlobals));
                         } else {
                             throwError('Module $mod not found');
                         }
@@ -475,45 +459,43 @@ class Interp {
                     }
                     popAndReturn(null);
                 }
-
         }
     }
 
-
-
-
-
     function popAndReturn(val:Dynamic) {
-        var f = stack.pop();
-
-
-
+        if (currentFiber.stack.length == 0) return;
+        var f = currentFiber.stack.pop();
         if (f.isConstruct) val = f.locals.get("this");
-
-        if (stack.length > 0) {
-            stack[stack.length - 1].results.push(val);
+        
+        if (currentFiber.stack.length > 0) {
+            currentFiber.stack[currentFiber.stack.length - 1].results.push(val);
         } else {
-            if (onDone != null) onDone(val);
+            currentFiber.state = Done;
+            if (currentFiber.caller != null) {
+                fiberToSwitchTo = currentFiber.caller;
+                if (fiberToSwitchTo.stack.length > 0) {
+                    fiberToSwitchTo.stack[fiberToSwitchTo.stack.length - 1].results.push(val);
+                }
+            } else {
+                if (onDone != null) onDone(val);
+            }
         }
         f.release();
     }
 
-
     function throwError(msg:String, ?pos:Pos):Dynamic {
-        if (pos == null && stack.length > 0) pos = stack[stack.length - 1].expr.pos;
+        if (pos == null && currentFiber.stack.length > 0) pos = currentFiber.stack[currentFiber.stack.length - 1].expr.pos;
         if (pos == null) pos = { line: 0, col: 0 };
-        
         var error = new WrenError(msg, pos.line, pos.col, pos.file, getStackTrace());
         throw error;
         return null;
     }
 
-
     function getStackTrace():Array<String> {
         var res = [];
-        var i = stack.length - 1;
+        var i = currentFiber.stack.length - 1;
         while (i >= 0) {
-            var f = stack[i];
+            var f = currentFiber.stack[i];
             if (f.isFunction || f.isBlock) {
                 var name = f.methodName != null ? f.methodName : (f.isBlock ? "block" : "anonymous");
                 res.push('at $name (line ${f.expr.pos.line})');
@@ -523,7 +505,6 @@ class Interp {
         return res;
     }
 
-
     function resolve(name:String, locals:Map<String, Dynamic>, globals:Map<String, Dynamic>):Dynamic {
         if (locals.exists(name)) return locals.get(name);
         if (globals.exists(name)) return globals.get(name);
@@ -531,16 +512,12 @@ class Interp {
         return null;
     }
 
-
     function assign(name:String, val:Dynamic, locals:Map<String, Dynamic>, globals:Map<String, Dynamic>) {
         if (locals.exists(name)) {
             locals.set(name, val);
         } else if (globals.exists(name)) {
             globals.set(name, val);
         } else {
-            // New local? Wren 'var' is for declaration. 
-            // If we are here, it's either an existing local/global or an error.
-            // But Haxe Map.exists check might be enough.
             locals.set(name, val); 
         }
     }
@@ -548,104 +525,77 @@ class Interp {
     function callMethod(obj:Dynamic, methodName:String, args:Array<Dynamic>, frame:Frame) {
         if (obj == null) {
             var cls = frame.globals.get("Null");
-
             var m = findMethod(cls, methodName);
-            if (m != null) {
-                // handle null method if any ...
-            } else {
-                throwError('Method $methodName not found on null');
-            }
+            if (m == null) throwError('Method $methodName not found on null');
             return;
         }
 
         if (Std.isOfType(obj, WrenClass)) {
-
             var cls:WrenClass = cast obj;
             var m:WrenMethod = cls.methods.get(methodName);
-
             if (m != null && (m.isStatic || m.isConstruct)) {
                 if (m.isForeign) {
-                    if (m.isConstruct) {
-                        var instance = new WrenInstance(cls);
-                        var sig = '${methodName}(${m.args.length})';
-                        var key = '${cls.name}.static ${sig}';
-                        var impl = foreignMethods.get(key);
-                        if (impl != null) {
+                    var sig = '${methodName}(${m.args.length})';
+                    var key = '${cls.name}.static ${sig}';
+                    var impl = foreignMethods.get(key);
+                    if (impl != null) {
+                        if (m.isConstruct) {
+                            var instance = new WrenInstance(cls);
                             var fullArgs:Array<Dynamic> = [instance];
                             for (a in args) fullArgs.push(a);
-                            instance.native = impl(fullArgs);
-                            popAndReturn(instance);
+                            var res:Dynamic = impl(fullArgs);
+                            if (Std.isOfType(res, WrenInstance)) instance = cast res;
+                            else instance.native = res;
+                            if (fiberToSwitchTo == null) popAndReturn(instance);
                         } else {
-                            throwError('Foreign constructor $key not found');
-                        }
-                    } else {
-                        var sig = '${methodName}(${m.args.length})';
-                        var key = '${cls.name}.static ${sig}';
-                        var impl = foreignMethods.get(key);
-                        if (impl != null) {
                             var fullArgs:Array<Dynamic> = [cls];
                             for (a in args) fullArgs.push(a);
-                            popAndReturn(impl(fullArgs));
-                        } else {
-                            throwError('Foreign method $key not found');
+                            var res = impl(fullArgs);
+                            if (fiberToSwitchTo == null) popAndReturn(res);
                         }
+                    } else {
+                        throwError('Foreign method $key not found');
                     }
                     return;
                 }
-
                 
                 if (m.isConstruct) {
                     var instance = new WrenInstance(cls);
                     var newLocals = new Map<String, Dynamic>();
                     newLocals.set("this", instance);
                     for (i in 0...m.args.length) newLocals.set(m.args[i], args[i]);
-                    
                     frame.results.push(instance); 
-                    stack.push(Frame.get(m.body, newLocals, false, true, true, '${cls.name}.new', cls, cls.globals));
-
-
+                    currentFiber.stack.push(Frame.get(m.body, newLocals, false, true, true, '${cls.name}.new', cls, cls.globals));
                 } else {
                     var newLocals = new Map<String, Dynamic>();
                     newLocals.set("this", cls);
                     for (i in 0...m.args.length) newLocals.set(m.args[i], args[i]);
-                    stack.push(Frame.get(m.body, newLocals, false, true, false, '${cls.name}.${methodName}', cls, cls.globals));
-
+                    currentFiber.stack.push(Frame.get(m.body, newLocals, false, true, false, '${cls.name}.${methodName}', cls, cls.globals));
                 }
-
-
             } else {
-                // If it's an instance method of Class (e.g. .name)
                 var classCls = frame.globals.get("Class");
                 if (classCls != null && classCls != cls) {
                     var m2 = findMethod(classCls, methodName);
-                    if (m2 != null) {
-                        // Resolve as if called on the class object as an instance of Class
-                        // This falls through to the instance method handling below by resetting obj class
-                        // But wait, let's just call it directly.
-                        if (m2.isForeign) {
-                            var key = 'Class.${m2.isStatic ? "static " : ""}${methodName}(${args.length})';
-                            var impl = foreignMethods.get(key);
-                            if (impl != null) {
-                                var fullArgs:Array<Dynamic> = [obj];
-                                for (a in args) fullArgs.push(a);
-                                popAndReturn(impl(fullArgs));
-                                return;
-                            }
+                    if (m2 != null && m2.isForeign) {
+                        var sig = '${methodName}(${args.length})';
+                        var key = 'Class.${m2.isStatic ? "static " : ""}${sig}';
+                        var impl = foreignMethods.get(key);
+                        if (impl != null) {
+                            var fullArgs:Array<Dynamic> = [obj];
+                            for (a in args) fullArgs.push(a);
+                            var res = impl(fullArgs);
+                            if (fiberToSwitchTo == null) popAndReturn(res);
+                            return;
                         }
                     }
                 }
                 throwError('Method $methodName not found on class ${cls.name}');
             }
-
         } else {
             var cls = getClass(obj);
-
             if (cls != null) {
                 var foundCls = cls;
-
                 var m = findMethod(cls, methodName);
-
-                // If not found, try Object class for basic types if not already checked
                 if (m == null && cls.name != "Object") {
                     var objCls = frame.globals.get("Object");
                     if (objCls != null) {
@@ -654,31 +604,25 @@ class Interp {
                     }
                 }
                 
-                // Track where the method was found for foreign resolution
-                if (m == null) {
-                    // Try to find which class actually has it
-                } else {
-                   // We need to know which class 'm' belongs to.
-                   // Let's modify findMethod to return an object or just re-search here.
-                   var search = cls;
-                   while (search != null) {
-                       if (search.methods.exists(methodName)) {
-                           foundCls = search;
-                           break;
-                       }
-                       search = search.parent;
-                   }
-                }
-
                 if (m != null) {
-                    if (m.isForeign) {
-                        var key = '${foundCls.name}.${m.isStatic ? "static " : ""}${methodName}(${args.length})';
-                        var impl = foreignMethods.get(key);
+                    var search = cls;
+                    while (search != null) {
+                        if (search.methods.exists(methodName)) {
+                            foundCls = search;
+                            break;
+                        }
+                        search = search.parent;
+                    }
 
+                    if (m.isForeign) {
+                        var sig = '${methodName}(${args.length})';
+                        var key = '${foundCls.name}.${m.isStatic ? "static " : ""}${sig}';
+                        var impl = foreignMethods.get(key);
                         if (impl != null) {
                             var fullArgs:Array<Dynamic> = [obj];
                             for (a in args) fullArgs.push(a);
-                            popAndReturn(impl(fullArgs));
+                            var res = impl(fullArgs);
+                            if (fiberToSwitchTo == null) popAndReturn(res);
                         } else {
                             throwError('Foreign method $key not found');
                         }
@@ -688,15 +632,12 @@ class Interp {
                     var newLocals = new Map<String, Dynamic>();
                     newLocals.set("this", obj);
                     for (i in 0...m.args.length) newLocals.set(m.args[i], args[i]);
-                    stack.push(Frame.get(m.body, newLocals, false, true, false, '${foundCls.name}.${methodName}', foundCls, foundCls.globals));
-
-
+                    currentFiber.stack.push(Frame.get(m.body, newLocals, false, true, false, '${foundCls.name}.${methodName}', foundCls, foundCls.globals));
                     return;
                 }
             }
 
             if (Std.isOfType(obj, WrenFn)) {
-
                 var fn:WrenFn = cast obj;
                 if (methodName == "call") {
                     var newLocals = new Map<String, Dynamic>();
@@ -704,16 +645,12 @@ class Interp {
                     for (i in 0...fn.args.length) {
                         if (i < args.length) newLocals.set(fn.args[i], args[i]);
                     }
-                    stack.push(Frame.get(fn.body, newLocals, false, true, false, "call", null, fn.globals));
-
+                    currentFiber.stack.push(Frame.get(fn.body, newLocals, false, true, false, "call", null, fn.globals));
                     return;
                 }
             }
             
             if (Std.isOfType(obj, Array)) {
-
-
-
                 var arr:Array<Dynamic> = cast obj;
                 switch (methodName) {
                     case "iterate":
@@ -750,9 +687,7 @@ class Interp {
                 }
             } else if (Std.isOfType(obj, haxe.Constraints.IMap)) {
                 var map:haxe.Constraints.IMap<Dynamic, Dynamic> = cast obj;
-
                 switch (methodName) {
-
                     case "[]":
                         popAndReturn(map.get(args[0]));
                         return;
@@ -791,7 +726,6 @@ class Interp {
                 }
             }
 
-            
             var field = Reflect.field(obj, methodName);
             if (Reflect.isFunction(field)) {
                 popAndReturn(Reflect.callMethod(obj, field, args));
@@ -801,43 +735,30 @@ class Interp {
         }
     }
 
-
-
     public function getClass(obj:Dynamic, ?globals:Map<String, Dynamic>):WrenClass {
         if (globals == null) globals = this.globals;
         if (obj == null) return globals.get("Null");
-
         if (Std.isOfType(obj, WrenInstance)) return (cast obj).cls;
-
-        if (Std.isOfType(obj, WrenClass)) {
-            return globals.get("Class");
-        }
-
-
+        if (Std.isOfType(obj, WrenClass)) return globals.get("Class");
         if (Std.isOfType(obj, Float) || Std.isOfType(obj, Int)) return globals.get("Num");
-
         if (Std.isOfType(obj, String)) return globals.get("String");
         if (Std.isOfType(obj, Bool)) return globals.get("Bool");
         if (Std.isOfType(obj, WrenFn)) return globals.get("Fn");
         if (Std.isOfType(obj, Array)) return globals.get("List");
         if (Std.isOfType(obj, haxe.Constraints.IMap)) return globals.get("Map");
-        if (obj == null) return globals.get("Null");
-
         return null;
     }
 
-
     function isSubclass(cls:WrenClass, target:WrenClass):Bool {
-
         if (cls == target) return true;
         if (cls.parent != null) return isSubclass(cls.parent, target);
         return false;
     }
 
     function findMethod(cls:WrenClass, name:String):WrenMethod {
+        if (cls == null || cls.methods == null) return null;
         if (cls.methods.exists(name)) return cls.methods.get(name);
         if (cls.parent != null) return findMethod(cls.parent, name);
         return null;
     }
-
 }

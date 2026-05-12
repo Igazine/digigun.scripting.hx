@@ -12,3 +12,15 @@ class System {
         __print(value)
     }
 }
+
+class Fn is Object {}
+
+class Fiber is Object {
+    construct new(fn) foreign
+    foreign static yield()
+    foreign static yield(v)
+    foreign call()
+    foreign call(v)
+    foreign transfer()
+    foreign transfer(v)
+}

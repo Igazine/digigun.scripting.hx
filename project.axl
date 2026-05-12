@@ -3,17 +3,17 @@ id: digigun-wren-hx
 v: 0.2
 name: Wren Interpreter (Haxe)
 created: @20260511T0552
-modified: @20260511T0811
+modified: @20260512T0538
 agents: antigravity
 tags: haxe|wren|scripting|interpreter
 
 @state
 status: WIP
-focus: comprehensive test suite expansion and spec parity
-phase: testing
+focus: Fiber implementation verification and official test suite expansion
+phase: testing/development
 blockers: ~
-last_act: ACT:implemented full Module system (import/export/scoping) and verified with Test Runner
-next_act: import more official Wren tests and begin Fibers planning
+last_act: ACT:successfully implemented cooperative fiber switching and verified with fibers.wren
+next_act: import more official Wren tests to verify fiber stability across complex scenarios
 err: ~
 >>mem
 target: haxe-eval|node-js
@@ -28,6 +28,7 @@ super:DONE:P0:Inheritance and super call resolution
 this:DONE:P0:Implicit this method calls
 interp:DONE:P0:String interpolation
 modules:DONE:P0:Module system (import, export, resolution)
+fiber:DONE:P0:Fibers and cooperative coroutine switching
 >>stdlib
 core-wren:DONE:P1:Basic Object and Class in Core.wren
 list-ext:DONE:P1:List extensions (add, insert, removeAt, etc.)
@@ -36,7 +37,6 @@ str-ext:DONE:P1:String extensions (startsWith, endsWith, etc.)
 >>verification
 test-runner:DONE:P1:Implement automated test runner (.wren + expected output)
 test-suite:WIP:P1:Import and run official Wren test suite
-fiber:HOLD:P3:Fibers discussion (Haxe coroutine strategy)
 
 @ctx
 >>stack
@@ -56,6 +56,11 @@ fiber:HOLD:P3:Fibers discussion (Haxe coroutine strategy)
 @20260511T0811:antigravity:ACT:implemented full Module system with import/as support; switched to -L digigun.scripting.hx inclusion
 @20260511T0817:antigravity:ACT:created comprehensive README.md describing the library architecture and use cases
 @20260511T0903:antigravity:ACT:added performance caveats and interpretation model details to README.md
+@20260511T0919:antigravity:ACT:created fibers_planning.md and task.md to outline the cooperative coroutine architecture
+@20260512T0538:antigravity:ACT:implemented cooperative fiber switching and resolved Fiber.new binding issues; verified with fibers.wren
+
+@done-ctx
+@20260512T0540:antigravity:! session:start => check project.axl for focus and next_act
 
 @ref
 >>urls
