@@ -3,7 +3,7 @@ id: digigun-wren-hx
 v: 0.2
 name: Wren Interpreter (Haxe)
 created: @20260511T0552
-modified: @20260512T2059
+modified: @20260512T2101
 agents: antigravity
 tags: haxe|wren|scripting|interpreter
 
@@ -12,7 +12,7 @@ status: WIP
 focus: standard library expansion and improved error reporting
 phase: expansion
 blockers: ~
-last_act: ACT:updated README.md with stabilized features and full test runner info
+last_act: ACT:updated .gemini/ MD files and memory.json with latest progress
 next_act: implement Line/Column info in runtime errors for better debugging
 err: ~
 >>mem
@@ -73,6 +73,7 @@ array-exp:TODO:P2:Expand List/Array with Wren-style methods
 @20260512T2056:antigravity:ACT:finalized fiber concurrency and 'for' loops; all 7 suite tests passing
 @20260512T2058:antigravity:ACT:committed git changes for fiber concurrency and for loops milestones
 @20260512T2059:antigravity:ACT:updated README.md with stabilized features and full test runner info
+@20260512T2101:antigravity:ACT:updated .gemini/ MD files and memory.json with latest progress
 
 @done-ctx
 @20260512T0540:antigravity:! session:start => check project.axl for focus and next_act
