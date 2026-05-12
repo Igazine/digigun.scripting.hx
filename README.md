@@ -90,8 +90,9 @@ class Main {
 - [x] Foreign Class & Method bindings
 - [x] Module System (`import`)
 - [x] String Interpolation
-- [/] Standard Library (List, Map, String, Num, Bool) - *WIP*
-- [x] Fibers (Concurrency) - Completed, *unstable, not battle-tested*
+- [x] For loops (Iteration protocol)
+- [x] Fibers & Cooperative Multitasking
+- [x] Standard Library (List, Map, String, Num, Bool)
 
 ## 🧪 Testing
 

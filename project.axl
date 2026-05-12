@@ -3,7 +3,7 @@ id: digigun-wren-hx
 v: 0.2
 name: Wren Interpreter (Haxe)
 created: @20260511T0552
-modified: @20260512T2056
+modified: @20260512T2059
 agents: antigravity
 tags: haxe|wren|scripting|interpreter
 
@@ -12,7 +12,7 @@ status: WIP
 focus: standard library expansion and improved error reporting
 phase: expansion
 blockers: ~
-last_act: ACT:finalized fiber concurrency and 'for' loops; all 7 suite tests passing
+last_act: ACT:updated README.md with stabilized features and full test runner info
 next_act: implement Line/Column info in runtime errors for better debugging
 err: ~
 >>mem
@@ -71,6 +71,8 @@ array-exp:TODO:P2:Expand List/Array with Wren-style methods
 @20260512T0538:antigravity:ACT:implemented cooperative fiber switching and resolved Fiber.new binding issues; verified with fibers.wren
 @20260512T1930:antigravity:ACT:updated project.axl for stability phase (for loops, transfer, runner refactor)
 @20260512T2056:antigravity:ACT:finalized fiber concurrency and 'for' loops; all 7 suite tests passing
+@20260512T2058:antigravity:ACT:committed git changes for fiber concurrency and for loops milestones
+@20260512T2059:antigravity:ACT:updated README.md with stabilized features and full test runner info
 
 @done-ctx
 @20260512T0540:antigravity:! session:start => check project.axl for focus and next_act
