@@ -26,7 +26,7 @@ For local development/WIP access, you can link the repository:
 ```bash
 haxelib dev digigun.scripting.hx path/to/repo
 ```
-Alternativey you can checkout the repo directly:
+Alternativey you can checkout the repo directly with Haxelib:
 ```bash
 haxelib git digigun.scripting.hx https://github.com/Igazine/digigun.scripting.hx
 ```
