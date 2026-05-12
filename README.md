@@ -91,7 +91,7 @@ class Main {
 - [x] Module System (`import`)
 - [x] String Interpolation
 - [/] Standard Library (List, Map, String, Num, Bool) - *WIP*
-- [ ] Fibers (Concurrency) - *Planned*
+- [x] Fibers (Concurrency) - Completed, *not battle-tested*
 
 ## 🧪 Testing
 
