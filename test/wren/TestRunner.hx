@@ -80,7 +80,10 @@ class TestRunner {
         try {
             wren.interpret(content);
         } catch (e:Dynamic) {
-            actualOutput.push(Std.string(e));
+            var errStr = Std.string(e);
+            for (line in errStr.split("\n")) {
+                actualOutput.push(line.trim());
+            }
         }
 
         if (actualOutput.length != expectedOutput.length) {

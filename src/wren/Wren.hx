@@ -34,6 +34,8 @@ class Wren {
             class Class is Object {
                 foreign name
                 foreign supertype
+                foreign mixin(trait)
+                foreign implements(interfaceClass)
             }
 
             class Sequence {
@@ -307,6 +309,37 @@ class Wren {
                 foreign toString
                 foreign iterate(iter)
                 foreign iteratorValue(iter)
+
+                first { this[0] }
+                last { this[-1] }
+
+                sort() { sort { |a, b| a < b ? -1 : (a > b ? 1 : 0) } }
+                sort(comparator) {
+                    if (count <= 1) return this
+                    quicksort_(0, count - 1, comparator)
+                    return this
+                }
+                quicksort_(low, high, comp) {
+                    if (low < high) {
+                        var p = partition_(low, high, comp)
+                        quicksort_(low, p - 1, comp)
+                        quicksort_(p + 1, high, comp)
+                    }
+                }
+                partition_(low, high, comp) {
+                    var pivot = this[high]
+                    var i = low - 1
+                    var j = low
+                    while (j < high) {
+                        if (comp.call(this[j], pivot) <= 0) {
+                            i = i + 1
+                            swap(i, j)
+                        }
+                        j = j + 1
+                    }
+                    swap(i + 1, high)
+                    return i + 1
+                }
             }
 
             class MapKeySequence is Sequence {
@@ -391,6 +424,13 @@ class Wren {
                 foreign static asin(x)
                 foreign static round(x)
                 foreign static sign(x)
+
+                static clamp(value, min, max) {
+                    if (value < min) return min
+                    if (value > max) return max
+                    return value
+                }
+                static lerp(a, b, t) { a + (b - a) * t }
             }
 
             class Range is Sequence {
@@ -439,6 +479,42 @@ class Wren {
         bindForeignMethod("Object", "type", false, 0, (args) -> interp.getClass(args[0]));
         bindForeignMethod("Class", "name", false, 0, (args) -> (cast args[0] : WrenClass).name);
         bindForeignMethod("Class", "supertype", false, 0, (args) -> (cast args[0] : WrenClass).parent);
+        bindForeignMethod("Class", "mixin", false, 1, (args) -> {
+            var targetClass:WrenClass = cast args[0];
+            var traitClass:WrenClass = cast args[1];
+            for (key in traitClass.methods.keys()) {
+                var m = traitClass.methods.get(key);
+                if (!m.isConstruct && !targetClass.methods.exists(key)) {
+                    targetClass.methods.set(key, m);
+                }
+            }
+            return targetClass;
+        });
+        bindForeignMethod("Class", "implements", false, 1, (args) -> {
+            var targetClass:WrenClass = cast args[0];
+            var interfaceClass:WrenClass = cast args[1];
+            for (key in interfaceClass.methods.keys()) {
+                var m = interfaceClass.methods.get(key);
+                if (!m.isConstruct) {
+                    var found = false;
+                    var curr = targetClass;
+                    while (curr != null) {
+                        if (curr.methods.exists(key)) {
+                            found = true;
+                            break;
+                        }
+                        curr = curr.parent;
+                    }
+                    if (!found) {
+                        throw "Class " + targetClass.name + " must implement method " + key + " of interface " + interfaceClass.name + ".";
+                    }
+                }
+            }
+            if (targetClass.interfaces.indexOf(interfaceClass) == -1) {
+                targetClass.interfaces.push(interfaceClass);
+            }
+            return targetClass;
+        });
 
         // Fiber
         bindForeignMethod("Fiber", "new", true, 1, (args) -> {

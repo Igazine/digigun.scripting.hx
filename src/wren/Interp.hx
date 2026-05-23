@@ -696,9 +696,11 @@ class Interp {
         var i = currentFiber.stack.length - 1;
         while (i >= 0) {
             var f = currentFiber.stack[i];
-            if (f.isFunction || f.isBlock) {
-                var name = f.methodName != null ? f.methodName : (f.isBlock ? "block" : "anonymous");
-                res.push('at $name (line ${f.expr.pos.line})');
+            if (f.isFunction || f.isBlock || i == 0) {
+                var name = f.methodName != null ? f.methodName : (f.isBlock ? "block" : (f.isFunction ? "anonymous" : "script"));
+                var pos = f.expr.pos;
+                var fileDetail = pos.file != null ? ' in ${pos.file}' : "";
+                res.push('[line ${pos.line}, col ${pos.col}${fileDetail}] in $name');
             }
             i--;
         }
@@ -1052,6 +1054,11 @@ class Interp {
 
     function isSubclass(cls:WrenClass, target:WrenClass):Bool {
         if (cls == target) return true;
+        if (cls.interfaces != null) {
+            for (i in cls.interfaces) {
+                if (isSubclass(i, target)) return true;
+            }
+        }
         if (cls.parent != null) return isSubclass(cls.parent, target);
         return false;
     }

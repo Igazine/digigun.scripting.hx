@@ -25,8 +25,9 @@ class ErrorPrinter {
     public static function format(e:WrenError):String {
         var res = '[line ${e.line}] ${e.message}';
         if (e.stackTrace != null && e.stackTrace.length > 0) {
-            // ... (keep stack trace if needed, but for suite we only need the msg)
-            // Actually, let's keep it for now.
+            for (frame in e.stackTrace) {
+                res += "\n" + frame;
+            }
         }
         return res;
     }
