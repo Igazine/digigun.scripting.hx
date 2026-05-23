@@ -112,3 +112,39 @@ System.print(lst.count) // expect: 0
 var m = {"a": 1, "b": 2}
 System.print(m.keys.count) // expect: 2
 System.print(m.values.count) // expect: 2
+
+// --- Sequence all/any ---
+var seq = [1, 2, 3]
+System.print(seq.all {|x| x > 0}) // expect: true
+System.print(seq.all {|x| x > 1}) // expect: false
+System.print(seq.any {|x| x > 2}) // expect: true
+System.print(seq.any {|x| x > 5}) // expect: false
+
+// --- List filled/addAll/remove/indexOf ---
+var filledList = List.filled(3, "x")
+System.print(filledList.count) // expect: 3
+System.print(filledList[0]) // expect: x
+System.print(filledList[2]) // expect: x
+
+var addAllList = [1, 2]
+addAllList.addAll([3, 4])
+System.print(addAllList.count) // expect: 4
+System.print(addAllList[2]) // expect: 3
+
+var removedVal = addAllList.remove(3)
+System.print(removedVal) // expect: 3
+System.print(addAllList.count) // expect: 3
+System.print(addAllList.indexOf(4)) // expect: 2
+System.print(addAllList.indexOf(99)) // expect: -1
+
+// --- Map addAll ---
+var map1 = {"a": 1}
+map1.addAll({"b": 2, "c": 3})
+System.print(map1.count) // expect: 3
+System.print(map1["b"]) // expect: 2
+
+// --- Num Delegation ---
+var num = 0
+System.print(num.sin) // expect: 0
+System.print(1.5.round) // expect: 2
+System.print((-5).sign) // expect: -1

@@ -62,6 +62,20 @@ class Wren {
                     return false
                 }
 
+                all(f) {
+                    for (element in this) {
+                        if (!f.call(element)) return false
+                    }
+                    return true
+                }
+
+                any(f) {
+                    for (element in this) {
+                        if (f.call(element)) return true
+                    }
+                    return false
+                }
+
                 count {
                     var result = 0
                     for (element in this) {
@@ -275,10 +289,19 @@ class Wren {
 
             class List is Sequence {
                 construct new() foreign
+                foreign static filled(size, element)
                 foreign count
                 foreign add(val)
+                addAll(other) {
+                    for (element in other) {
+                        add(element)
+                    }
+                    return other
+                }
                 foreign insert(index, val)
                 foreign removeAt(index)
+                foreign remove(val)
+                foreign indexOf(val)
                 foreign clear()
                 foreign swap(index1, index2)
                 foreign toString
@@ -307,6 +330,12 @@ class Wren {
                 foreign count
                 keys { MapKeySequence.new(this) }
                 values { MapValueSequence.new(this) }
+                addAll(other) {
+                    for (key in other.keys) {
+                        this[key] = other[key]
+                    }
+                    return other
+                }
                 foreign clear()
                 foreign containsKey(key)
                 foreign remove(key)
@@ -321,6 +350,14 @@ class Wren {
                 foreign ceil
                 foreign floor
                 foreign sqrt
+                sin { Math.sin(this) }
+                cos { Math.cos(this) }
+                tan { Math.tan(this) }
+                asin { Math.asin(this) }
+                acos { Math.acos(this) }
+                atan { Math.atan(this) }
+                round { Math.round(this) }
+                sign { Math.sign(this) }
             }
 
             class Bool is Object {
@@ -575,6 +612,24 @@ class Wren {
         });
 
         // List
+        bindForeignMethod("List", "filled", true, 2, (args) -> {
+            var size:Int = cast args[1];
+            var element = args[2];
+            var arr = [];
+            for (i in 0...size) arr.push(element);
+            return arr;
+        });
+        bindForeignMethod("List", "remove", false, 1, (args) -> {
+            var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
+            var val = args[1];
+            if (arr.remove(val)) return val;
+            return null;
+        });
+        bindForeignMethod("List", "indexOf", false, 1, (args) -> {
+            var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
+            var val = args[1];
+            return arr.indexOf(val);
+        });
         bindForeignMethod("List", "count", false, 0, (args) -> {
             var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
             return arr.length;
