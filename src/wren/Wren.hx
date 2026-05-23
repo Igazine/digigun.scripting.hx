@@ -231,6 +231,21 @@ class Wren {
                 foreign toString
                 foreign iterate(iter)
                 foreign iteratorValue(iter)
+                foreign codePointAt_(index)
+                foreign split(separator)
+                foreign trim()
+                foreign replace(from, to)
+
+                codePoints {
+                    var res = []
+                    var i = 0
+                    while (i < count) {
+                        res.add(codePointAt_(i))
+                        i = i + 1
+                    }
+                    return res
+                }
+                bytes { codePoints }
             }
             
             class Fn is Object {
@@ -265,16 +280,33 @@ class Wren {
                 foreign insert(index, val)
                 foreign removeAt(index)
                 foreign clear()
+                foreign swap(index1, index2)
                 foreign toString
                 foreign iterate(iter)
                 foreign iteratorValue(iter)
             }
 
+            class MapKeySequence is Sequence {
+                construct new(map) {
+                    _map = map
+                }
+                iterate(iter) { _map.iterate(iter) }
+                iteratorValue(iter) { _map.iteratorValue(iter) }
+            }
+
+            class MapValueSequence is Sequence {
+                construct new(map) {
+                    _map = map
+                }
+                iterate(iter) { _map.iterate(iter) }
+                iteratorValue(iter) { _map[_map.iteratorValue(iter)] }
+            }
+
             class Map is Sequence {
                 construct new() foreign
                 foreign count
-                foreign keys
-                foreign values
+                keys { MapKeySequence.new(this) }
+                values { MapValueSequence.new(this) }
                 foreign clear()
                 foreign containsKey(key)
                 foreign remove(key)
@@ -312,6 +344,16 @@ class Wren {
                 foreign static abs(x)
                 foreign static ceil(x)
                 foreign static floor(x)
+                foreign static atan2(y, x)
+                foreign static min(a, b)
+                foreign static max(a, b)
+                foreign static pow(base, exp)
+                foreign static exp(x)
+                foreign static log(x)
+                foreign static acos(x)
+                foreign static asin(x)
+                foreign static round(x)
+                foreign static sign(x)
             }
 
             class Range is Sequence {
@@ -494,6 +536,19 @@ class Wren {
         bindForeignMethod("Math", "abs", true, 1, (args) -> Math.abs(args[1]));
         bindForeignMethod("Math", "ceil", true, 1, (args) -> Math.ceil(args[1]));
         bindForeignMethod("Math", "floor", true, 1, (args) -> Math.floor(args[1]));
+        bindForeignMethod("Math", "atan2", true, 2, (args) -> Math.atan2(args[1], args[2]));
+        bindForeignMethod("Math", "min", true, 2, (args) -> Math.min(args[1], args[2]));
+        bindForeignMethod("Math", "max", true, 2, (args) -> Math.max(args[1], args[2]));
+        bindForeignMethod("Math", "pow", true, 2, (args) -> Math.pow(args[1], args[2]));
+        bindForeignMethod("Math", "exp", true, 1, (args) -> Math.exp(args[1]));
+        bindForeignMethod("Math", "log", true, 1, (args) -> Math.log(args[1]));
+        bindForeignMethod("Math", "acos", true, 1, (args) -> Math.acos(args[1]));
+        bindForeignMethod("Math", "asin", true, 1, (args) -> Math.asin(args[1]));
+        bindForeignMethod("Math", "round", true, 1, (args) -> Math.round(args[1]));
+        bindForeignMethod("Math", "sign", true, 1, (args) -> {
+            var v:Float = args[1];
+            return v > 0 ? 1 : (v < 0 ? -1 : 0);
+        });
 
         // String
         bindForeignMethod("String", "count", false, 0, (args) -> (cast args[0] : String).length);
@@ -501,6 +556,10 @@ class Wren {
         bindForeignMethod("String", "startsWith", false, 1, (args) -> StringTools.startsWith(args[0], args[1]));
         bindForeignMethod("String", "endsWith", false, 1, (args) -> StringTools.endsWith(args[0], args[1]));
         bindForeignMethod("String", "toString", false, 0, (args) -> args[0]);
+        bindForeignMethod("String", "codePointAt_", false, 1, (args) -> (cast args[0] : String).charCodeAt(cast args[1]));
+        bindForeignMethod("String", "split", false, 1, (args) -> (cast args[0] : String).split(cast args[1]));
+        bindForeignMethod("String", "trim", false, 0, (args) -> StringTools.trim(args[0]));
+        bindForeignMethod("String", "replace", false, 2, (args) -> StringTools.replace(args[0], args[1], args[2]));
         bindForeignMethod("String", "iterate", false, 1, (args) -> {
             var str:String = args[0];
             var iter = args[1];
@@ -533,6 +592,23 @@ class Wren {
         bindForeignMethod("List", "removeAt", false, 1, (args) -> {
             var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
             return arr.splice(cast args[1], 1)[0];
+        });
+        bindForeignMethod("List", "clear", false, 0, (args) -> {
+            var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
+            arr.splice(0, arr.length);
+            return null;
+        });
+        bindForeignMethod("List", "swap", false, 2, (args) -> {
+            var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);
+            var i1:Int = cast args[1];
+            var i2:Int = cast args[2];
+            if (i1 < 0) i1 = arr.length + i1;
+            if (i2 < 0) i2 = arr.length + i2;
+            if (i1 < 0 || i1 >= arr.length || i2 < 0 || i2 >= arr.length) throw "Index out of bounds";
+            var tmp = arr[i1];
+            arr[i1] = arr[i2];
+            arr[i2] = tmp;
+            return null;
         });
         bindForeignMethod("List", "iterate", false, 1, (args) -> {
             var arr:Array<Dynamic> = ((Std.isOfType(args[0], WrenInstance)) ? (cast args[0] : WrenInstance).native : args[0]);

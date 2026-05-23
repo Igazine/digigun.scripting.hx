@@ -11,6 +11,7 @@ class WrenClass {
     public var parent:WrenClass;
     public var isForeign:Bool;
     public var globals:Map<String, Dynamic>;
+    public var classFields:Map<String, Dynamic> = new Map();
 
     public function new(name:String, fields:Array<String>, methods:Map<String, WrenMethod>, ?parent:WrenClass, isForeign:Bool = false, ?globals:Map<String, Dynamic>) {
         this.name = name;

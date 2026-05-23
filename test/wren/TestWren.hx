@@ -58,6 +58,25 @@ class TestWren {
 
             var p = Player.new("Tamas", "/path/to/file")
             System.print(p.toString)
+
+            // Verification of new compliance features on JS
+            System.print("&& Check: " + (true && false).toString)
+            System.print("|| Check: " + (true || false).toString)
+            System.print("Ternary Check: " + (true ? "yes" : "no"))
+            var i = 0
+            while (i < 5) {
+                i = i + 1
+                if (i == 2) continue
+                if (i == 4) break
+                System.print("Loop Step: " + i.toString)
+            }
+            class Counter {
+                construct new() {}
+                static init() { __count = 42 }
+                static count { __count }
+            }
+            Counter.init()
+            System.print("Class Var Count: " + Counter.count.toString)
         ';
 
 

@@ -111,6 +111,11 @@ enum ExprDef {
     EThis;
     EImport(module:String, imports:Array<{name:String, alias:String}>);
     EInterpolation(exprs:Array<Expr>);
+    ELogicalAnd(e1:Expr, e2:Expr);
+    ELogicalOr(e1:Expr, e2:Expr);
+    ETernary(cond:Expr, e1:Expr, e2:Expr);
+    EBreak;
+    EContinue;
 }
 
 

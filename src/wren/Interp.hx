@@ -111,6 +111,90 @@ class Interp {
         switch (e.def) {
             case EValue(v):
                 popAndReturn(v);
+
+            case ELogicalAnd(e1, e2):
+                if (frame.step == 0) {
+                    frame.step = 1;
+                    currentFiber.stack.push(Frame.get(e1, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                } else if (frame.step == 1) {
+                    var v1 = frame.results[frame.results.length - 1];
+                    if (v1 == false || v1 == null) {
+                        popAndReturn(frame.results.pop());
+                    } else {
+                        frame.step = 2;
+                        currentFiber.stack.push(Frame.get(e2, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    }
+                } else {
+                    var v2 = frame.results.pop();
+                    frame.results.pop(); // discard v1
+                    popAndReturn(v2);
+                }
+
+            case ELogicalOr(e1, e2):
+                if (frame.step == 0) {
+                    frame.step = 1;
+                    currentFiber.stack.push(Frame.get(e1, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                } else if (frame.step == 1) {
+                    var v1 = frame.results[frame.results.length - 1];
+                    if (v1 != false && v1 != null) {
+                        popAndReturn(frame.results.pop());
+                    } else {
+                        frame.step = 2;
+                        currentFiber.stack.push(Frame.get(e2, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    }
+                } else {
+                    var v2 = frame.results.pop();
+                    frame.results.pop(); // discard v1
+                    popAndReturn(v2);
+                }
+
+            case ETernary(cond, e1, e2):
+                if (frame.step == 0) {
+                    frame.step = 1;
+                    currentFiber.stack.push(Frame.get(cond, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                } else if (frame.step == 1) {
+                    var v = frame.results.pop();
+                    frame.step = 2;
+                    if (v != false && v != null) {
+                        currentFiber.stack.push(Frame.get(e1, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    } else {
+                        currentFiber.stack.push(Frame.get(e2, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                    }
+                } else {
+                    popAndReturn(frame.results.pop());
+                }
+
+            case EBreak:
+                while (currentFiber.stack.length > 0) {
+                    var top = currentFiber.stack[currentFiber.stack.length - 1];
+                    switch (top.expr.def) {
+                        case EWhile(_, _) | EFor(_, _, _):
+                            popAndReturn(null);
+                            return;
+                        default:
+                            var popped = currentFiber.stack.pop();
+                            popped.release();
+                    }
+                }
+                throwError("Break outside loop");
+
+            case EContinue:
+                while (currentFiber.stack.length > 0) {
+                    var top = currentFiber.stack[currentFiber.stack.length - 1];
+                    switch (top.expr.def) {
+                        case EWhile(_, _):
+                            top.step = 0;
+                            return;
+                        case EFor(_, _, _):
+                            top.results.push(null);
+                            top.step = 4;
+                            return;
+                        default:
+                            var popped = currentFiber.stack.pop();
+                            popped.release();
+                    }
+                }
+                throwError("Continue outside loop");
             
             case EIdent(v):
                 if (frame.step == 0) {
@@ -161,7 +245,13 @@ class Interp {
                 popAndReturn(t);
 
             case EGet(objExpr, field):
-                if (frame.step == 0) {
+                if (field.charAt(0) == "_" && field.charAt(1) == "_") {
+                    if (frame.methodClass != null) {
+                        popAndReturn(frame.methodClass.classFields.get(field));
+                    } else {
+                        throwError('Cannot access class variable $field outside class');
+                    }
+                } else if (frame.step == 0) {
                     frame.step = 1;
                     currentFiber.stack.push(Frame.get(objExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else {
@@ -205,8 +295,18 @@ class Interp {
                             assign(name, val, frame.locals, frame.globals);
                             popAndReturn(val);
                         case EGet(objExpr, field):
-                            frame.step = 2;
-                            currentFiber.stack.push(Frame.get(objExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                            if (field.charAt(0) == "_" && field.charAt(1) == "_") {
+                                if (frame.methodClass != null) {
+                                    frame.methodClass.classFields.set(field, val);
+                                    frame.results.pop(); // discard val from results
+                                    popAndReturn(val);
+                                } else {
+                                    throwError('Cannot assign class variable $field outside class');
+                                }
+                            } else {
+                                frame.step = 2;
+                                currentFiber.stack.push(Frame.get(objExpr, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
+                            }
                         default: throw "Invalid assignment target";
                     }
                 } else if (frame.step == 2) {
@@ -329,7 +429,7 @@ class Interp {
                     mMap.set(mName, { args: m.args, body: m.body, isStatic: m.isStatic, isConstruct: m.isConstruct, isForeign: m.isForeign });
                     if (m.isConstruct) hasConstruct = true;
                 }
-                if (!hasConstruct) {
+                if (!hasConstruct && pCls == null) {
                     mMap.set("new()", { args: [], body: { def: EBlock([], true), pos: {line:0, col:0} }, isStatic: false, isConstruct: true, isForeign: false });
                 }
                 var cls = new WrenClass(name, [for (f in fields) f.name], mMap, pCls, isForeign, frame.globals);
@@ -448,6 +548,7 @@ class Interp {
                         popAndReturn(null);
                     }
                 } else {
+                    if (frame.results.length > 0) frame.results.pop();
                     frame.step = 0;
                 }
 
@@ -651,11 +752,24 @@ class Interp {
         if (Std.isOfType(obj, WrenClass)) {
             var cls:WrenClass = cast obj;
             var m:WrenMethod = cls.methods.get(methodName);
+            var definingCls = cls;
+            if (m == null) {
+                var parent = cls.parent;
+                while (parent != null) {
+                    var pm = parent.methods.get(methodName);
+                    if (pm != null && pm.isConstruct) {
+                        m = pm;
+                        definingCls = parent;
+                        break;
+                    }
+                    parent = parent.parent;
+                }
+            }
             if (m != null && (m.isStatic || m.isConstruct)) {
                 if (m.isForeign) {
                     var arity = m.args != null ? m.args.length : 0;
                     var sig = '${name}(${arity})';
-                    var key = '${cls.name}.static ${sig}';
+                    var key = '${definingCls.name}.static ${sig}';
                     var impl = foreignMethods.get(key);
                     if (impl != null) {
                         if (m.isConstruct) {
@@ -685,7 +799,7 @@ class Interp {
                     var mArgs = m.args != null ? m.args : [];
                     for (i in 0...mArgs.length) newLocals.set(mArgs[i], argsList[i]);
                     frame.results.push(instance); 
-                    currentFiber.stack.push(Frame.get(m.body, newLocals, false, true, true, '${cls.name}.new', cls, cls.globals));
+                    currentFiber.stack.push(Frame.get(m.body, newLocals, false, true, true, '${definingCls.name}.new', definingCls, cls.globals));
                 } else {
                     var newLocals = new Map<String, Dynamic>();
                     newLocals.set("this", cls);
@@ -729,6 +843,34 @@ class Interp {
                     }
                 }
                 
+                if (Std.isOfType(obj, String)) {
+                    var str:String = cast obj;
+                    switch (name) {
+                        case "[]":
+                            var idx = argsList[0];
+                            if (Std.isOfType(idx, WrenInstance) && (cast idx : WrenInstance).cls.name == "Range") {
+                                var r:WrenInstance = cast idx;
+                                var from:Int = cast r.fields.get("_from");
+                                var to:Int = cast r.fields.get("_to");
+                                var isInclusive:Bool = cast r.fields.get("_isInclusive");
+                                if (from < 0) from = str.length + from;
+                                if (to < 0) to = str.length + to;
+                                var len = to - from + (isInclusive ? 1 : 0);
+                                if (len <= 0) {
+                                    frame.results.push("");
+                                } else {
+                                    frame.results.push(str.substr(from, len));
+                                }
+                            } else {
+                                var i:Int = cast idx;
+                                if (i < 0) i = str.length + i;
+                                if (i < 0 || i >= str.length) throwError("Index out of bounds");
+                                frame.results.push(str.charAt(i));
+                            }
+                            return;
+                    }
+                }
+                
                 if (Std.isOfType(obj, Array)) {
                     var arr:Array<Dynamic> = cast obj;
                     switch (name) {
@@ -755,13 +897,35 @@ class Interp {
                             frame.results.push(arr.length);
                             return;
                         case "[]":
-                            var i:Int = cast argsList[0];
-                            frame.results.push(arr[i]);
+                            var idx = argsList[0];
+                            if (Std.isOfType(idx, WrenInstance) && (cast idx : WrenInstance).cls.name == "Range") {
+                                var r:WrenInstance = cast idx;
+                                var from:Int = cast r.fields.get("_from");
+                                var to:Int = cast r.fields.get("_to");
+                                var isInclusive:Bool = cast r.fields.get("_isInclusive");
+                                if (from < 0) from = arr.length + from;
+                                if (to < 0) to = arr.length + to;
+                                var len = to - from + (isInclusive ? 1 : 0);
+                                if (len <= 0) {
+                                    frame.results.push([]);
+                                } else {
+                                    frame.results.push(arr.slice(from, from + len));
+                                }
+                            } else {
+                                var i:Int = cast idx;
+                                if (i < 0) i = arr.length + i;
+                                if (i < 0 || i >= arr.length) throwError("Index out of bounds");
+                                frame.results.push(arr[i]);
+                            }
                             return;
                         case "[]=":
-                            var i:Int = cast argsList[0];
-                            arr[i] = argsList[1];
-                            frame.results.push(argsList[1]);
+                            var idx = argsList[0];
+                            var val = argsList[1];
+                            var i:Int = cast idx;
+                            if (i < 0) i = arr.length + i;
+                            if (i < 0 || i >= arr.length) throwError("Index out of bounds");
+                            arr[i] = val;
+                            frame.results.push(val);
                             return;
                     }
                 } else if (Std.isOfType(obj, haxe.Constraints.IMap)) {

@@ -5,9 +5,33 @@ import wren.AST;
 class Parser {
     var tokens:Array<Token>;
     var pos:Int = 0;
+    var scopes:Array<Map<String, Bool>> = [new Map()];
 
     public function new(tokens:Array<Token>) {
         this.tokens = tokens;
+    }
+
+    function pushScope() {
+        scopes.push(new Map());
+    }
+
+    function popScope() {
+        scopes.pop();
+    }
+
+    function declareVar(name:String) {
+        if (scopes.length > 0) {
+            scopes[scopes.length - 1].set(name, true);
+        }
+    }
+
+    function isVarDeclared(name:String):Bool {
+        var i = scopes.length - 1;
+        while (i >= 0) {
+            if (scopes[i].exists(name)) return true;
+            i--;
+        }
+        return false;
     }
 
     function peek():Token return tokens[pos];
@@ -79,6 +103,7 @@ class Parser {
 
                 next();
                 var name = switch(next().def) { case TIdent(v): v; default: throw "Expected identifier"; };
+                declareVar(name);
                 var expr = null;
                 if (match(TAssign)) {
                     expr = parseExpr();
@@ -109,7 +134,10 @@ class Parser {
                 expect(TIn);
                 var seq = parseExpr();
                 expect(TParenClose);
+                pushScope();
+                declareVar(vName);
                 var body = parseStatement();
+                popScope();
                 return mk(EFor(vName, seq, body), t.pos);
             case TReturn:
 
@@ -132,6 +160,7 @@ class Parser {
 
             case TBraceOpen:
                 next();
+                pushScope();
                 var exprs = [];
                 skipNewlines();
                 while (!is(TBraceClose) && !is(TEof)) {
@@ -139,7 +168,14 @@ class Parser {
                     skipNewlines();
                 }
                 expect(TBraceClose);
+                popScope();
                 return mk(EBlock(exprs, true), t.pos);
+            case TBreak:
+                next();
+                return mk(EBreak, t.pos);
+            case TContinue:
+                next();
+                return mk(EContinue, t.pos);
             default:
                 return parseExpr();
         }
@@ -173,10 +209,15 @@ class Parser {
                 if (is(TIdent(null))) cName = switch(next().def) { case TIdent(v): v; default: "new"; };
                 var args = parseArgs();
                 if (match(TForeign)) isForeign = true;
+                pushScope();
+                if (args != null) {
+                    for (arg in args) declareVar(arg);
+                }
                 var body = null;
                 if (!isForeign && (is(TBraceOpen) || !is(TNewline))) {
                     body = parseStatement();
                 }
+                popScope();
                 methods.push({ name: cName, args: args, body: body, isStatic: false, isConstruct: true, isForeign: isForeign || (body == null) });
             } else if (match(TForeign)) {
                 var isMStatic = match(TStatic);
@@ -194,6 +235,10 @@ class Parser {
                 } else if (is(TParenOpen)) {
                     args = parseArgs();
                 }
+                pushScope();
+                if (args != null) {
+                    for (arg in args) declareVar(arg);
+                }
                 var body = null;
                 // If it's a foreign class and we don't see a body, it might be foreign?
                 // Actually, Wren requires 'foreign' keyword.
@@ -207,6 +252,7 @@ class Parser {
                 } else {
                     body = parseStatement();
                 }
+                popScope();
                 methods.push({ name: mName, args: args, body: body, isStatic: isStatic, isConstruct: false, isForeign: false });
             }
 
@@ -237,7 +283,7 @@ class Parser {
     }
 
     function parseAssign():Expr {
-        var e = parseBinary(0);
+        var e = parseTernary();
         if (match(TAssign)) {
             var val = parseAssign();
             switch (e.def) {
@@ -248,14 +294,25 @@ class Parser {
                     // Desugar obj.name = val to obj.name=(val)
                     return mk(ECall(obj, method + "=", [val]), e.pos);
                 case EIdent(v):
-                    // If it's a field (starting with _), it's a direct assignment
-                    if (v.charAt(0) == "_") return mk(EAssign(e, val), e.pos);
+                    // If it's a field (starting with _) or a lexically declared variable, it's a direct assignment
+                    if (v.charAt(0) == "_" || isVarDeclared(v)) return mk(EAssign(e, val), e.pos);
                     // Otherwise it's a setter call on 'this'
                     return mk(ECall(mk(EThis, e.pos), v + "=", [val]), e.pos);
                 default:
                     return mk(EAssign(e, val), e.pos);
             }
 
+        }
+        return e;
+    }
+
+    function parseTernary():Expr {
+        var e = parseBinary(0);
+        if (match(TQuestion)) {
+            var e1 = parseTernary();
+            expect(TColon);
+            var e2 = parseTernary();
+            return mk(ETernary(e, e1, e2), e.pos);
         }
         return e;
     }
@@ -270,7 +327,13 @@ class Parser {
             var p = getPrecedence(op);
             if (p <= prec) break;
             next();
-            e = mk(EBinop(op, e, parseBinary(p)), e.pos);
+            if (op == "&&") {
+                e = mk(ELogicalAnd(e, parseBinary(p)), e.pos);
+            } else if (op == "||") {
+                e = mk(ELogicalOr(e, parseBinary(p)), e.pos);
+            } else {
+                e = mk(EBinop(op, e, parseBinary(p)), e.pos);
+            }
         }
         return e;
     }
@@ -304,6 +367,8 @@ class Parser {
             case TAmpersand: "&";
             case TPipe: "|";
             case TCaret: "^";
+            case TAmpersandAmpersand: "&&";
+            case TPipePipe: "||";
             case TShiftLeft: "<<";
             case TShiftRight: ">>";
             default: null;
@@ -316,6 +381,8 @@ class Parser {
 
     function getPrecedence(op:String):Int {
         return switch (op) {
+            case "||": 5;
+            case "&&": 6;
             case "==", "!=": 10;
             case "<", ">", "<=", ">=", "is": 20;
             case "..", "...": 25;
@@ -352,17 +419,23 @@ class Parser {
 
         // If it's a statement block starting with a keyword or newline, parse it as a block of statements.
         if (is(TNewline) || is(TIf) || is(TWhile) || is(TFor) || is(TReturn) || is(TVar)) {
+            pushScope();
+            for (arg in closureArgs) declareVar(arg);
             var exprs = [];
             while (!is(TBraceClose) && !is(TEof)) {
                 exprs.push(parseStatement());
                 skipNewlines();
             }
             expect(TBraceClose);
+            popScope();
             return mk(EClosure(closureArgs, mk(EBlock(exprs, true), t.pos)), t.pos);
         }
 
+        pushScope();
+        for (arg in closureArgs) declareVar(arg);
         var k = parseExpr();
         if (match(TColon)) {
+            popScope(); // Pop the scope since it's a map declaration, not a block/closure!
             var keys = [k];
             var vals = [parseExpr()];
             while (match(TComma)) {
@@ -380,6 +453,7 @@ class Parser {
                 skipNewlines();
             }
             expect(TBraceClose);
+            popScope();
             return mk(EClosure(closureArgs, mk(EBlock(exprs, true), t.pos)), t.pos);
         }
     }
