@@ -1,3 +1,4 @@
 /.gemini
+bin/
 digigun.scripting.hx.code-workspace
 test/wren/trace.txt
