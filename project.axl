@@ -1,19 +1,19 @@
 @meta
 id: digigun-wren-hx
-v: 0.2
+v: 0.3
 name: Wren Interpreter (Haxe)
 created: @20260511T0552
-modified: @20260512T2101
+modified: @20260523T0430
 agents: antigravity
 tags: haxe|wren|scripting|interpreter
 
 @state
 status: WIP
-focus: standard library expansion and improved error reporting
-phase: expansion
+focus: standard library compliance and robustness
+phase: compliance
 blockers: ~
-last_act: ACT:updated .gemini/ MD files and memory.json with latest progress
-next_act: implement Line/Column info in runtime errors for better debugging
+last_act: ACT:implemented official Sequence lazy protocols, resolved EIf truthiness bugs, and corrected constructor assignment frame precedence
+next_act: further expand standard library (Math, String, List, Map extensions) and improve error positioning
 err: ~
 >>mem
 target: haxe-eval|node-js
@@ -34,17 +34,17 @@ core-wren:DONE:P1:Basic Object and Class in Core.wren
 list-ext:DONE:P1:List extensions (add, insert, removeAt, etc.)
 map-ext:DONE:P1:Map extensions (keys, values, containsKey, etc.)
 str-ext:DONE:P1:String extensions (startsWith, endsWith, etc.)
+seq-compliance:DONE:P0:Official Sequence protocol and lazy evaluation adapters (MapSequence, WhereSequence, SkipSequence, TakeSequence)
 >>verification
 test-runner:DONE:P1:Implement automated test runner (.wren + expected output)
-test-suite:DONE:P1:Import and run official Wren test suite (7/7 passing)
+test-suite:DONE:P1:Import and run official Wren test suite (8/8 passing)
 >>stability
 runner-refactor:DONE:P1:Update TestRunner to run all .wren files in suite
 efor-impl:DONE:P0:Implement 'for' loop (iteration protocol) in Interp.hx
 transfer-impl:DONE:P1:Implement Fiber.transfer in Interp.hx and Wren.hx
 err-prop:DONE:P1:Implement Fiber error propagation
 >>dx
-error-info:TODO:P1:Add line/column info to runtime errors
-bytecode-v4:TODO:P2:Shuttle Bytecode V4 (persistence/caching)
+error-info:DONE:P1:Add line/column info to runtime errors
 >>stdlib-exp
 math-exp:TODO:P2:Expand Math library (atan2, tan, etc.)
 array-exp:TODO:P2:Expand List/Array with Wren-style methods
@@ -74,6 +74,8 @@ array-exp:TODO:P2:Expand List/Array with Wren-style methods
 @20260512T2058:antigravity:ACT:committed git changes for fiber concurrency and for loops milestones
 @20260512T2059:antigravity:ACT:updated README.md with stabilized features and full test runner info
 @20260512T2101:antigravity:ACT:updated .gemini/ MD files and memory.json with latest progress
+@20260523T0418:antigravity:ACT:fixed parameterless getter method lookup bug throwing Null Access in Interp.hx; verified all 9 suite tests and TestWren passing
+@20260523T0430:antigravity:ACT:implemented full Wren Sequence lazy protocols, resolved Parser/Access binding precedence bugs, and corrected Range constructor unwinding bugs; all 10 suite tests passing on Eval/JS targets
 
 @done-ctx
 @20260512T0540:antigravity:! session:start => check project.axl for focus and next_act

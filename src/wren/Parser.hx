@@ -181,12 +181,12 @@ class Parser {
             } else if (match(TForeign)) {
                 var isMStatic = match(TStatic);
                 var mName = switch(next().def) { case TIdent(v): v; default: throw "Expected method name"; };
-                var mArgs = [];
+                var mArgs = null;
                 if (is(TParenOpen)) mArgs = parseArgs();
                 methods.push({ name: mName, args: mArgs, body: null, isStatic: isMStatic || isStatic, isConstruct: false, isForeign: true });
             } else if (is(TIdent(null))) {
                 var mName = switch(next().def) { case TIdent(v): v; default: null; };
-                var args = [];
+                var args = null;
                 if (match(TAssign)) {
                     // It's a setter: name=(val)
                     args = parseArgs();
@@ -333,6 +333,57 @@ class Parser {
 
 
 
+    function parseBraceExpr(t:Token):Expr {
+        var start = pos;
+        skipNewlines();
+        if (is(TBraceClose)) {
+            next();
+            return mk(EMapDecl([], []), t.pos);
+        }
+        
+        // Check for closure parameters: |a, b|
+        var closureArgs = [];
+        if (match(TPipe)) {
+            while (!match(TPipe)) {
+                closureArgs.push(switch(next().def) { case TIdent(v): v; default: throw "Expected argument name"; });
+                match(TComma);
+            }
+        }
+
+        // If it's a statement block starting with a keyword or newline, parse it as a block of statements.
+        if (is(TNewline) || is(TIf) || is(TWhile) || is(TFor) || is(TReturn) || is(TVar)) {
+            var exprs = [];
+            while (!is(TBraceClose) && !is(TEof)) {
+                exprs.push(parseStatement());
+                skipNewlines();
+            }
+            expect(TBraceClose);
+            return mk(EClosure(closureArgs, mk(EBlock(exprs, true), t.pos)), t.pos);
+        }
+
+        var k = parseExpr();
+        if (match(TColon)) {
+            var keys = [k];
+            var vals = [parseExpr()];
+            while (match(TComma)) {
+                keys.push(parseExpr());
+                expect(TColon);
+                vals.push(parseExpr());
+            }
+            expect(TBraceClose);
+            return mk(EMapDecl(keys, vals), t.pos);
+        } else {
+            var exprs = [k];
+            skipNewlines();
+            while (!is(TBraceClose) && !is(TEof)) {
+                exprs.push(parseStatement());
+                skipNewlines();
+            }
+            expect(TBraceClose);
+            return mk(EClosure(closureArgs, mk(EBlock(exprs, true), t.pos)), t.pos);
+        }
+    }
+
     function parsePrimary():Expr {
         var t = next();
         switch (t.def) {
@@ -378,7 +429,7 @@ class Parser {
                 if (match(TDot)) {
                     method = switch(next().def) { case TIdent(v): v; default: throw "Expected method name"; };
                 }
-                var args = [];
+                var args = null;
                 if (is(TParenOpen)) args = parseCallArgs();
                 return mk(ESuper(method, args), t.pos);
 
@@ -396,56 +447,7 @@ class Parser {
                 expect(TBracketClose);
                 return parseAccess(mk(EArrayDecl(values), t.pos));
             case TBraceOpen:
-                // ...
-                var start = pos;
-                skipNewlines();
-                if (is(TBraceClose)) {
-                    next();
-                    return parseAccess(mk(EMapDecl([], []), t.pos));
-                }
-                
-                // Check for closure parameters: |a, b|
-                var closureArgs = [];
-                if (match(TPipe)) {
-                    while (!match(TPipe)) {
-                        closureArgs.push(switch(next().def) { case TIdent(v): v; default: throw "Expected argument name"; });
-                        match(TComma);
-                    }
-                }
-
-                // If it's a statement block starting with a keyword or newline, parse it as a block of statements.
-                if (is(TNewline) || is(TIf) || is(TWhile) || is(TFor) || is(TReturn) || is(TVar)) {
-                    var exprs = [];
-                    while (!is(TBraceClose) && !is(TEof)) {
-                        exprs.push(parseStatement());
-                        skipNewlines();
-                    }
-                    expect(TBraceClose);
-                    return parseAccess(mk(EClosure(closureArgs, mk(EBlock(exprs, true), t.pos)), t.pos));
-                }
-
-                var k = parseExpr();
-                if (match(TColon)) {
-                    // ... (Map logic)
-                    var keys = [k];
-                    var vals = [parseExpr()];
-                    while (match(TComma)) {
-                        keys.push(parseExpr());
-                        expect(TColon);
-                        vals.push(parseExpr());
-                    }
-                    expect(TBraceClose);
-                    return parseAccess(mk(EMapDecl(keys, vals), t.pos));
-                } else {
-                    var exprs = [k];
-                    skipNewlines();
-                    while (!is(TBraceClose) && !is(TEof)) {
-                        exprs.push(parseStatement());
-                        skipNewlines();
-                    }
-                    expect(TBraceClose);
-                    return parseAccess(mk(EClosure(closureArgs, mk(EBlock(exprs, true), t.pos)), t.pos));
-                }
+                return parseAccess(parseBraceExpr(t));
 
 
 
@@ -458,7 +460,7 @@ class Parser {
         while (true) {
             if (match(TDot)) {
                 var method = switch(next().def) { case TIdent(v): v; default: throw "Expected method name"; };
-                var args = [];
+                var args = null;
                 if (is(TParenOpen)) args = parseCallArgs();
                 e = mk(ECall(e, method, args), e.pos);
             } else if (match(TBracketOpen)) {
@@ -481,10 +483,14 @@ class Parser {
                         e = mk(ECall(e, "call", args), e.pos);
                 }
             } else if (is(TBraceOpen)) {
-                var block = parsePrimary();
+                var block = parseBraceExpr(next());
                 switch (e.def) {
                     case ECall(obj, method, args):
-                        args.push(block);
+                        if (args == null) {
+                            e = mk(ECall(obj, method, [block]), e.pos);
+                        } else {
+                            args.push(block);
+                        }
                     case EIdent(v):
                         e = mk(ECall(mk(EThis, e.pos), v, [block]), e.pos);
                     default:

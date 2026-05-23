@@ -36,18 +36,216 @@ class Wren {
                 foreign supertype
             }
 
-            class String is Object {
+            class Sequence {
+                all(f) {
+                    var result = true
+                    for (element in this) {
+                        result = f.call(element)
+                        if (!result) return result
+                    }
+                    return result
+                }
+
+                any(f) {
+                    var result = false
+                    for (element in this) {
+                        result = f.call(element)
+                        if (result) return result
+                    }
+                    return result
+                }
+
+                contains(element) {
+                    for (item in this) {
+                        if (element == item) return true
+                    }
+                    return false
+                }
+
+                count {
+                    var result = 0
+                    for (element in this) {
+                        result = result + 1
+                    }
+                    return result
+                }
+
+                count(f) {
+                    var result = 0
+                    for (element in this) {
+                        if (f.call(element)) result = result + 1
+                    }
+                    return result
+                }
+
+                each(f) {
+                    for (element in this) {
+                        f.call(element)
+                    }
+                }
+
+                isEmpty { !iterate(null) }
+
+                map(transformation) { MapSequence.new(this, transformation) }
+
+                skip(count) {
+                    if (!(count is Num)) {
+                        Fiber.abort(\"Count must be a non-negative integer.\")
+                    }
+                    if (count < 0) {
+                        Fiber.abort(\"Count must be a non-negative integer.\")
+                    }
+                    return SkipSequence.new(this, count)
+                }
+
+                take(count) {
+                    if (!(count is Num)) {
+                        Fiber.abort(\"Count must be a non-negative integer.\")
+                    }
+                    if (count < 0) {
+                        Fiber.abort(\"Count must be a non-negative integer.\")
+                    }
+                    return TakeSequence.new(this, count)
+                }
+
+                where(predicate) { WhereSequence.new(this, predicate) }
+
+                reduce(acc, f) {
+                    for (element in this) {
+                        acc = f.call(acc, element)
+                    }
+                    return acc
+                }
+
+                reduce(f) {
+                    var iter = iterate(null)
+                    if (!iter) Fiber.abort(\"Can't reduce an empty sequence.\")
+                    var result = iteratorValue(iter)
+                    while (iter = iterate(iter)) {
+                        result = f.call(result, iteratorValue(iter))
+                    }
+                    return result
+                }
+
+                join() { join(\"\") }
+
+                join(sep) {
+                    var first = true
+                    var result = \"\"
+                    for (element in this) {
+                        if (!first) result = result + sep
+                        first = false
+                        result = result + element.toString
+                    }
+                    return result
+                }
+
+                toList {
+                    var result = List.new()
+                    for (element in this) {
+                        result.add(element)
+                    }
+                    return result
+                }
+            }
+
+            class MapSequence is Sequence {
+                construct new(seq, fn) {
+                    _seq = seq
+                    _fn = fn
+                }
+                iterate(iter) { _seq.iterate(iter) }
+                iteratorValue(iter) { _fn.call(_seq.iteratorValue(iter)) }
+            }
+
+            class WhereSequence is Sequence {
+                construct new(seq, fn) {
+                    _seq = seq
+                    _fn = fn
+                }
+                iterate(iter) {
+                    while (iter = _seq.iterate(iter)) {
+                        if (_fn.call(_seq.iteratorValue(iter))) return iter
+                    }
+                    return null
+                }
+                iteratorValue(iter) { _seq.iteratorValue(iter) }
+            }
+
+            class SkipSequence is Sequence {
+                construct new(seq, count) {
+                    _seq = seq
+                    _count = count
+                }
+                iterate(iter) {
+                    if (iter == null) {
+                        iter = _seq.iterate(null)
+                        var i = 0
+                        var keepGoing = true
+                        while (keepGoing) {
+                            if (iter) {
+                                if (i < _count) {
+                                    iter = _seq.iterate(iter)
+                                    i = i + 1
+                                } else {
+                                    keepGoing = false
+                                }
+                            } else {
+                                keepGoing = false
+                            }
+                        }
+                        return iter
+                    }
+                    return _seq.iterate(iter)
+                }
+                iteratorValue(iter) { _seq.iteratorValue(iter) }
+            }
+
+            class TakeSequence is Sequence {
+                construct new(seq, count) {
+                    _seq = seq
+                    _count = count
+                }
+                iterate(iter) {
+                    if (_count == 0) return null
+                    if (iter == null) {
+                        var originalIter = _seq.iterate(null)
+                        if (!originalIter) return null
+                        return [originalIter, 1]
+                    }
+                    var originalIter = iter[0]
+                    var count = iter[1]
+                    if (count >= _count) return null
+                    var nextIter = _seq.iterate(originalIter)
+                    if (!nextIter) return null
+                    return [nextIter, count + 1]
+                }
+                iteratorValue(iter) { _seq.iteratorValue(iter[0]) }
+            }
+
+            class String is Sequence {
                 foreign count
                 foreign contains(other)
                 foreign startsWith(prefix)
                 foreign endsWith(suffix)
                 foreign toString
+                foreign iterate(iter)
+                foreign iteratorValue(iter)
             }
             
-            class Fn is Object {}
+            class Fn is Object {
+                foreign static new(fn)
+                foreign call()
+                foreign call(a)
+                foreign call(a, b)
+                foreign call(a, b, c)
+            }
 
             class Fiber is Object {
                 construct new(fn) foreign
+                foreign static suspend()
+                foreign static current
+                foreign isDone
                 foreign static yield()
                 foreign static yield(v)
                 foreign call()
@@ -60,7 +258,8 @@ class Wren {
                 foreign static abort(msg)
             }
 
-            class List is Object {
+            class List is Sequence {
+                construct new() foreign
                 foreign count
                 foreign add(val)
                 foreign insert(index, val)
@@ -71,7 +270,8 @@ class Wren {
                 foreign iteratorValue(iter)
             }
 
-            class Map is Object {
+            class Map is Sequence {
+                construct new() foreign
                 foreign count
                 foreign keys
                 foreign values
@@ -114,7 +314,7 @@ class Wren {
                 foreign static floor(x)
             }
 
-            class Range {
+            class Range is Sequence {
                 construct new(from, to, isInclusive) {
                     _from = from
                     _to = to
@@ -143,6 +343,18 @@ class Wren {
             onPrint(val == null ? "null" : Std.string(val));
             return null;
         });
+        
+        bindForeignMethod("Fn", "new", true, 1, (args) -> {
+            return args[1];
+        });
+
+        bindForeignClass("List", "new", 0, (args) -> {
+            return [];
+        });
+
+        bindForeignClass("Map", "new", 0, (args) -> {
+            return new Map<Dynamic, Dynamic>();
+        });
 
         // Reflection
         bindForeignMethod("Object", "type", false, 0, (args) -> interp.getClass(args[0]));
@@ -164,6 +376,7 @@ class Wren {
             if (caller == null) throw "Cannot yield from the root fiber";
             interp.fiberToSwitchTo = caller;
             interp.currentFiber.state = Suspended;
+            if (caller.stack.length > 0) caller.stack[caller.stack.length - 1].results.push(null);
             return null;
         });
 
@@ -196,9 +409,35 @@ class Wren {
             return null;
         });
 
+        bindForeignMethod("Fiber", "suspend", true, 0, (args) -> {
+            var current = interp.currentFiber;
+            var caller = current.caller;
+            if (caller != null) {
+                interp.fiberToSwitchTo = caller;
+                current.caller = null;
+                current.state = Suspended;
+                if (caller.stack.length > 0) caller.stack[caller.stack.length - 1].results.push(null);
+            } else {
+                current.state = Suspended;
+                interp.currentFiber = null;
+                interp.fiberToSwitchTo = null;
+            }
+            return null;
+        });
+
+        bindForeignMethod("Fiber", "current", true, 0, (args) -> {
+            return interp.currentFiber;
+        });
+
+        bindForeignMethod("Fiber", "isDone", false, 0, (args) -> {
+            var fiber:WrenFiber = cast args[0];
+            return fiber.state == Done || fiber.state == Aborted;
+        });
+
         bindForeignMethod("Fiber", "transfer", false, 0, (args) -> {
             var fiber:WrenFiber = cast args[0];
             if (fiber.state == Done || fiber.state == Aborted) throw "Cannot transfer to a finished fiber";
+            interp.currentFiber.state = Suspended;
             interp.fiberToSwitchTo = fiber;
             fiber.state = Running;
             if (fiber.stack.length > 0) fiber.stack[fiber.stack.length - 1].results.push(null);
@@ -208,6 +447,7 @@ class Wren {
         bindForeignMethod("Fiber", "transfer", false, 1, (args) -> {
             var fiber:WrenFiber = cast args[0];
             if (fiber.state == Done || fiber.state == Aborted) throw "Cannot transfer to a finished fiber";
+            interp.currentFiber.state = Suspended;
             interp.fiberToSwitchTo = fiber;
             fiber.state = Running;
             if (fiber.stack.length > 0) fiber.stack[fiber.stack.length - 1].results.push(args[1]);
@@ -237,7 +477,7 @@ class Wren {
         bindForeignMethod("Fiber", "state", false, 0, (args) -> {
             var fiber:WrenFiber = cast args[0];
             return switch (fiber.state) {
-                case Starting: "other";
+                case Starting: "suspended";
                 case Running: "running";
                 case Suspended: "suspended";
                 case Done: "done";
@@ -261,6 +501,19 @@ class Wren {
         bindForeignMethod("String", "startsWith", false, 1, (args) -> StringTools.startsWith(args[0], args[1]));
         bindForeignMethod("String", "endsWith", false, 1, (args) -> StringTools.endsWith(args[0], args[1]));
         bindForeignMethod("String", "toString", false, 0, (args) -> args[0]);
+        bindForeignMethod("String", "iterate", false, 1, (args) -> {
+            var str:String = args[0];
+            var iter = args[1];
+            if (iter == null) return str.length == 0 ? null : 0;
+            var i:Int = cast iter;
+            if (i < 0 || i >= str.length - 1) return null;
+            return i + 1;
+        });
+        bindForeignMethod("String", "iteratorValue", false, 1, (args) -> {
+            var str:String = args[0];
+            var i:Int = cast args[1];
+            return str.charAt(i);
+        });
 
         // List
         bindForeignMethod("List", "count", false, 0, (args) -> {
@@ -332,19 +585,11 @@ class Wren {
 
 
     public function interpret(source:String, ?onDone:Dynamic->Void) {
-        try {
-            var lexer = new Lexer(source);
-            var tokens = lexer.tokenize();
-            var parser = new Parser(tokens);
-            var ast = parser.parse();
-            interp.execute(ast, onDone != null ? onDone : (r) -> {});
-        } catch (e:Dynamic) {
-            if (Std.isOfType(e, wren.Error.WrenError)) {
-                trace(wren.Error.ErrorPrinter.format(cast e));
-            } else {
-                trace("Uncaught exception: " + e);
-            }
-        }
+        var lexer = new Lexer(source);
+        var tokens = lexer.tokenize();
+        var parser = new Parser(tokens);
+        var ast = parser.parse();
+        interp.execute(ast, onDone != null ? onDone : (r) -> {});
     }
 
     public function setGlobal(name:String, value:Dynamic) {

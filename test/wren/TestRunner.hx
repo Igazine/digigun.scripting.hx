@@ -80,9 +80,7 @@ class TestRunner {
         try {
             wren.interpret(content);
         } catch (e:Dynamic) {
-            Sys.println("FAILED (Uncaught Exception)");
-            Sys.println("  " + e);
-            return false;
+            actualOutput.push(Std.string(e));
         }
 
         if (actualOutput.length != expectedOutput.length) {

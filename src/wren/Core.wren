@@ -13,7 +13,12 @@ class System {
     }
 }
 
-class Fn is Object {}
+class Fn is Object {
+    foreign call()
+    foreign call(a)
+    foreign call(a, b)
+    foreign call(a, b, c)
+}
 
 class Fiber is Object {
     construct new(fn) foreign
