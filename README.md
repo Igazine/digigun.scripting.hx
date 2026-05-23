@@ -4,7 +4,7 @@ A high-performance, modular scripting foundation for Haxe. This library is desig
 
 This project delivers a **fully compliant, self-contained, and highly robust implementation of the Wren programming language** in 100% pure Haxe with **zero external dependencies**.
 
-## 🚀 Use Cases
+## Use Cases
 
 `digigun.scripting.hx` is ideal for:
 - **Plugin Systems**: Allow users to extend your application with custom logic without recompiling.
@@ -13,7 +13,7 @@ This project delivers a **fully compliant, self-contained, and highly robust imp
 - **Game Logic**: Decouple high-level game rules from the engine performance core.
 - **Sandbox Execution**: Run untrusted or user-provided scripts safely within a controlled environment.
 
-## 📦 Installation
+## Installation
 
 This library follows standard Haxelib conventions. To include it in your project, add it to your `.hxml` or `project.xml`:
 
@@ -30,7 +30,7 @@ Alternatively you can checkout the repo directly with Haxelib:
 haxelib git digigun.scripting.hx https://github.com/Igazine/digigun.scripting.hx
 ```
 
-## 🛠️ Core Concepts
+## Core Concepts
 
 The library provides a set of common abstractions for:
 - **AST-based Interpretation**: Clean separation between parsing and execution.
@@ -40,7 +40,7 @@ The library provides a set of common abstractions for:
 
 ---
 
-## 🕊️ Implementation: Wren
+## Implementation: Wren
 
 The first fully-featured scripting engine implemented in this library is **Wren**—a small, fast, class-based concurrent scripting language (https://wren.io/).
 
@@ -80,7 +80,7 @@ class Main {
 
 ---
 
-## 💎 Advanced & Premium Features
+## Advanced & Premium Features
 
 ### 1. Loom-style Traits & Interfaces
 To support modular pluggable engine components, `digigun.scripting.hx` introduces a powerful runtime **Traits & Interfaces** model, natively integrated with Wren's dynamic `is` operator check:
@@ -155,7 +155,7 @@ Any syntax or runtime error automatically collects and generates a highly-detail
 
 ---
 
-## 🧪 Testing
+## Testing
 
 We verify the compiler engine specifications through the unified `TestRunner` suite, yielding 100% pass rates across core environments.
 
@@ -171,6 +171,6 @@ haxe -L digigun.scripting.hx -cp test/wren -main TestWren -js bin/test_wren.js &
 
 ---
 
-## 📄 License
+## License
 
 Part of the **Digigun** ecosystem. Licensed under the MIT License.
