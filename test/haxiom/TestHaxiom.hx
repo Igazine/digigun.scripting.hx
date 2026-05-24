@@ -699,5 +699,69 @@ class TestHaxiom {
                 trace("FAILURE: nested runtime exception stack trace did not contain script:6:30, got: " + e.message);
             }
         }
+
+        // 32. Single-Quoted String Interpolation
+        var script32 = '
+            var name = "world";
+            var x = 10;
+            
+            // Simple variable interpolation
+            var s1 = \'Hello $$name!\';
+            trace("s1: " + s1);
+            
+            // Complex expression interpolation
+            var s2 = \'val: $${x + 5}\';
+            trace("s2: " + s2);
+            
+            // Multiple interpolations
+            var s3 = \'$$name: $${x * 2} -> $$x\';
+            trace("s3: " + s3);
+            
+            // Escapes
+            var s4 = \'escaped $$$$ and \\$$x\';
+            trace("s4: " + s4);
+        ';
+        haxiom.interpret(script32);
+
+        // 33. Expanded Math & Primitives Standard Library
+        var script33 = '
+            // Math constants and rounding
+            trace("Math.PI: " + Math.PI);
+            trace("Math.abs(-12.5): " + Math.abs(-12.5));
+            trace("Math.floor(4.9): " + Math.floor(4.9));
+            trace("Math.ceil(4.1): " + Math.ceil(4.1));
+            trace("Math.round(4.5): " + Math.round(4.5));
+            
+            // Math trigonometry & algebra
+            trace("Math.sqrt(16): " + Math.sqrt(16));
+            trace("Math.pow(2, 8): " + Math.pow(2, 8));
+            trace("Math.sin(0): " + Math.sin(0));
+            trace("Math.cos(0): " + Math.cos(0));
+            
+            // Math random check
+            var rand = Math.random();
+            trace("Math.random valid: " + (rand >= 0.0 && rand < 1.0));
+            
+            // Math as closure
+            var myCos = Math.cos;
+            trace("Math closure cos(0): " + myCos(0));
+            
+            // String substr
+            var s = "Haxiom-Script";
+            trace("str.substr(0, 7): " + s.substr(0, 7));
+            trace("str.substr(7): " + s.substr(7));
+            
+            // Array copy, filter, map
+            var arr = [1, 2, 3, 4, 5];
+            var arrCopy = arr.copy();
+            trace("arr.copy length: " + arrCopy.length + ", item: " + arrCopy[2]);
+            
+            var evenArr = arr.filter(function(x) { return x % 2 == 0; });
+            trace("arr.filter length: " + evenArr.length + ", items: " + evenArr[0] + ", " + evenArr[1]);
+            
+            var squaredArr = arr.map(function(x) { return x * x; });
+            trace("arr.map length: " + squaredArr.length + ", items: " + squaredArr[0] + ", " + squaredArr[1]);
+        ';
+        haxiom.interpret(script33);
     }
 }

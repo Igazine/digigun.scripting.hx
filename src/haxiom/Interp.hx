@@ -486,6 +486,7 @@ class Interp {
                         case "charAt": return (idx:Int) -> str.charAt(idx);
                         case "charCodeAt": return (idx:Int) -> str.charCodeAt(idx);
                         case "substring": return (start:Int, ?end:Int) -> str.substring(start, end);
+                        case "substr": return (start:Int, ?len:Int) -> str.substr(start, len);
                         case "toLowerCase": return () -> str.toLowerCase();
                         case "toUpperCase": return () -> str.toUpperCase();
                         default:
@@ -503,6 +504,28 @@ class Interp {
                         case "indexOf": return (x:Dynamic, ?start:Int) -> arr.indexOf(x, start);
                         case "join": return (sep:String) -> arr.join(sep);
                         case "slice": return (start:Int, ?end:Int) -> arr.slice(start, end);
+                        case "copy": return () -> arr.copy();
+                        case "filter": return (f:Dynamic->Bool) -> arr.filter(f);
+                        case "map": return (f:Dynamic->Dynamic) -> arr.map(f);
+                        default:
+                    }
+                }
+                if (obj == Math) {
+                    if (field == "PI") return Math.PI;
+                    switch (field) {
+                        case "abs": return (x:Float) -> Math.abs(x);
+                        case "sin": return (x:Float) -> Math.sin(x);
+                        case "cos": return (x:Float) -> Math.cos(x);
+                        case "tan": return (x:Float) -> Math.tan(x);
+                        case "atan2": return (y:Float, x:Float) -> Math.atan2(y, x);
+                        case "sqrt": return (x:Float) -> Math.sqrt(x);
+                        case "pow": return (v:Float, exp:Float) -> Math.pow(v, exp);
+                        case "floor": return (x:Float) -> Math.floor(x);
+                        case "ceil": return (x:Float) -> Math.ceil(x);
+                        case "round": return (x:Float) -> Math.round(x);
+                        case "random": return () -> Math.random();
+                        case "min": return (a:Float, b:Float) -> Math.min(a, b);
+                        case "max": return (a:Float, b:Float) -> Math.max(a, b);
                         default:
                     }
                 }
@@ -606,6 +629,7 @@ class Interp {
                                             case "charAt": return str.charAt(args[0]);
                                             case "charCodeAt": return str.charCodeAt(args[0]);
                                             case "substring": return args.length > 1 ? str.substring(args[0], args[1]) : str.substring(args[0]);
+                                            case "substr": return args.length > 1 ? str.substr(args[0], args[1]) : str.substr(args[0]);
                                             case "toLowerCase": return str.toLowerCase();
                                             case "toUpperCase": return str.toUpperCase();
                                             default:
@@ -623,6 +647,28 @@ class Interp {
                                             case "indexOf": return args.length > 1 ? arr.indexOf(args[0], args[1]) : arr.indexOf(args[0]);
                                             case "join": return arr.join(args[0]);
                                             case "slice": return args.length > 1 ? arr.slice(args[0], args[1]) : arr.slice(args[0]);
+                                            case "copy": return arr.copy();
+                                            case "filter": return arr.filter((x) -> Reflect.callMethod(null, args[0], [x]));
+                                            case "map": return arr.map((x) -> Reflect.callMethod(null, args[0], [x]));
+                                            default:
+                                        }
+                                    }
+                                    if (obj == Math) {
+                                        var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
+                                        switch (field) {
+                                            case "abs": return Math.abs(args[0]);
+                                            case "sin": return Math.sin(args[0]);
+                                            case "cos": return Math.cos(args[0]);
+                                            case "tan": return Math.tan(args[0]);
+                                            case "atan2": return Math.atan2(args[0], args[1]);
+                                            case "sqrt": return Math.sqrt(args[0]);
+                                            case "pow": return Math.pow(args[0], args[1]);
+                                            case "floor": return Math.floor(args[0]);
+                                            case "ceil": return Math.ceil(args[0]);
+                                            case "round": return Math.round(args[0]);
+                                            case "random": return Math.random();
+                                            case "min": return Math.min(args[0], args[1]);
+                                            case "max": return Math.max(args[0], args[1]);
                                             default:
                                         }
                                     }

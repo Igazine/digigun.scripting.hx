@@ -145,7 +145,6 @@ class Lexer {
             if (char == '"' || char == "'") {
                 var quote = char;
                 advance();
-                var start = pos;
                 var s = "";
                 while (pos < input.length && peek() != quote) {
                     var c = peek();
@@ -169,7 +168,11 @@ class Lexer {
                     }
                 }
                 advance(); // Skip quote
-                tokens.push({ def: TString(s), pos: { line: startLine, col: startCol } });
+                if (quote == "'") {
+                    interpolateString(s, startLine, startCol, tokens);
+                } else {
+                    tokens.push({ def: TString(s), pos: { line: startLine, col: startCol } });
+                }
                 continue;
             }
 
@@ -271,5 +274,86 @@ class Lexer {
 
     inline function isAlphanumeric(c:String):Bool {
         return isAlpha(c) || isDigit(c);
+    }
+
+    function interpolateString(s:String, startLine:Int, startCol:Int, tokens:Array<Token>) {
+        var len = s.length;
+        var i = 0;
+        var fragment = "";
+        var hasTokens = false;
+
+        inline function addToken(def:TokenDef) {
+            tokens.push({ def: def, pos: { line: startLine, col: startCol } });
+            hasTokens = true;
+        }
+
+        while (i < len) {
+            var c = s.charAt(i);
+            if (c == "$") {
+                if (i + 1 < len && s.charAt(i + 1) == "$") {
+                    fragment += "$";
+                    i += 2;
+                } else if (i + 1 < len && s.charAt(i + 1) == "{") {
+                    if (fragment.length > 0) {
+                        if (hasTokens) addToken(TPlus);
+                        addToken(TString(fragment));
+                        fragment = "";
+                    }
+                    var startIdx = i + 2;
+                    var depth = 1;
+                    var j = startIdx;
+                    while (j < len && depth > 0) {
+                        var ch = s.charAt(j);
+                        if (ch == "{") depth++;
+                        else if (ch == "}") depth--;
+                        j++;
+                    }
+                    var exprStr = s.substring(startIdx, j - 1);
+                    i = j;
+
+                    var subLexer = new Lexer(exprStr);
+                    subLexer.line = startLine;
+                    subLexer.col = startCol + startIdx;
+                    var subTokens = subLexer.tokenize();
+
+                    if (hasTokens) addToken(TPlus);
+                    addToken(TParenOpen);
+                    for (tok in subTokens) {
+                        if (tok.def != TEof) {
+                            tokens.push(tok);
+                            hasTokens = true;
+                        }
+                    }
+                    addToken(TParenClose);
+                } else if (i + 1 < len && (isAlpha(s.charAt(i + 1)) || s.charAt(i + 1) == "_")) {
+                    if (fragment.length > 0) {
+                        if (hasTokens) addToken(TPlus);
+                        addToken(TString(fragment));
+                        fragment = "";
+                    }
+                    var startIdx = i + 1;
+                    var j = startIdx;
+                    while (j < len && (isAlphanumeric(s.charAt(j)) || s.charAt(j) == "_")) {
+                        j++;
+                    }
+                    var id = s.substring(startIdx, j);
+                    i = j;
+
+                    if (hasTokens) addToken(TPlus);
+                    addToken(TIdent(id));
+                } else {
+                    fragment += "$";
+                    i++;
+                }
+            } else {
+                fragment += c;
+                i++;
+            }
+        }
+
+        if (fragment.length > 0 || !hasTokens) {
+            if (hasTokens) addToken(TPlus);
+            addToken(TString(fragment));
+        }
     }
 }
