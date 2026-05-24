@@ -593,5 +593,59 @@ class TestHaxiom {
         });
         trace("strongly typed name: " + name);
         trace("strongly typed callback: " + callbackVal);
+
+        // 30. Standard Library String & Array Extensions
+        var script30 = '
+            // String method assertions
+            var s = "Haxiom-Script";
+            trace("str.length: " + s.length);
+            trace("str.charAt(0): " + s.charAt(0));
+            trace("str.charCodeAt(0): " + s.charCodeAt(0));
+            trace("str.indexOf(\'x\'): " + s.indexOf("x"));
+            trace("str.lastIndexOf(\'i\'): " + s.lastIndexOf("i"));
+            trace("str.substring(0, 7): " + s.substring(0, 7));
+            trace("str.toLowerCase(): " + s.toLowerCase());
+            trace("str.toUpperCase(): " + s.toUpperCase());
+            
+            var parts = s.split("-");
+            trace("str.split length: " + parts.length);
+            trace("str.split[0]: " + parts[0]);
+            trace("str.split[1]: " + parts[1]);
+            
+            // Array method assertions
+            var a = [10, 20, 30];
+            trace("arr.length before: " + a.length);
+            
+            var newLen = a.push(40);
+            trace("arr.length after push: " + a.length + ", push returned: " + newLen);
+            trace("arr[3]: " + a[3]);
+            
+            var popped = a.pop();
+            trace("arr.pop: " + popped + ", arr.length: " + a.length);
+            
+            var shifted = a.shift();
+            trace("arr.shift: " + shifted + ", arr.length: " + a.length);
+            
+            a.unshift(5);
+            trace("arr.unshift: " + a[0] + ", arr.length: " + a.length);
+            
+            var removed = a.remove(20);
+            trace("arr.remove(20): " + removed + ", arr.length: " + a.length);
+            
+            var idx = a.indexOf(30);
+            trace("arr.indexOf(30): " + idx);
+            
+            var sliceRes = a.slice(0, 1);
+            trace("arr.slice(0, 1) length: " + sliceRes.length + ", item: " + sliceRes[0]);
+            
+            var joined = a.join("|");
+            trace("arr.join: " + joined);
+            
+            // Closure binding extraction
+            var extractPush = a.push;
+            extractPush(99);
+            trace("extracted push item: " + a[a.length - 1]);
+        ';
+        haxiom.interpret(script30);
     }
 }

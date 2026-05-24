@@ -471,6 +471,37 @@ class Interp {
                 var obj = eval(objExpr, scope);
                 if (obj == null) throw 'Cannot read field "$field" of null';
                 
+                if (Std.isOfType(obj, String)) {
+                    var str:String = cast obj;
+                    if (field == "length") return str.length;
+                    switch (field) {
+                        case "split": return (delim:String) -> str.split(delim);
+                        case "indexOf": return (sub:String, ?start:Int) -> str.indexOf(sub, start);
+                        case "lastIndexOf": return (sub:String, ?start:Int) -> str.lastIndexOf(sub, start);
+                        case "charAt": return (idx:Int) -> str.charAt(idx);
+                        case "charCodeAt": return (idx:Int) -> str.charCodeAt(idx);
+                        case "substring": return (start:Int, ?end:Int) -> str.substring(start, end);
+                        case "toLowerCase": return () -> str.toLowerCase();
+                        case "toUpperCase": return () -> str.toUpperCase();
+                        default:
+                    }
+                }
+                if (Std.isOfType(obj, Array)) {
+                    var arr:Array<Dynamic> = cast obj;
+                    if (field == "length") return arr.length;
+                    switch (field) {
+                        case "push": return (x:Dynamic) -> arr.push(x);
+                        case "pop": return () -> arr.pop();
+                        case "shift": return () -> arr.shift();
+                        case "unshift": return (x:Dynamic) -> arr.unshift(x);
+                        case "remove": return (x:Dynamic) -> arr.remove(x);
+                        case "indexOf": return (x:Dynamic, ?start:Int) -> arr.indexOf(x, start);
+                        case "join": return (sep:String) -> arr.join(sep);
+                        case "slice": return (start:Int, ?end:Int) -> arr.slice(start, end);
+                        default:
+                    }
+                }
+                
                 if (Std.isOfType(obj, HaxiomInstance)) {
                     var inst:HaxiomInstance = cast obj;
                     var fDef = findFieldDef(inst.cls, field);
@@ -560,6 +591,36 @@ class Interp {
                             default:
                                 var obj = eval(objExpr, scope);
                                 if (obj != null && !Std.isOfType(obj, HaxiomInstance) && !Std.isOfType(obj, HaxiomClass)) {
+                                    if (Std.isOfType(obj, String)) {
+                                        var str:String = cast obj;
+                                        var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
+                                        switch (field) {
+                                            case "split": return str.split(args[0]);
+                                            case "indexOf": return args.length > 1 ? str.indexOf(args[0], args[1]) : str.indexOf(args[0]);
+                                            case "lastIndexOf": return args.length > 1 ? str.lastIndexOf(args[0], args[1]) : str.lastIndexOf(args[0]);
+                                            case "charAt": return str.charAt(args[0]);
+                                            case "charCodeAt": return str.charCodeAt(args[0]);
+                                            case "substring": return args.length > 1 ? str.substring(args[0], args[1]) : str.substring(args[0]);
+                                            case "toLowerCase": return str.toLowerCase();
+                                            case "toUpperCase": return str.toUpperCase();
+                                            default:
+                                        }
+                                    }
+                                    if (Std.isOfType(obj, Array)) {
+                                        var arr:Array<Dynamic> = cast obj;
+                                        var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
+                                        switch (field) {
+                                            case "push": return arr.push(args[0]);
+                                            case "pop": return arr.pop();
+                                            case "shift": return arr.shift();
+                                            case "unshift": arr.unshift(args[0]); return null;
+                                            case "remove": return arr.remove(args[0]);
+                                            case "indexOf": return args.length > 1 ? arr.indexOf(args[0], args[1]) : arr.indexOf(args[0]);
+                                            case "join": return arr.join(args[0]);
+                                            case "slice": return args.length > 1 ? arr.slice(args[0], args[1]) : arr.slice(args[0]);
+                                            default:
+                                        }
+                                    }
                                     var method = Reflect.field(obj, field);
                                     if (method != null && Reflect.isFunction(method)) {
                                         var args = [for (a in argsExprs) eval(a, scope)];

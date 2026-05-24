@@ -473,7 +473,7 @@ class Parser {
         var e = parseMultiplicative();
         var t = peek();
         while (is(TPlus) || is(TMinus)) {
-            var op = match(TPlus) ? "+" : "-";
+            var op = match(TPlus) ? "+" : { match(TMinus); "-"; };
             var e2 = parseMultiplicative();
             e = mk(EBinop(op, e, e2), t.pos);
             t = peek();
