@@ -647,5 +647,57 @@ class TestHaxiom {
             trace("extracted push item: " + a[a.length - 1]);
         ';
         haxiom.interpret(script30);
+
+        // 31. Precision Error Reporting (Line/Column diagnostics)
+        
+        // A. Syntax / Parser Error Position Verification
+        try {
+            haxiom.interpret("var x = ;");
+            trace("FAILURE: syntax error 'var x = ;' should have thrown");
+        } catch (e:Dynamic) {
+            var msg = Std.string(e);
+            if (msg.indexOf("at 1:9") != -1) {
+                trace("SUCCESS: Caught syntax error with precise position: " + msg);
+            } else {
+                trace("FAILURE: syntax error did not contain expected position 1:9, got: " + msg);
+            }
+        }
+
+        // B. Runtime Error Position Verification (toplevel)
+        try {
+            haxiom.interpret("
+                var a:Int = 10;
+                a = 'not-an-int';
+            ");
+            trace("FAILURE: type mismatch should have thrown");
+        } catch (e:haxiom.ScriptException) {
+            if (e.message.indexOf("script:3:21") != -1) {
+                trace("SUCCESS: Caught runtime type mismatch with precise coordinates: " + e.message);
+            } else {
+                trace("FAILURE: runtime type mismatch stack trace did not contain script:3:21, got: " + e.message);
+            }
+        }
+
+        // C. Runtime Error Position Verification (nested frame)
+        try {
+            haxiom.interpret("
+                class Tester {
+                    public function new() {}
+                    public function fail():Void {
+                        var list = null;
+                        list[0] = 100;
+                    }
+                }
+                var t = new Tester();
+                t.fail();
+            ");
+            trace("FAILURE: null access should have thrown");
+        } catch (e:haxiom.ScriptException) {
+            if (e.message.indexOf("script:6:30") != -1) {
+                trace("SUCCESS: Caught nested runtime exception with precise coordinates: " + e.message);
+            } else {
+                trace("FAILURE: nested runtime exception stack trace did not contain script:6:30, got: " + e.message);
+            }
+        }
     }
 }

@@ -148,6 +148,7 @@ class Interp {
 
     public var callStack:Array<{method:String, pos:Pos}> = [];
     public var errorHandler:Null<ScriptException->Void> = null;
+    var lastEvalPos:Pos = null;
 
     public inline function pushFrame(methodName:String, pos:Pos) {
         callStack.push({ method: methodName, pos: pos });
@@ -207,6 +208,7 @@ class Interp {
     public function execute(expr:Expr):Dynamic {
         currentPackage = [];
         callStack = [];
+        lastEvalPos = expr.pos;
         try {
             return eval(expr, globals);
         } catch (e:ControlFlow) {
@@ -228,12 +230,14 @@ class Interp {
                 while (i >= 0) {
                     var frame = callStack[i];
                     var fileInfo = frame.pos.file != null ? frame.pos.file : "script";
-                    traceLines.push('    at ' + frame.method + ' (' + fileInfo + ':' + frame.pos.line + ')');
+                    var framePos = (i == callStack.length - 1 && lastEvalPos != null) ? lastEvalPos : frame.pos;
+                    traceLines.push('    at ' + frame.method + ' (' + fileInfo + ':' + framePos.line + ':' + framePos.col + ')');
                     i--;
                 }
                 if (callStack.length == 0) {
-                    var fileInfo = expr.pos.file != null ? expr.pos.file : "script";
-                    traceLines.push('    at toplevel (' + fileInfo + ':' + expr.pos.line + ')');
+                    var errPos = lastEvalPos != null ? lastEvalPos : expr.pos;
+                    var fileInfo = errPos.file != null ? errPos.file : "script";
+                    traceLines.push('    at toplevel (' + fileInfo + ':' + errPos.line + ':' + errPos.col + ')');
                 }
                 formatted = traceLines.join("\n");
                 finalException = new haxiom.ScriptException(e, callStack.copy(), formatted);
@@ -248,6 +252,7 @@ class Interp {
     }
 
     function eval(e:Expr, scope:Scope):Dynamic {
+        if (e != null && e.pos != null) lastEvalPos = e.pos;
         var pos = e.pos;
         switch (e.def) {
             case EValue(v):
