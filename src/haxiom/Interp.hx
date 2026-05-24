@@ -82,7 +82,7 @@ class HaxiomClass {
 
 class HaxiomInterface {
     public var name:String;
-    public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>}> = new Map();
+    public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>}> = new Map();
     public var parents:Array<String>;
 
     public function new(name:String, ?parents:Array<String>) {
@@ -818,7 +818,19 @@ class Interp {
                         for (itfMethod in itf.methods) {
                             var classMethod = findMethod(cls, itfMethod.name);
                             if (classMethod == null) {
-                                throw 'Class ${cls.name} does not implement method ${itfMethod.name} required by interface ${itf.name} at ${pos.line}:${pos.col}';
+                                if (itfMethod.body != null) {
+                                    classMethod = {
+                                        name: itfMethod.name,
+                                        args: itfMethod.args,
+                                        retType: itfMethod.retType,
+                                        body: itfMethod.body,
+                                        isStatic: false,
+                                        isPublic: true
+                                    };
+                                    cls.methods.set(itfMethod.name, classMethod);
+                                } else {
+                                    throw 'Class ${cls.name} does not implement method ${itfMethod.name} required by interface ${itf.name} at ${pos.line}:${pos.col}';
+                                }
                             }
                             if (classMethod.args.length != itfMethod.args.length) {
                                 throw 'Method ${cls.name}.${itfMethod.name} has argument count mismatch: expected ${itfMethod.args.length} but got ${classMethod.args.length} at ${pos.line}:${pos.col}';

@@ -854,8 +854,13 @@ class Parser {
             var mName = expectIdent();
             var mArgs = parseArgs();
             var mRetType = parseOptType();
-            match(TSemicolon);
-            methods.push({ name: mName, args: mArgs, retType: mRetType });
+            var mBody = null;
+            if (is(TBraceOpen)) {
+                mBody = parseStatement();
+            } else {
+                match(TSemicolon);
+            }
+            methods.push({ name: mName, args: mArgs, retType: mRetType, body: mBody });
             skipNewlines();
         }
         expect(TBraceClose);

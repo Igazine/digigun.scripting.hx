@@ -152,7 +152,7 @@ enum ExprDef {
     EThrow(expr:Expr);
     ETry(tryExpr:Expr, catches:Array<{name:String, type:Null<TypeDecl>, body:Expr}>);
     ECast(expr:Expr, ?type:TypeDecl);
-    EInterface(name:String, methods:Array<{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>}>, ?parents:Array<String>);
+    EInterface(name:String, methods:Array<{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>}>, ?parents:Array<String>);
     EEnum(name:String, constructors:Array<{name:String, args:Null<Array<{name:String, type:Null<TypeDecl>}>>}>);
 }
 

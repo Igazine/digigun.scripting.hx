@@ -763,5 +763,40 @@ class TestHaxiom {
             trace("arr.map length: " + squaredArr.length + ", items: " + squaredArr[0] + ", " + squaredArr[1]);
         ';
         haxiom.interpret(script33);
+
+        // 34. Interface Default Implementations (Native-style Traits)
+        var script34 = '
+            interface IGreetable {
+                function greet(name:String):String {
+                    return "Default hello to " + name;
+                }
+                function welcome():String; // standard signature
+            }
+            
+            class User implements IGreetable {
+                public function new() {}
+                public function welcome():String {
+                    return "Welcome to User class";
+                }
+            }
+            
+            class SpecialUser implements IGreetable {
+                public function new() {}
+                public function greet(name:String):String {
+                    return "Overridden hello to " + name;
+                }
+                public function welcome():String {
+                    return "Welcome to SpecialUser class";
+                }
+            }
+            
+            var u = new User();
+            var su = new SpecialUser();
+            
+            trace("u.greet: " + u.greet("Alice")); // Should invoke default implementation!
+            trace("u.welcome: " + u.welcome());   // Should invoke concrete implementation!
+            trace("su.greet: " + su.greet("Bob"));  // Should invoke overridden implementation!
+        ';
+        haxiom.interpret(script34);
     }
 }
