@@ -59,6 +59,7 @@ array-exp:TODO:P2:Expand List/Array with Wren-style methods
 > Haxiom: Bytecode is PERMANENTLY DITCHED (only plain .hx source files with AST compilation caching are allowed)
 > Haxiom: No abstracts and no generics allowed in Haxiom scripts
 > Haxiom: No async/await logic or native Promise/Task systems are needed (matching native Haxe)
+> Haxiom: Strict subset-of-Haxe design philosophy. No custom or non-standard language features. The learning curve focuses only on intentionally omitted features (e.g., no macros, no abstracts, no generics).
 ! session:start => check project.axl for focus and next_act
 
 @log
