@@ -58,6 +58,7 @@ array-exp:TODO:P2:Expand List/Array with Wren-style methods
 > all P0 features must pass TestWren.hx before commit
 > Haxiom: Bytecode is PERMANENTLY DITCHED (only plain .hx source files with AST compilation caching are allowed)
 > Haxiom: No abstracts and no generics allowed in Haxiom scripts
+> Haxiom: No async/await logic or native Promise/Task systems are needed (matching native Haxe)
 ! session:start => check project.axl for focus and next_act
 
 @log
