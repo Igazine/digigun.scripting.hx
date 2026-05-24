@@ -82,7 +82,7 @@ class Main {
 
 ## Advanced & Premium Features
 
-### 1. Loom-style Traits & Interfaces
+### 1. Scripting-style Traits & Interfaces
 To support modular pluggable engine components, `digigun.scripting.hx` introduces a powerful runtime **Traits & Interfaces** model, natively integrated with Wren's dynamic `is` operator check:
 
 ```wren
@@ -151,14 +151,77 @@ Any syntax or runtime error automatically collects and generates a highly-detail
 - [x] String Slicing & Interpolation
 - [x] Fibers & Asymmetric Cooperative Multitasking (`Fiber.new`, `suspend`, `yield`, `transfer`, `try()`)
 - [x] Standard Library (List, Map, String, Num, Bool, Null, System, Math, Range)
-- [x] Loom Traits & Interfaces (`Class.mixin` & `Class.implements`)
+- [x] Traits & Interfaces (`Class.mixin` & `Class.implements`)
+
+---
+
+## Implementation: Haxiom
+
+**Haxiom** is a lightweight, embeddable, sandboxed Haxe-in-Haxe dialect. It preserves standard Haxe syntax 100% while executing dynamically and safely in a fully sandboxed environment.
+
+Haxiom is designed for Haxe developers who want an integrated scripting engine without having to learn a new language or deal with different syntax structures.
+
+### Dynamic Type vs Strict Type Annotations
+
+Haxiom offers the best of both worlds—flexible dynamic scripting ergonomics and strict, Haxe-standard compile-like type boundaries:
+
+* **Dynamic Types**: Declaring variables or class fields *without* type annotations (e.g. `var x = 10;`) treats the symbol as `Dynamic`. This allows any types to be assigned or changed dynamically.
+* **Strict Type Enforcement**: Declaring symbols *with* explicit type annotations (e.g. `var x:Int = 10;` or method signatures `function square(v:Int):Int`) binds a permanent type boundary. Mismatched re-assignments, parameter violations, or invalid return values will throw strict, readable runtime exceptions (e.g. `Type mismatch: expected Int but got String`).
+
+### Usage Example
+
+```haxe
+import haxiom.Haxiom;
+
+class Main {
+    static function main() {
+        var haxiom = new Haxiom();
+        
+        var script = '
+            class Player {
+                public var x(get, set):Float;
+                private var _x:Float = 0.0;
+                
+                public function new() {}
+                
+                public function get_x():Float {
+                    return _x + 10.0;
+                }
+                
+                public function set_x(v:Float):Float {
+                    return _x = v * 2.0;
+                }
+            }
+            
+            var p = new Player();
+            p.x = 5.0; // invokes setter -> _x is set to 10.0
+            trace("Property value: " + p.x); // invokes getter -> returns 20.0
+            
+            var m:Map<String, Int> = ["apple" => 10, "cherry" => 20];
+            trace("Map access: " + m["apple"]);
+        ';
+        
+        haxiom.interpret(script);
+    }
+}
+```
+
+### Haxiom Features Supported:
+- [x] Full Class & Inheritance model (`extends`, constructor `super` delegation)
+- [x] Implicit `this` resolution
+- [x] Property Getters & Setters (`var x(get, set)`)
+- [x] Map Literals (`[key => value]`) dynamically instantiated into specialized `StringMap` / `IntMap` collections
+- [x] Standard `Std` library bindings (`Std.string`, `Std.parseInt`, `Std.parseFloat`, and subclass-aware `Std.isOfType`)
+- [x] Strict Runtime Type Enforcement on typed variables, class fields, method arguments, and return types
+- [x] Closures, lambdas, and arrow functions (`(x, y):Int -> x * y`)
 
 ---
 
 ## Testing
 
-We verify the compiler engine specifications through the unified `TestRunner` suite, yielding 100% pass rates across core environments.
+We verify the compiler engine specifications through the unified `TestRunner` and `TestHaxiom` suites, yielding 100% pass rates across core environments.
 
+### Running Wren Tests
 To execute tests on the **Haxe Eval** target:
 ```bash
 haxe -L digigun.scripting.hx -cp test --run wren.TestRunner
@@ -167,6 +230,17 @@ haxe -L digigun.scripting.hx -cp test --run wren.TestRunner
 To execute tests on the **JavaScript / Node.js** target:
 ```bash
 haxe -L digigun.scripting.hx -cp test/wren -main TestWren -js bin/test_wren.js && node bin/test_wren.js
+```
+
+### Running Haxiom Tests
+To execute tests on the **Haxe Eval** target:
+```bash
+haxe -cp src -cp test -main haxiom.TestHaxiom --interp
+```
+
+To execute tests on the **JavaScript / Node.js** target:
+```bash
+haxe -cp src -cp test -main haxiom.TestHaxiom -js bin/test_haxiom.js && node bin/test_haxiom.js
 ```
 
 ---

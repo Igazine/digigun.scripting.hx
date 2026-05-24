@@ -7,7 +7,7 @@ import wren.Lexer;
 import wren.Parser;
 import wren.Interp;
 
-class Wren {
+class Wren implements common.IScriptEngine {
 
     public var interp:Interp;
     public var onPrint:String->Void = (s) -> trace(s);
@@ -791,12 +791,20 @@ class Wren {
 
 
 
-    public function interpret(source:String, ?onDone:Dynamic->Void) {
+    public function interpret<T>(source:String, ?onDone:T->Void):T {
         var lexer = new Lexer(source);
         var tokens = lexer.tokenize();
         var parser = new Parser(tokens);
         var ast = parser.parse();
-        interp.execute(ast, onDone != null ? onDone : (r) -> {});
+        var result:Dynamic = null;
+        interp.execute(ast, (r) -> {
+            result = r;
+            if (onDone != null) {
+                var castedCallback:T->Void = cast onDone;
+                castedCallback(cast r);
+            }
+        });
+        return cast result;
     }
 
     public function setGlobal(name:String, value:Dynamic) {

@@ -1,4 +1,4 @@
-// 1. Loom-style Traits & Interfaces
+// 1. Scripting-style Traits & Interfaces
 class IGreetable {
     greet() { Fiber.abort("Must implement greet()") }
 }
