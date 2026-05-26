@@ -251,6 +251,52 @@ class Interp {
         }
     }
 
+    function getTypeName(v:Dynamic):String {
+        if (v == null) return "null";
+        if (Std.isOfType(v, Int)) return "Int";
+        if (Std.isOfType(v, Float)) return "Float";
+        if (Std.isOfType(v, String)) return "String";
+        if (Std.isOfType(v, Bool)) return "Bool";
+        if (Std.isOfType(v, Array)) return "Array";
+        if (Reflect.isFunction(v)) return "function";
+        var cls = Type.getClass(v);
+        if (cls != null) {
+            var name = Type.getClassName(cls);
+            if (name != null) return name;
+        }
+        return "Unknown";
+    }
+
+    inline function checkArgCount(args:Array<Dynamic>, expectedMin:Int, expectedMax:Int, methodName:String):Void {
+        if (args.length < expectedMin || args.length > expectedMax) {
+            throw 'Method $methodName expected between $expectedMin and $expectedMax arguments but got ${args.length}';
+        }
+    }
+
+    inline function checkNum(v:Dynamic, methodName:String, argName:String = "argument"):Void {
+        if (!Std.isOfType(v, Float) && !Std.isOfType(v, Int)) {
+            throw '$methodName expected a number for $argName but got ${getTypeName(v)}';
+        }
+    }
+
+    inline function checkString(v:Dynamic, methodName:String, argName:String = "argument"):Void {
+        if (!Std.isOfType(v, String)) {
+            throw '$methodName expected a String for $argName but got ${getTypeName(v)}';
+        }
+    }
+
+    inline function checkInt(v:Dynamic, methodName:String, argName:String = "argument"):Void {
+        if (!Std.isOfType(v, Int)) {
+            throw '$methodName expected an Int for $argName but got ${getTypeName(v)}';
+        }
+    }
+
+    inline function checkFunction(v:Dynamic, methodName:String, argName:String = "callback"):Void {
+        if (v == null || !Reflect.isFunction(v)) {
+            throw '$methodName expected a function for $argName but got ${getTypeName(v)}';
+        }
+    }
+
     function eval(e:Expr, scope:Scope):Dynamic {
         if (e != null && e.pos != null) lastEvalPos = e.pos;
         var pos = e.pos;
@@ -480,15 +526,49 @@ class Interp {
                     var str:String = cast obj;
                     if (field == "length") return str.length;
                     switch (field) {
-                        case "split": return (delim:String) -> str.split(delim);
-                        case "indexOf": return (sub:String, ?start:Int) -> str.indexOf(sub, start);
-                        case "lastIndexOf": return (sub:String, ?start:Int) -> str.lastIndexOf(sub, start);
-                        case "charAt": return (idx:Int) -> str.charAt(idx);
-                        case "charCodeAt": return (idx:Int) -> str.charCodeAt(idx);
-                        case "substring": return (start:Int, ?end:Int) -> str.substring(start, end);
-                        case "substr": return (start:Int, ?len:Int) -> str.substr(start, len);
-                        case "toLowerCase": return () -> str.toLowerCase();
-                        case "toUpperCase": return () -> str.toUpperCase();
+                        case "split":
+                            return (delim:Dynamic) -> {
+                                checkString(delim, "String.split", "delimiter");
+                                return str.split(delim);
+                            };
+                        case "indexOf":
+                            return (sub:Dynamic, ?start:Dynamic) -> {
+                                checkString(sub, "String.indexOf", "substring");
+                                if (start != null) checkInt(start, "String.indexOf", "start index");
+                                return str.indexOf(sub, start);
+                            };
+                        case "lastIndexOf":
+                            return (sub:Dynamic, ?start:Dynamic) -> {
+                                checkString(sub, "String.lastIndexOf", "substring");
+                                if (start != null) checkInt(start, "String.lastIndexOf", "start index");
+                                return str.lastIndexOf(sub, start);
+                            };
+                        case "charAt":
+                            return (idx:Dynamic) -> {
+                                checkInt(idx, "String.charAt", "index");
+                                return str.charAt(idx);
+                            };
+                        case "charCodeAt":
+                            return (idx:Dynamic) -> {
+                                checkInt(idx, "String.charCodeAt", "index");
+                                return str.charCodeAt(idx);
+                            };
+                        case "substring":
+                            return (start:Dynamic, ?end:Dynamic) -> {
+                                checkInt(start, "String.substring", "start index");
+                                if (end != null) checkInt(end, "String.substring", "end index");
+                                return str.substring(start, end);
+                            };
+                        case "substr":
+                            return (start:Dynamic, ?len:Dynamic) -> {
+                                checkInt(start, "String.substr", "start index");
+                                if (len != null) checkInt(len, "String.substr", "length");
+                                return str.substr(start, len);
+                            };
+                        case "toLowerCase":
+                            return () -> str.toLowerCase();
+                        case "toUpperCase":
+                            return () -> str.toUpperCase();
                         default:
                     }
                 }
@@ -496,36 +576,119 @@ class Interp {
                     var arr:Array<Dynamic> = cast obj;
                     if (field == "length") return arr.length;
                     switch (field) {
-                        case "push": return (x:Dynamic) -> arr.push(x);
-                        case "pop": return () -> arr.pop();
-                        case "shift": return () -> arr.shift();
-                        case "unshift": return (x:Dynamic) -> arr.unshift(x);
-                        case "remove": return (x:Dynamic) -> arr.remove(x);
-                        case "indexOf": return (x:Dynamic, ?start:Int) -> arr.indexOf(x, start);
-                        case "join": return (sep:String) -> arr.join(sep);
-                        case "slice": return (start:Int, ?end:Int) -> arr.slice(start, end);
-                        case "copy": return () -> arr.copy();
-                        case "filter": return (f:Dynamic->Bool) -> arr.filter(f);
-                        case "map": return (f:Dynamic->Dynamic) -> arr.map(f);
+                        case "push":
+                            return (x:Dynamic) -> arr.push(x);
+                        case "pop":
+                            return () -> arr.pop();
+                        case "shift":
+                            return () -> arr.shift();
+                        case "unshift":
+                            return (x:Dynamic) -> {
+                                arr.unshift(x);
+                                return null;
+                            };
+                        case "remove":
+                            return (x:Dynamic) -> arr.remove(x);
+                        case "indexOf":
+                            return (x:Dynamic, ?start:Dynamic) -> {
+                                if (start != null) checkInt(start, "Array.indexOf", "start index");
+                                return arr.indexOf(x, start);
+                            };
+                        case "join":
+                            return (sep:Dynamic) -> {
+                                checkString(sep, "Array.join", "separator");
+                                return arr.join(sep);
+                            };
+                        case "slice":
+                            return (start:Dynamic, ?end:Dynamic) -> {
+                                checkInt(start, "Array.slice", "start index");
+                                if (end != null) checkInt(end, "Array.slice", "end index");
+                                return arr.slice(start, end);
+                            };
+                        case "copy":
+                            return () -> arr.copy();
+                        case "filter":
+                            return (f:Dynamic) -> {
+                                checkFunction(f, "Array.filter", "callback");
+                                return arr.filter((x) -> Reflect.callMethod(null, f, [x]));
+                            };
+                        case "map":
+                            return (f:Dynamic) -> {
+                                checkFunction(f, "Array.map", "callback");
+                                return arr.map((x) -> Reflect.callMethod(null, f, [x]));
+                            };
                         default:
                     }
                 }
                 if (obj == Math) {
                     if (field == "PI") return Math.PI;
                     switch (field) {
-                        case "abs": return (x:Float) -> Math.abs(x);
-                        case "sin": return (x:Float) -> Math.sin(x);
-                        case "cos": return (x:Float) -> Math.cos(x);
-                        case "tan": return (x:Float) -> Math.tan(x);
-                        case "atan2": return (y:Float, x:Float) -> Math.atan2(y, x);
-                        case "sqrt": return (x:Float) -> Math.sqrt(x);
-                        case "pow": return (v:Float, exp:Float) -> Math.pow(v, exp);
-                        case "floor": return (x:Float) -> Math.floor(x);
-                        case "ceil": return (x:Float) -> Math.ceil(x);
-                        case "round": return (x:Float) -> Math.round(x);
-                        case "random": return () -> Math.random();
-                        case "min": return (a:Float, b:Float) -> Math.min(a, b);
-                        case "max": return (a:Float, b:Float) -> Math.max(a, b);
+                        case "abs":
+                            return (x:Dynamic) -> {
+                                checkNum(x, "Math.abs");
+                                return Math.abs(x);
+                            };
+                        case "sin":
+                            return (x:Dynamic) -> {
+                                checkNum(x, "Math.sin");
+                                return Math.sin(x);
+                            };
+                        case "cos":
+                            return (x:Dynamic) -> {
+                                checkNum(x, "Math.cos");
+                                return Math.cos(x);
+                            };
+                        case "tan":
+                            return (x:Dynamic) -> {
+                                checkNum(x, "Math.tan");
+                                return Math.tan(x);
+                            };
+                        case "atan2":
+                            return (y:Dynamic, x:Dynamic) -> {
+                                checkNum(y, "Math.atan2", "y");
+                                checkNum(x, "Math.atan2", "x");
+                                return Math.atan2(y, x);
+                            };
+                        case "sqrt":
+                            return (x:Dynamic) -> {
+                                checkNum(x, "Math.sqrt");
+                                return Math.sqrt(x);
+                            };
+                        case "pow":
+                            return (v:Dynamic, exp:Dynamic) -> {
+                                checkNum(v, "Math.pow", "base");
+                                checkNum(exp, "Math.pow", "exponent");
+                                return Math.pow(v, exp);
+                            };
+                        case "floor":
+                            return (x:Dynamic) -> {
+                                checkNum(x, "Math.floor");
+                                return Math.floor(x);
+                            };
+                        case "ceil":
+                            return (x:Dynamic) -> {
+                                checkNum(x, "Math.ceil");
+                                return Math.ceil(x);
+                            };
+                        case "round":
+                            return (x:Dynamic) -> {
+                                checkNum(x, "Math.round");
+                                return Math.round(x);
+                            };
+                        case "random":
+                            return () -> Math.random();
+                        case "min":
+                            return (a:Dynamic, b:Dynamic) -> {
+                                checkNum(a, "Math.min", "a");
+                                checkNum(b, "Math.min", "b");
+                                return Math.min(a, b);
+                            };
+                        case "max":
+                            return (a:Dynamic, b:Dynamic) -> {
+                                checkNum(a, "Math.max", "a");
+                                checkNum(b, "Math.max", "b");
+                                return Math.max(a, b);
+                            };
                         default:
                     }
                 }
@@ -623,53 +786,153 @@ class Interp {
                                         var str:String = cast obj;
                                         var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
                                         switch (field) {
-                                            case "split": return str.split(args[0]);
-                                            case "indexOf": return args.length > 1 ? str.indexOf(args[0], args[1]) : str.indexOf(args[0]);
-                                            case "lastIndexOf": return args.length > 1 ? str.lastIndexOf(args[0], args[1]) : str.lastIndexOf(args[0]);
-                                            case "charAt": return str.charAt(args[0]);
-                                            case "charCodeAt": return str.charCodeAt(args[0]);
-                                            case "substring": return args.length > 1 ? str.substring(args[0], args[1]) : str.substring(args[0]);
-                                            case "substr": return args.length > 1 ? str.substr(args[0], args[1]) : str.substr(args[0]);
-                                            case "toLowerCase": return str.toLowerCase();
-                                            case "toUpperCase": return str.toUpperCase();
-                                            default:
+                                             case "split":
+                                                 checkArgCount(args, 1, 1, "String.split");
+                                                 checkString(args[0], "String.split", "delimiter");
+                                                 return str.split(args[0]);
+                                             case "indexOf":
+                                                 checkArgCount(args, 1, 2, "String.indexOf");
+                                                 checkString(args[0], "String.indexOf", "substring");
+                                                 if (args.length > 1) checkInt(args[1], "String.indexOf", "start index");
+                                                 return args.length > 1 ? str.indexOf(args[0], args[1]) : str.indexOf(args[0]);
+                                             case "lastIndexOf":
+                                                 checkArgCount(args, 1, 2, "String.lastIndexOf");
+                                                 checkString(args[0], "String.lastIndexOf", "substring");
+                                                 if (args.length > 1) checkInt(args[1], "String.lastIndexOf", "start index");
+                                                 return args.length > 1 ? str.lastIndexOf(args[0], args[1]) : str.lastIndexOf(args[0]);
+                                             case "charAt":
+                                                 checkArgCount(args, 1, 1, "String.charAt");
+                                                 checkInt(args[0], "String.charAt", "index");
+                                                 return str.charAt(args[0]);
+                                             case "charCodeAt":
+                                                 checkArgCount(args, 1, 1, "String.charCodeAt");
+                                                 checkInt(args[0], "String.charCodeAt", "index");
+                                                 return str.charCodeAt(args[0]);
+                                             case "substring":
+                                                 checkArgCount(args, 1, 2, "String.substring");
+                                                 checkInt(args[0], "String.substring", "start index");
+                                                 if (args.length > 1) checkInt(args[1], "String.substring", "end index");
+                                                 return args.length > 1 ? str.substring(args[0], args[1]) : str.substring(args[0]);
+                                             case "substr":
+                                                 checkArgCount(args, 1, 2, "String.substr");
+                                                 checkInt(args[0], "String.substr", "start index");
+                                                 if (args.length > 1) checkInt(args[1], "String.substr", "length");
+                                                 return args.length > 1 ? str.substr(args[0], args[1]) : str.substr(args[0]);
+                                             case "toLowerCase":
+                                                 checkArgCount(args, 0, 0, "String.toLowerCase");
+                                                 return str.toLowerCase();
+                                             case "toUpperCase":
+                                                 checkArgCount(args, 0, 0, "String.toUpperCase");
+                                                 return str.toUpperCase();
+                                             default:
                                         }
                                     }
                                     if (Std.isOfType(obj, Array)) {
                                         var arr:Array<Dynamic> = cast obj;
                                         var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
                                         switch (field) {
-                                            case "push": return arr.push(args[0]);
-                                            case "pop": return arr.pop();
-                                            case "shift": return arr.shift();
-                                            case "unshift": arr.unshift(args[0]); return null;
-                                            case "remove": return arr.remove(args[0]);
-                                            case "indexOf": return args.length > 1 ? arr.indexOf(args[0], args[1]) : arr.indexOf(args[0]);
-                                            case "join": return arr.join(args[0]);
-                                            case "slice": return args.length > 1 ? arr.slice(args[0], args[1]) : arr.slice(args[0]);
-                                            case "copy": return arr.copy();
-                                            case "filter": return arr.filter((x) -> Reflect.callMethod(null, args[0], [x]));
-                                            case "map": return arr.map((x) -> Reflect.callMethod(null, args[0], [x]));
-                                            default:
+                                             case "push":
+                                                 checkArgCount(args, 1, 1, "Array.push");
+                                                 return arr.push(args[0]);
+                                             case "pop":
+                                                 checkArgCount(args, 0, 0, "Array.pop");
+                                                 return arr.pop();
+                                             case "shift":
+                                                 checkArgCount(args, 0, 0, "Array.shift");
+                                                 return arr.shift();
+                                             case "unshift":
+                                                 checkArgCount(args, 1, 1, "Array.unshift");
+                                                 arr.unshift(args[0]);
+                                                 return null;
+                                             case "remove":
+                                                 checkArgCount(args, 1, 1, "Array.remove");
+                                                 return arr.remove(args[0]);
+                                             case "indexOf":
+                                                 checkArgCount(args, 1, 2, "Array.indexOf");
+                                                 if (args.length > 1) checkInt(args[1], "Array.indexOf", "start index");
+                                                 return args.length > 1 ? arr.indexOf(args[0], args[1]) : arr.indexOf(args[0]);
+                                             case "join":
+                                                 checkArgCount(args, 1, 1, "Array.join");
+                                                 checkString(args[0], "Array.join", "separator");
+                                                 return arr.join(args[0]);
+                                             case "slice":
+                                                 checkArgCount(args, 1, 2, "Array.slice");
+                                                 checkInt(args[0], "Array.slice", "start index");
+                                                 if (args.length > 1) checkInt(args[1], "Array.slice", "end index");
+                                                 return args.length > 1 ? arr.slice(args[0], args[1]) : arr.slice(args[0]);
+                                             case "copy":
+                                                 checkArgCount(args, 0, 0, "Array.copy");
+                                                 return arr.copy();
+                                             case "filter":
+                                                 checkArgCount(args, 1, 1, "Array.filter");
+                                                 checkFunction(args[0], "Array.filter", "callback");
+                                                 return arr.filter((x) -> Reflect.callMethod(null, args[0], [x]));
+                                             case "map":
+                                                 checkArgCount(args, 1, 1, "Array.map");
+                                                 checkFunction(args[0], "Array.map", "callback");
+                                                 return arr.map((x) -> Reflect.callMethod(null, args[0], [x]));
+                                             default:
                                         }
                                     }
                                     if (obj == Math) {
                                         var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
                                         switch (field) {
-                                            case "abs": return Math.abs(args[0]);
-                                            case "sin": return Math.sin(args[0]);
-                                            case "cos": return Math.cos(args[0]);
-                                            case "tan": return Math.tan(args[0]);
-                                            case "atan2": return Math.atan2(args[0], args[1]);
-                                            case "sqrt": return Math.sqrt(args[0]);
-                                            case "pow": return Math.pow(args[0], args[1]);
-                                            case "floor": return Math.floor(args[0]);
-                                            case "ceil": return Math.ceil(args[0]);
-                                            case "round": return Math.round(args[0]);
-                                            case "random": return Math.random();
-                                            case "min": return Math.min(args[0], args[1]);
-                                            case "max": return Math.max(args[0], args[1]);
-                                            default:
+                                             case "abs":
+                                                 checkArgCount(args, 1, 1, "Math.abs");
+                                                 checkNum(args[0], "Math.abs");
+                                                 return Math.abs(args[0]);
+                                             case "sin":
+                                                 checkArgCount(args, 1, 1, "Math.sin");
+                                                 checkNum(args[0], "Math.sin");
+                                                 return Math.sin(args[0]);
+                                             case "cos":
+                                                 checkArgCount(args, 1, 1, "Math.cos");
+                                                 checkNum(args[0], "Math.cos");
+                                                 return Math.cos(args[0]);
+                                             case "tan":
+                                                 checkArgCount(args, 1, 1, "Math.tan");
+                                                 checkNum(args[0], "Math.tan");
+                                                 return Math.tan(args[0]);
+                                             case "atan2":
+                                                 checkArgCount(args, 2, 2, "Math.atan2");
+                                                 checkNum(args[0], "Math.atan2", "y");
+                                                 checkNum(args[1], "Math.atan2", "x");
+                                                 return Math.atan2(args[0], args[1]);
+                                             case "sqrt":
+                                                 checkArgCount(args, 1, 1, "Math.sqrt");
+                                                 checkNum(args[0], "Math.sqrt");
+                                                 return Math.sqrt(args[0]);
+                                             case "pow":
+                                                 checkArgCount(args, 2, 2, "Math.pow");
+                                                 checkNum(args[0], "Math.pow", "base");
+                                                 checkNum(args[1], "Math.pow", "exponent");
+                                                 return Math.pow(args[0], args[1]);
+                                             case "floor":
+                                                 checkArgCount(args, 1, 1, "Math.floor");
+                                                 checkNum(args[0], "Math.floor");
+                                                 return Math.floor(args[0]);
+                                             case "ceil":
+                                                 checkArgCount(args, 1, 1, "Math.ceil");
+                                                 checkNum(args[0], "Math.ceil");
+                                                 return Math.ceil(args[0]);
+                                             case "round":
+                                                 checkArgCount(args, 1, 1, "Math.round");
+                                                 checkNum(args[0], "Math.round");
+                                                 return Math.round(args[0]);
+                                             case "random":
+                                                 checkArgCount(args, 0, 0, "Math.random");
+                                                 return Math.random();
+                                             case "min":
+                                                 checkArgCount(args, 2, 2, "Math.min");
+                                                 checkNum(args[0], "Math.min", "a");
+                                                 checkNum(args[1], "Math.min", "b");
+                                                 return Math.min(args[0], args[1]);
+                                             case "max":
+                                                 checkArgCount(args, 2, 2, "Math.max");
+                                                 checkNum(args[0], "Math.max", "a");
+                                                 checkNum(args[1], "Math.max", "b");
+                                                 return Math.max(args[0], args[1]);
+                                             default:
                                         }
                                     }
                                     var method = Reflect.field(obj, field);
