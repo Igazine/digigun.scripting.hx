@@ -101,6 +101,9 @@ enum TokenDef {
     
     TMapArrow; // =>
     TArrow;    // ->
+    TDotDotDot;
+    TDoubleQuestion;
+    TQuestionDot;
 }
 
 typedef Token = {
@@ -154,6 +157,7 @@ enum ExprDef {
     ECast(expr:Expr, ?type:TypeDecl);
     EInterface(name:String, methods:Array<{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>}>, ?parents:Array<String>);
     EEnum(name:String, constructors:Array<{name:String, args:Null<Array<{name:String, type:Null<TypeDecl>}>>}>);
+    ESafeField(e:Expr, field:String);
 }
 
 typedef Expr = {

@@ -374,13 +374,24 @@ class Parser {
     }
 
     function parseTernary():Expr {
-        var e = parseOr();
+        var e = parseCoalesce();
         var t = peek();
         if (match(TQuestion)) {
             var e1 = parseExpr();
             expect(TColon);
             var e2 = parseTernary();
             return mk(EBinop("?", e, mk(EBinop(":", e1, e2), t.pos)), t.pos);
+        }
+        return e;
+    }
+
+    function parseCoalesce():Expr {
+        var e = parseOr();
+        var t = peek();
+        while (match(TDoubleQuestion)) {
+            var e2 = parseOr();
+            e = mk(EBinop("??", e, e2), t.pos);
+            t = peek();
         }
         return e;
     }
@@ -420,7 +431,7 @@ class Parser {
     }
 
     function parseRelation():Expr {
-        var e = parseShift();
+        var e = parseInterval();
         var t = peek();
         while (is(TLess) || is(TLessEqual) || is(TGreater) || is(TGreaterEqual) || is(TIn)) {
             var op = "";
@@ -430,8 +441,19 @@ class Parser {
             else if (match(TGreaterEqual)) op = ">=";
             else if (match(TIn)) op = "in";
             
-            var e2 = parseShift();
+            var e2 = parseInterval();
             e = mk(EBinop(op, e, e2), t.pos);
+            t = peek();
+        }
+        return e;
+    }
+
+    function parseInterval():Expr {
+        var e = parseShift();
+        var t = peek();
+        while (match(TDotDotDot)) {
+            var e2 = parseShift();
+            e = mk(EBinop("...", e, e2), t.pos);
             t = peek();
         }
         return e;
@@ -520,6 +542,9 @@ class Parser {
             if (match(TDot)) {
                 var field = expectIdent();
                 e = mk(EField(e, field), t.pos);
+            } else if (match(TQuestionDot)) {
+                var field = expectIdent();
+                e = mk(ESafeField(e, field), t.pos);
             } else if (is(TParenOpen)) {
                 var args = parseCallArgs();
                 e = mk(ECall(e, args), t.pos);

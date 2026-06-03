@@ -833,5 +833,111 @@ class TestHaxiom {
         expectError('[1, 2].filter(123)', "Array.filter expected a function for callback but got Int", "Array.filter direct wrong-type");
         expectError('var f = [1, 2].filter; f(123)', "Array.filter expected a function for callback but got Int", "Array.filter closure wrong-type");
         expectError('[1, 2].join(123)', "Array.join expected a String for separator but got Int", "Array.join direct wrong-type");
+
+        // 36. Null Safety: Coalescing (??) and Safe Navigation (?.)
+        var script36 = '
+            var a = null;
+            var b = a ?? "fallback";
+            trace("Coalesce null: " + b);
+            
+            var c = "hello" ?? "fallback";
+            trace("Coalesce value: " + c);
+            
+            var obj:Dynamic = null;
+            var field = obj?.someField;
+            trace("Safe field null: " + field);
+            
+            var methodRes = obj?.someMethod(1, 2);
+            trace("Safe method null: " + methodRes);
+            
+            var realObj:Dynamic = { value: "tamas" };
+            var safeReal = realObj?.value;
+            trace("Safe field value: " + safeReal);
+        ';
+        haxiom.interpret(script36);
+
+        // 37. Range Iteration (0...5)
+        var script37 = '
+            var count = 0;
+            for (i in 0...5) {
+                count += i;
+            }
+            trace("Range iteration sum (0-4): " + count);
+        ';
+        haxiom.interpret(script37);
+
+        // 38. Newly Exposed Stdlib Parity Methods
+        var script38 = '
+            // String additions
+            var s = "  haxiom  ";
+            trace("StringTools.trim: " + s.trim());
+            trace("StringTools.startsWith: " + s.trim().startsWith("hax"));
+            trace("StringTools.endsWith: " + s.trim().endsWith("iom"));
+            trace("StringTools.replace: " + s.trim().replace("iom", "io"));
+            
+            // Array additions
+            var arr = [10, 20];
+            arr.insert(1, 15);
+            trace("Array.insert: " + arr.join(","));
+            arr.reverse();
+            trace("Array.reverse: " + arr.join(","));
+            arr.sort(function(a, b) { return a - b; });
+            trace("Array.sort: " + arr.join(","));
+            trace("Array.contains: " + arr.contains(15));
+            
+            // Math additions
+            trace("Math.asin(0): " + Math.asin(0));
+            trace("Math.acos(1): " + Math.acos(1));
+            trace("Math.isNaN: " + Math.isNaN(Math.NaN));
+            
+            // Map parity
+            var map = ["x" => 1, "y" => 2];
+            trace("Map.exists: " + map.exists("x"));
+            map.remove("x");
+            trace("Map.exists post remove: " + map.exists("x"));
+            map.clear();
+            trace("Map.exists post clear: " + map.exists("y"));
+        ';
+        haxiom.interpret(script38);
+
+        // 39. Runtime FFI registration
+        FFI.registerClass(haxiom, "haxiom.FFIClassHelper", FFIClassHelper);
+        FFI.registerValue(haxiom, "haxiom.ffiValue", 123.45);
+        var script39 = '
+            var val = haxiom.ffiValue;
+            var helper = new haxiom.FFIClassHelper(2);
+            trace("FFI registered value: " + val);
+            trace("FFI registered class call: " + helper.multiply(10));
+        ';
+        haxiom.interpret(script39);
+
+        // 40. Macro Auto-Exposure FFI
+        FFI.registerExposedClasses(haxiom);
+        var script40 = '
+            var exposed = new haxiom.ExposedNativeClass(3);
+            trace("Macro auto-exposed class call: " + exposed.multiply(10));
+        ';
+        haxiom.interpret(script40);
+    }
+}
+
+class FFIClassHelper {
+    public var factor:Int;
+    public function new(factor:Int) {
+        this.factor = factor;
+    }
+    public function multiply(v:Int):Int {
+        return v * factor;
+    }
+}
+
+@:haxiom.expose
+class ExposedNativeClass {
+    public var multiplier:Int;
+    public function new(multiplier:Int) {
+        this.multiplier = multiplier;
+    }
+    public function multiply(v:Int):Int {
+        return v * multiplier;
     }
 }

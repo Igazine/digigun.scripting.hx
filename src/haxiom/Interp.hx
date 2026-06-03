@@ -297,6 +297,397 @@ class Interp {
         }
     }
 
+    function evalField(obj:Dynamic, field:String, scope:Scope, pos:Pos):Dynamic {
+        if (obj == null) throw 'Cannot read field "$field" of null';
+        
+        if (Std.isOfType(obj, String)) {
+            var str:String = cast obj;
+            if (field == "length") return str.length;
+            switch (field) {
+                case "split":
+                    return (delim:Dynamic) -> {
+                        checkString(delim, "String.split", "delimiter");
+                        return str.split(delim);
+                    };
+                case "indexOf":
+                    return (sub:Dynamic, ?start:Dynamic) -> {
+                        checkString(sub, "String.indexOf", "substring");
+                        if (start != null) checkInt(start, "String.indexOf", "start index");
+                        return str.indexOf(sub, start);
+                    };
+                case "lastIndexOf":
+                    return (sub:Dynamic, ?start:Dynamic) -> {
+                        checkString(sub, "String.lastIndexOf", "substring");
+                        if (start != null) checkInt(start, "String.lastIndexOf", "start index");
+                        return str.lastIndexOf(sub, start);
+                    };
+                case "charAt":
+                    return (idx:Dynamic) -> {
+                        checkInt(idx, "String.charAt", "index");
+                        return str.charAt(idx);
+                    };
+                case "charCodeAt":
+                    return (idx:Dynamic) -> {
+                        checkInt(idx, "String.charCodeAt", "index");
+                        return str.charCodeAt(idx);
+                    };
+                case "substring":
+                    return (start:Dynamic, ?end:Dynamic) -> {
+                        checkInt(start, "String.substring", "start index");
+                        if (end != null) checkInt(end, "String.substring", "end index");
+                        return str.substring(start, end);
+                    };
+                case "substr":
+                    return (start:Dynamic, ?len:Dynamic) -> {
+                        checkInt(start, "String.substr", "start index");
+                        if (len != null) checkInt(len, "String.substr", "length");
+                        return str.substr(start, len);
+                    };
+                case "toLowerCase":
+                    return () -> str.toLowerCase();
+                case "toUpperCase":
+                    return () -> str.toUpperCase();
+                case "toString":
+                    return () -> str;
+                case "startsWith":
+                    return (start:Dynamic) -> {
+                        checkString(start, "StringTools.startsWith", "prefix");
+                        return StringTools.startsWith(str, start);
+                    };
+                case "endsWith":
+                    return (end:Dynamic) -> {
+                        checkString(end, "StringTools.endsWith", "suffix");
+                        return StringTools.endsWith(str, end);
+                    };
+                case "trim":
+                    return () -> StringTools.trim(str);
+                case "ltrim":
+                    return () -> StringTools.ltrim(str);
+                case "rtrim":
+                    return () -> StringTools.rtrim(str);
+                case "replace":
+                    return (sub:Dynamic, by:Dynamic) -> {
+                        checkString(sub, "StringTools.replace", "sub");
+                        checkString(by, "StringTools.replace", "by");
+                        return StringTools.replace(str, sub, by);
+                    };
+                case "lpad":
+                    return (c:Dynamic, l:Dynamic) -> {
+                        checkString(c, "StringTools.lpad", "char");
+                        checkInt(l, "StringTools.lpad", "length");
+                        return StringTools.lpad(str, c, l);
+                    };
+                case "rpad":
+                    return (c:Dynamic, l:Dynamic) -> {
+                        checkString(c, "StringTools.rpad", "char");
+                        checkInt(l, "StringTools.rpad", "length");
+                        return StringTools.rpad(str, c, l);
+                    };
+                default:
+            }
+        }
+        if (Std.isOfType(obj, Array)) {
+            var arr:Array<Dynamic> = cast obj;
+            if (field == "length") return arr.length;
+            switch (field) {
+                case "push":
+                    return (x:Dynamic) -> arr.push(x);
+                case "pop":
+                    return () -> arr.pop();
+                case "shift":
+                    return () -> arr.shift();
+                case "unshift":
+                    return (x:Dynamic) -> {
+                        arr.unshift(x);
+                        return null;
+                    };
+                case "remove":
+                    return (x:Dynamic) -> arr.remove(x);
+                case "indexOf":
+                    return (x:Dynamic, ?start:Dynamic) -> {
+                        if (start != null) checkInt(start, "Array.indexOf", "start index");
+                        return arr.indexOf(x, start);
+                    };
+                case "lastIndexOf":
+                    return (x:Dynamic, ?start:Dynamic) -> {
+                        if (start != null) checkInt(start, "Array.lastIndexOf", "start index");
+                        return arr.lastIndexOf(x, start);
+                    };
+                case "insert":
+                    return (idx:Dynamic, x:Dynamic) -> {
+                        checkInt(idx, "Array.insert", "index");
+                        arr.insert(idx, x);
+                        return null;
+                    };
+                case "reverse":
+                    return () -> {
+                        arr.reverse();
+                        return null;
+                    };
+                case "sort":
+                    return (f:Dynamic) -> {
+                        checkFunction(f, "Array.sort", "comparator");
+                        arr.sort((a, b) -> Reflect.callMethod(null, f, [a, b]));
+                        return null;
+                    };
+                case "resize":
+                    return (len:Dynamic) -> {
+                        checkInt(len, "Array.resize", "length");
+                        arr.resize(len);
+                        return null;
+                    };
+                case "contains":
+                    return (x:Dynamic) -> arr.contains(x);
+                case "join":
+                    return (sep:Dynamic) -> {
+                        checkString(sep, "Array.join", "separator");
+                        return arr.join(sep);
+                    };
+                case "slice":
+                    return (start:Dynamic, ?end:Dynamic) -> {
+                        checkInt(start, "Array.slice", "start index");
+                        if (end != null) checkInt(end, "Array.slice", "end index");
+                        return arr.slice(start, end);
+                    };
+                case "copy":
+                    return () -> arr.copy();
+                case "filter":
+                    return (f:Dynamic) -> {
+                        checkFunction(f, "Array.filter", "callback");
+                        return arr.filter((x) -> Reflect.callMethod(null, f, [x]));
+                    };
+                case "map":
+                    return (f:Dynamic) -> {
+                        checkFunction(f, "Array.map", "callback");
+                        return arr.map((x) -> Reflect.callMethod(null, f, [x]));
+                    };
+                case "toString":
+                    return () -> arr.toString();
+                case "iterator":
+                    return () -> arr.iterator();
+                case "keyValueIterator":
+                    return () -> arr.keyValueIterator();
+                default:
+            }
+        }
+        if (obj == Math) {
+            if (field == "PI") return Math.PI;
+            if (field == "NaN") return Math.NaN;
+            if (field == "NEGATIVE_INFINITY") return Math.NEGATIVE_INFINITY;
+            if (field == "POSITIVE_INFINITY") return Math.POSITIVE_INFINITY;
+            switch (field) {
+                case "abs":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.abs");
+                        return Math.abs(x);
+                    };
+                case "sin":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.sin");
+                        return Math.sin(x);
+                    };
+                case "cos":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.cos");
+                        return Math.cos(x);
+                    };
+                case "tan":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.tan");
+                        return Math.tan(x);
+                    };
+                case "atan2":
+                    return (y:Dynamic, x:Dynamic) -> {
+                        checkNum(y, "Math.atan2", "y");
+                        checkNum(x, "Math.atan2", "x");
+                        return Math.atan2(y, x);
+                    };
+                case "sqrt":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.sqrt");
+                        return Math.sqrt(x);
+                    };
+                case "pow":
+                    return (v:Dynamic, exp:Dynamic) -> {
+                        checkNum(v, "Math.pow", "base");
+                        checkNum(exp, "Math.pow", "exponent");
+                        return Math.pow(v, exp);
+                    };
+                case "floor":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.floor");
+                        return Math.floor(x);
+                    };
+                case "ceil":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.ceil");
+                        return Math.ceil(x);
+                    };
+                case "round":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.round");
+                        return Math.round(x);
+                    };
+                case "random":
+                    return () -> Math.random();
+                case "min":
+                    return (a:Dynamic, b:Dynamic) -> {
+                        checkNum(a, "Math.min", "a");
+                        checkNum(b, "Math.min", "b");
+                        return Math.min(a, b);
+                    };
+                case "max":
+                    return (a:Dynamic, b:Dynamic) -> {
+                        checkNum(a, "Math.max", "a");
+                        checkNum(b, "Math.max", "b");
+                        return Math.max(a, b);
+                    };
+                case "acos":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.acos");
+                        return Math.acos(x);
+                    };
+                case "asin":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.asin");
+                        return Math.asin(x);
+                    };
+                case "atan":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.atan");
+                        return Math.atan(x);
+                    };
+                case "exp":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.exp");
+                        return Math.exp(x);
+                    };
+                case "log":
+                    return (x:Dynamic) -> {
+                        checkNum(x, "Math.log");
+                        return Math.log(x);
+                    };
+                case "isNaN":
+                    return (x:Dynamic) -> Math.isNaN(x);
+                case "isFinite":
+                    return (x:Dynamic) -> Math.isFinite(x);
+                default:
+            }
+        }
+        if (Std.isOfType(obj, haxe.Constraints.IMap)) {
+            var map:haxe.Constraints.IMap<Dynamic, Dynamic> = cast obj;
+            switch (field) {
+                case "exists":
+                    return (key:Dynamic) -> map.exists(key);
+                case "get":
+                    return (key:Dynamic) -> map.get(key);
+                case "set":
+                    return (key:Dynamic, val:Dynamic) -> {
+                        map.set(key, val);
+                        return null;
+                    };
+                case "remove":
+                    return (key:Dynamic) -> map.remove(key);
+                case "clear":
+                    return () -> {
+                        map.clear();
+                        return null;
+                    };
+                case "keys":
+                    return () -> map.keys();
+                case "iterator":
+                    return () -> map.iterator();
+                case "keyValueIterator":
+                    return () -> map.keyValueIterator();
+                case "toString":
+                    return () -> map.toString();
+                default:
+            }
+        }
+        
+        if (Std.isOfType(obj, HaxiomInstance)) {
+            var inst:HaxiomInstance = cast obj;
+            var fDef = findFieldDef(inst.cls, field);
+            if (fDef != null) {
+                checkMemberAccess(inst.cls, fDef.isPublic);
+                if (fDef.property != null && fDef.property.get == "get") {
+                    var m = findMethod(inst.cls, "get_" + field);
+                    if (m != null) return Reflect.callMethod(null, bindMethod(obj, m), []);
+                }
+            }
+            if (inst.fields.exists(field)) return inst.fields.get(field);
+            
+            var m = findMethod(inst.cls, field);
+            if (m != null) {
+                checkMemberAccess(inst.cls, m.isPublic);
+                return bindMethod(obj, m);
+            }
+            throw 'Method or field "$field" not found on class ${inst.cls.name}';
+        }
+        
+        if (Std.isOfType(obj, HaxiomClass)) {
+            var cls:HaxiomClass = cast obj;
+            var fDef = findFieldDef(cls, field);
+            if (fDef != null) {
+                checkMemberAccess(cls, fDef.isPublic);
+            }
+            if (cls.staticFields.exists(field)) return cls.staticFields.get(field);
+            
+            var m = findStaticMethod(cls, field);
+            if (m != null) {
+                checkMemberAccess(cls, m.isPublic);
+                return bindMethod(obj, m);
+            }
+            throw 'Static method or field "$field" not found on class ${cls.name}';
+        }
+
+        // Native Haxe reflection
+        var f = Reflect.field(obj, field);
+        if (Reflect.isFunction(f)) return f;
+        return f;
+    }
+
+    function assignField(obj:Dynamic, field:String, val:Dynamic, scope:Scope):Dynamic {
+        if (Std.isOfType(obj, HaxiomInstance)) {
+            var inst:HaxiomInstance = cast obj;
+            var fDef = findFieldDef(inst.cls, field);
+            if (fDef != null) {
+                checkMemberAccess(inst.cls, fDef.isPublic);
+                if (fDef.property != null && fDef.property.set == "set") {
+                    var m = findMethod(inst.cls, "set_" + field);
+                    if (m != null) return Reflect.callMethod(null, bindMethod(obj, m), [val]);
+                }
+                if (fDef.isFinal) {
+                    if (currentConstructorInstance != inst) {
+                        throw 'Cannot reassign final field $field outside of constructor';
+                    }
+                }
+                if (fDef.type != null) {
+                    checkType(val, fDef.type, scope);
+                }
+            }
+            inst.fields.set(field, val);
+        } else {
+            if (Std.isOfType(obj, HaxiomClass)) {
+                var cls:HaxiomClass = cast obj;
+                var fDef = findFieldDef(cls, field);
+                if (fDef != null) {
+                    checkMemberAccess(cls, fDef.isPublic);
+                    if (fDef.isFinal) {
+                        throw 'Cannot reassign static final field $field';
+                    }
+                    if (fDef.type != null) {
+                        checkType(val, fDef.type, scope);
+                    }
+                }
+                cls.staticFields.set(field, val);
+            } else {
+                Reflect.setField(obj, field, val);
+            }
+        }
+        return val;
+    }
+
     function eval(e:Expr, scope:Scope):Dynamic {
         if (e != null && e.pos != null) lastEvalPos = e.pos;
         var pos = e.pos;
@@ -382,44 +773,12 @@ class Interp {
                             default:
                         }
                         var obj = eval(objExpr, scope);
-                        if (Std.isOfType(obj, HaxiomInstance)) {
-                            var inst:HaxiomInstance = cast obj;
-                            var fDef = findFieldDef(inst.cls, field);
-                            if (fDef != null) {
-                                checkMemberAccess(inst.cls, fDef.isPublic);
-                                if (fDef.property != null && fDef.property.set == "set") {
-                                    var m = findMethod(inst.cls, "set_" + field);
-                                    if (m != null) return Reflect.callMethod(null, bindMethod(obj, m), [val]);
-                                }
-                                if (fDef.isFinal) {
-                                    if (currentConstructorInstance != inst) {
-                                        throw 'Cannot reassign final field $field outside of constructor';
-                                    }
-                                }
-                                if (fDef.type != null) {
-                                    checkType(val, fDef.type, scope);
-                                }
-                            }
-                            inst.fields.set(field, val);
-                        } else {
-                            if (Std.isOfType(obj, HaxiomClass)) {
-                                var cls:HaxiomClass = cast obj;
-                                var fDef = findFieldDef(cls, field);
-                                if (fDef != null) {
-                                    checkMemberAccess(cls, fDef.isPublic);
-                                    if (fDef.isFinal) {
-                                        throw 'Cannot reassign static final field $field';
-                                    }
-                                    if (fDef.type != null) {
-                                        checkType(val, fDef.type, scope);
-                                    }
-                                }
-                                cls.staticFields.set(field, val);
-                            } else {
-                                Reflect.setField(obj, field, val);
-                            }
-                        }
-                        return val;
+                        if (obj == null) throw 'Cannot write field "$field" of null';
+                        return assignField(obj, field, val, scope);
+                    case ESafeField(objExpr, field):
+                        var obj = eval(objExpr, scope);
+                        if (obj == null) return null;
+                        return assignField(obj, field, val, scope);
                     case EBinop("[]", objExpr, indexExpr):
                         var obj = eval(objExpr, scope);
                         var idx = eval(indexExpr, scope);
@@ -454,6 +813,19 @@ class Interp {
                     var obj = eval(e1, scope);
                     var idx = eval(e2, scope);
                     return getSubscript(obj, idx);
+                }
+
+                if (op == "??") {
+                    var v1 = eval(e1, scope);
+                    if (v1 != null) return v1;
+                    return eval(e2, scope);
+                }
+                if (op == "...") {
+                    var v1 = eval(e1, scope);
+                    var v2 = eval(e2, scope);
+                    checkInt(v1, "IntIterator start");
+                    checkInt(v2, "IntIterator end");
+                    return new IntIterator(cast v1, cast v2);
                 }
 
                 var v1 = eval(e1, scope);
@@ -520,219 +892,12 @@ class Interp {
                     default:
                 }
                 var obj = eval(objExpr, scope);
-                if (obj == null) throw 'Cannot read field "$field" of null';
-                
-                if (Std.isOfType(obj, String)) {
-                    var str:String = cast obj;
-                    if (field == "length") return str.length;
-                    switch (field) {
-                        case "split":
-                            return (delim:Dynamic) -> {
-                                checkString(delim, "String.split", "delimiter");
-                                return str.split(delim);
-                            };
-                        case "indexOf":
-                            return (sub:Dynamic, ?start:Dynamic) -> {
-                                checkString(sub, "String.indexOf", "substring");
-                                if (start != null) checkInt(start, "String.indexOf", "start index");
-                                return str.indexOf(sub, start);
-                            };
-                        case "lastIndexOf":
-                            return (sub:Dynamic, ?start:Dynamic) -> {
-                                checkString(sub, "String.lastIndexOf", "substring");
-                                if (start != null) checkInt(start, "String.lastIndexOf", "start index");
-                                return str.lastIndexOf(sub, start);
-                            };
-                        case "charAt":
-                            return (idx:Dynamic) -> {
-                                checkInt(idx, "String.charAt", "index");
-                                return str.charAt(idx);
-                            };
-                        case "charCodeAt":
-                            return (idx:Dynamic) -> {
-                                checkInt(idx, "String.charCodeAt", "index");
-                                return str.charCodeAt(idx);
-                            };
-                        case "substring":
-                            return (start:Dynamic, ?end:Dynamic) -> {
-                                checkInt(start, "String.substring", "start index");
-                                if (end != null) checkInt(end, "String.substring", "end index");
-                                return str.substring(start, end);
-                            };
-                        case "substr":
-                            return (start:Dynamic, ?len:Dynamic) -> {
-                                checkInt(start, "String.substr", "start index");
-                                if (len != null) checkInt(len, "String.substr", "length");
-                                return str.substr(start, len);
-                            };
-                        case "toLowerCase":
-                            return () -> str.toLowerCase();
-                        case "toUpperCase":
-                            return () -> str.toUpperCase();
-                        default:
-                    }
-                }
-                if (Std.isOfType(obj, Array)) {
-                    var arr:Array<Dynamic> = cast obj;
-                    if (field == "length") return arr.length;
-                    switch (field) {
-                        case "push":
-                            return (x:Dynamic) -> arr.push(x);
-                        case "pop":
-                            return () -> arr.pop();
-                        case "shift":
-                            return () -> arr.shift();
-                        case "unshift":
-                            return (x:Dynamic) -> {
-                                arr.unshift(x);
-                                return null;
-                            };
-                        case "remove":
-                            return (x:Dynamic) -> arr.remove(x);
-                        case "indexOf":
-                            return (x:Dynamic, ?start:Dynamic) -> {
-                                if (start != null) checkInt(start, "Array.indexOf", "start index");
-                                return arr.indexOf(x, start);
-                            };
-                        case "join":
-                            return (sep:Dynamic) -> {
-                                checkString(sep, "Array.join", "separator");
-                                return arr.join(sep);
-                            };
-                        case "slice":
-                            return (start:Dynamic, ?end:Dynamic) -> {
-                                checkInt(start, "Array.slice", "start index");
-                                if (end != null) checkInt(end, "Array.slice", "end index");
-                                return arr.slice(start, end);
-                            };
-                        case "copy":
-                            return () -> arr.copy();
-                        case "filter":
-                            return (f:Dynamic) -> {
-                                checkFunction(f, "Array.filter", "callback");
-                                return arr.filter((x) -> Reflect.callMethod(null, f, [x]));
-                            };
-                        case "map":
-                            return (f:Dynamic) -> {
-                                checkFunction(f, "Array.map", "callback");
-                                return arr.map((x) -> Reflect.callMethod(null, f, [x]));
-                            };
-                        default:
-                    }
-                }
-                if (obj == Math) {
-                    if (field == "PI") return Math.PI;
-                    switch (field) {
-                        case "abs":
-                            return (x:Dynamic) -> {
-                                checkNum(x, "Math.abs");
-                                return Math.abs(x);
-                            };
-                        case "sin":
-                            return (x:Dynamic) -> {
-                                checkNum(x, "Math.sin");
-                                return Math.sin(x);
-                            };
-                        case "cos":
-                            return (x:Dynamic) -> {
-                                checkNum(x, "Math.cos");
-                                return Math.cos(x);
-                            };
-                        case "tan":
-                            return (x:Dynamic) -> {
-                                checkNum(x, "Math.tan");
-                                return Math.tan(x);
-                            };
-                        case "atan2":
-                            return (y:Dynamic, x:Dynamic) -> {
-                                checkNum(y, "Math.atan2", "y");
-                                checkNum(x, "Math.atan2", "x");
-                                return Math.atan2(y, x);
-                            };
-                        case "sqrt":
-                            return (x:Dynamic) -> {
-                                checkNum(x, "Math.sqrt");
-                                return Math.sqrt(x);
-                            };
-                        case "pow":
-                            return (v:Dynamic, exp:Dynamic) -> {
-                                checkNum(v, "Math.pow", "base");
-                                checkNum(exp, "Math.pow", "exponent");
-                                return Math.pow(v, exp);
-                            };
-                        case "floor":
-                            return (x:Dynamic) -> {
-                                checkNum(x, "Math.floor");
-                                return Math.floor(x);
-                            };
-                        case "ceil":
-                            return (x:Dynamic) -> {
-                                checkNum(x, "Math.ceil");
-                                return Math.ceil(x);
-                            };
-                        case "round":
-                            return (x:Dynamic) -> {
-                                checkNum(x, "Math.round");
-                                return Math.round(x);
-                            };
-                        case "random":
-                            return () -> Math.random();
-                        case "min":
-                            return (a:Dynamic, b:Dynamic) -> {
-                                checkNum(a, "Math.min", "a");
-                                checkNum(b, "Math.min", "b");
-                                return Math.min(a, b);
-                            };
-                        case "max":
-                            return (a:Dynamic, b:Dynamic) -> {
-                                checkNum(a, "Math.max", "a");
-                                checkNum(b, "Math.max", "b");
-                                return Math.max(a, b);
-                            };
-                        default:
-                    }
-                }
-                
-                if (Std.isOfType(obj, HaxiomInstance)) {
-                    var inst:HaxiomInstance = cast obj;
-                    var fDef = findFieldDef(inst.cls, field);
-                    if (fDef != null) {
-                        checkMemberAccess(inst.cls, fDef.isPublic);
-                        if (fDef.property != null && fDef.property.get == "get") {
-                            var m = findMethod(inst.cls, "get_" + field);
-                            if (m != null) return Reflect.callMethod(null, bindMethod(obj, m), []);
-                        }
-                    }
-                    if (inst.fields.exists(field)) return inst.fields.get(field);
-                    
-                    var m = findMethod(inst.cls, field);
-                    if (m != null) {
-                        checkMemberAccess(inst.cls, m.isPublic);
-                        return bindMethod(obj, m);
-                    }
-                    throw 'Method or field "$field" not found on class ${inst.cls.name}';
-                }
-                
-                if (Std.isOfType(obj, HaxiomClass)) {
-                    var cls:HaxiomClass = cast obj;
-                    var fDef = findFieldDef(cls, field);
-                    if (fDef != null) {
-                        checkMemberAccess(cls, fDef.isPublic);
-                    }
-                    if (cls.staticFields.exists(field)) return cls.staticFields.get(field);
-                    
-                    var m = findStaticMethod(cls, field);
-                    if (m != null) {
-                        checkMemberAccess(cls, m.isPublic);
-                        return bindMethod(obj, m);
-                    }
-                    throw 'Static method or field "$field" not found on class ${cls.name}';
-                }
+                return evalField(obj, field, scope, pos);
 
-                // Native Haxe reflection
-                var f = Reflect.field(obj, field);
-                if (Reflect.isFunction(f)) return f;
-                return f;
+            case ESafeField(objExpr, field):
+                var obj = eval(objExpr, scope);
+                if (obj == null) return null;
+                return evalField(obj, field, scope, pos);
 
             case ECall(calleeExpr, argsExprs):
                 switch (calleeExpr.def) {
@@ -774,175 +939,324 @@ class Interp {
                 }
                 
                 // Native Haxe object method call bound-this optimization
+                var isSafe = false;
+                var objExpr:Expr = null;
+                var field:String = null;
                 switch (calleeExpr.def) {
-                    case EField(objExpr, field):
-                        switch (objExpr.def) {
-                            case EIdent("super"):
-                                // Skip super calls for bound-this optimization to prevent scope evaluation error
+                    case EField(oe, f):
+                        switch (oe.def) {
+                            case EIdent("super"): // skip
                             default:
-                                var obj = eval(objExpr, scope);
-                                if (obj != null && !Std.isOfType(obj, HaxiomInstance) && !Std.isOfType(obj, HaxiomClass)) {
-                                    if (Std.isOfType(obj, String)) {
-                                        var str:String = cast obj;
-                                        var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
-                                        switch (field) {
-                                             case "split":
-                                                 checkArgCount(args, 1, 1, "String.split");
-                                                 checkString(args[0], "String.split", "delimiter");
-                                                 return str.split(args[0]);
-                                             case "indexOf":
-                                                 checkArgCount(args, 1, 2, "String.indexOf");
-                                                 checkString(args[0], "String.indexOf", "substring");
-                                                 if (args.length > 1) checkInt(args[1], "String.indexOf", "start index");
-                                                 return args.length > 1 ? str.indexOf(args[0], args[1]) : str.indexOf(args[0]);
-                                             case "lastIndexOf":
-                                                 checkArgCount(args, 1, 2, "String.lastIndexOf");
-                                                 checkString(args[0], "String.lastIndexOf", "substring");
-                                                 if (args.length > 1) checkInt(args[1], "String.lastIndexOf", "start index");
-                                                 return args.length > 1 ? str.lastIndexOf(args[0], args[1]) : str.lastIndexOf(args[0]);
-                                             case "charAt":
-                                                 checkArgCount(args, 1, 1, "String.charAt");
-                                                 checkInt(args[0], "String.charAt", "index");
-                                                 return str.charAt(args[0]);
-                                             case "charCodeAt":
-                                                 checkArgCount(args, 1, 1, "String.charCodeAt");
-                                                 checkInt(args[0], "String.charCodeAt", "index");
-                                                 return str.charCodeAt(args[0]);
-                                             case "substring":
-                                                 checkArgCount(args, 1, 2, "String.substring");
-                                                 checkInt(args[0], "String.substring", "start index");
-                                                 if (args.length > 1) checkInt(args[1], "String.substring", "end index");
-                                                 return args.length > 1 ? str.substring(args[0], args[1]) : str.substring(args[0]);
-                                             case "substr":
-                                                 checkArgCount(args, 1, 2, "String.substr");
-                                                 checkInt(args[0], "String.substr", "start index");
-                                                 if (args.length > 1) checkInt(args[1], "String.substr", "length");
-                                                 return args.length > 1 ? str.substr(args[0], args[1]) : str.substr(args[0]);
-                                             case "toLowerCase":
-                                                 checkArgCount(args, 0, 0, "String.toLowerCase");
-                                                 return str.toLowerCase();
-                                             case "toUpperCase":
-                                                 checkArgCount(args, 0, 0, "String.toUpperCase");
-                                                 return str.toUpperCase();
-                                             default:
-                                        }
-                                    }
-                                    if (Std.isOfType(obj, Array)) {
-                                        var arr:Array<Dynamic> = cast obj;
-                                        var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
-                                        switch (field) {
-                                             case "push":
-                                                 checkArgCount(args, 1, 1, "Array.push");
-                                                 return arr.push(args[0]);
-                                             case "pop":
-                                                 checkArgCount(args, 0, 0, "Array.pop");
-                                                 return arr.pop();
-                                             case "shift":
-                                                 checkArgCount(args, 0, 0, "Array.shift");
-                                                 return arr.shift();
-                                             case "unshift":
-                                                 checkArgCount(args, 1, 1, "Array.unshift");
-                                                 arr.unshift(args[0]);
-                                                 return null;
-                                             case "remove":
-                                                 checkArgCount(args, 1, 1, "Array.remove");
-                                                 return arr.remove(args[0]);
-                                             case "indexOf":
-                                                 checkArgCount(args, 1, 2, "Array.indexOf");
-                                                 if (args.length > 1) checkInt(args[1], "Array.indexOf", "start index");
-                                                 return args.length > 1 ? arr.indexOf(args[0], args[1]) : arr.indexOf(args[0]);
-                                             case "join":
-                                                 checkArgCount(args, 1, 1, "Array.join");
-                                                 checkString(args[0], "Array.join", "separator");
-                                                 return arr.join(args[0]);
-                                             case "slice":
-                                                 checkArgCount(args, 1, 2, "Array.slice");
-                                                 checkInt(args[0], "Array.slice", "start index");
-                                                 if (args.length > 1) checkInt(args[1], "Array.slice", "end index");
-                                                 return args.length > 1 ? arr.slice(args[0], args[1]) : arr.slice(args[0]);
-                                             case "copy":
-                                                 checkArgCount(args, 0, 0, "Array.copy");
-                                                 return arr.copy();
-                                             case "filter":
-                                                 checkArgCount(args, 1, 1, "Array.filter");
-                                                 checkFunction(args[0], "Array.filter", "callback");
-                                                 return arr.filter((x) -> Reflect.callMethod(null, args[0], [x]));
-                                             case "map":
-                                                 checkArgCount(args, 1, 1, "Array.map");
-                                                 checkFunction(args[0], "Array.map", "callback");
-                                                 return arr.map((x) -> Reflect.callMethod(null, args[0], [x]));
-                                             default:
-                                        }
-                                    }
-                                    if (obj == Math) {
-                                        var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
-                                        switch (field) {
-                                             case "abs":
-                                                 checkArgCount(args, 1, 1, "Math.abs");
-                                                 checkNum(args[0], "Math.abs");
-                                                 return Math.abs(args[0]);
-                                             case "sin":
-                                                 checkArgCount(args, 1, 1, "Math.sin");
-                                                 checkNum(args[0], "Math.sin");
-                                                 return Math.sin(args[0]);
-                                             case "cos":
-                                                 checkArgCount(args, 1, 1, "Math.cos");
-                                                 checkNum(args[0], "Math.cos");
-                                                 return Math.cos(args[0]);
-                                             case "tan":
-                                                 checkArgCount(args, 1, 1, "Math.tan");
-                                                 checkNum(args[0], "Math.tan");
-                                                 return Math.tan(args[0]);
-                                             case "atan2":
-                                                 checkArgCount(args, 2, 2, "Math.atan2");
-                                                 checkNum(args[0], "Math.atan2", "y");
-                                                 checkNum(args[1], "Math.atan2", "x");
-                                                 return Math.atan2(args[0], args[1]);
-                                             case "sqrt":
-                                                 checkArgCount(args, 1, 1, "Math.sqrt");
-                                                 checkNum(args[0], "Math.sqrt");
-                                                 return Math.sqrt(args[0]);
-                                             case "pow":
-                                                 checkArgCount(args, 2, 2, "Math.pow");
-                                                 checkNum(args[0], "Math.pow", "base");
-                                                 checkNum(args[1], "Math.pow", "exponent");
-                                                 return Math.pow(args[0], args[1]);
-                                             case "floor":
-                                                 checkArgCount(args, 1, 1, "Math.floor");
-                                                 checkNum(args[0], "Math.floor");
-                                                 return Math.floor(args[0]);
-                                             case "ceil":
-                                                 checkArgCount(args, 1, 1, "Math.ceil");
-                                                 checkNum(args[0], "Math.ceil");
-                                                 return Math.ceil(args[0]);
-                                             case "round":
-                                                 checkArgCount(args, 1, 1, "Math.round");
-                                                 checkNum(args[0], "Math.round");
-                                                 return Math.round(args[0]);
-                                             case "random":
-                                                 checkArgCount(args, 0, 0, "Math.random");
-                                                 return Math.random();
-                                             case "min":
-                                                 checkArgCount(args, 2, 2, "Math.min");
-                                                 checkNum(args[0], "Math.min", "a");
-                                                 checkNum(args[1], "Math.min", "b");
-                                                 return Math.min(args[0], args[1]);
-                                             case "max":
-                                                 checkArgCount(args, 2, 2, "Math.max");
-                                                 checkNum(args[0], "Math.max", "a");
-                                                 checkNum(args[1], "Math.max", "b");
-                                                 return Math.max(args[0], args[1]);
-                                             default:
-                                        }
-                                    }
-                                    var method = Reflect.field(obj, field);
-                                    if (method != null && Reflect.isFunction(method)) {
-                                        var args = [for (a in argsExprs) eval(a, scope)];
-                                        return Reflect.callMethod(obj, method, args);
-                                    }
-                                }
+                                objExpr = oe;
+                                field = f;
                         }
+                    case ESafeField(oe, f):
+                        objExpr = oe;
+                        field = f;
+                        isSafe = true;
                     default:
+                }
+                
+                if (objExpr != null && field != null) {
+                    var obj = eval(objExpr, scope);
+                    if (obj == null) {
+                        if (isSafe) return null;
+                        throw 'Cannot call method "$field" of null';
+                    }
+                    
+                    if (!Std.isOfType(obj, HaxiomInstance) && !Std.isOfType(obj, HaxiomClass)) {
+                        // Native Haxe object method call optimization
+                        if (Std.isOfType(obj, String)) {
+                            var str:String = cast obj;
+                            var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
+                            switch (field) {
+                                case "split":
+                                    checkArgCount(args, 1, 1, "String.split");
+                                    checkString(args[0], "String.split", "delimiter");
+                                    return str.split(args[0]);
+                                case "indexOf":
+                                    checkArgCount(args, 1, 2, "String.indexOf");
+                                    checkString(args[0], "String.indexOf", "substring");
+                                    if (args.length > 1) checkInt(args[1], "String.indexOf", "start index");
+                                    return args.length > 1 ? str.indexOf(args[0], args[1]) : str.indexOf(args[0]);
+                                case "lastIndexOf":
+                                    checkArgCount(args, 1, 2, "String.lastIndexOf");
+                                    checkString(args[0], "String.lastIndexOf", "substring");
+                                    if (args.length > 1) checkInt(args[1], "String.lastIndexOf", "start index");
+                                    return args.length > 1 ? str.lastIndexOf(args[0], args[1]) : str.lastIndexOf(args[0]);
+                                case "charAt":
+                                    checkArgCount(args, 1, 1, "String.charAt");
+                                    checkInt(args[0], "String.charAt", "index");
+                                    return str.charAt(args[0]);
+                                case "charCodeAt":
+                                    checkArgCount(args, 1, 1, "String.charCodeAt");
+                                    checkInt(args[0], "String.charCodeAt", "index");
+                                    return str.charCodeAt(args[0]);
+                                case "substring":
+                                    checkArgCount(args, 1, 2, "String.substring");
+                                    checkInt(args[0], "String.substring", "start index");
+                                    if (args.length > 1) checkInt(args[1], "String.substring", "end index");
+                                    return args.length > 1 ? str.substring(args[0], args[1]) : str.substring(args[0]);
+                                case "substr":
+                                    checkArgCount(args, 1, 2, "String.substr");
+                                    checkInt(args[0], "String.substr", "start index");
+                                    if (args.length > 1) checkInt(args[1], "String.substr", "length");
+                                    return args.length > 1 ? str.substr(args[0], args[1]) : str.substr(args[0]);
+                                case "toLowerCase":
+                                    checkArgCount(args, 0, 0, "String.toLowerCase");
+                                    return str.toLowerCase();
+                                case "toUpperCase":
+                                    checkArgCount(args, 0, 0, "String.toUpperCase");
+                                    return str.toUpperCase();
+                                case "toString":
+                                    checkArgCount(args, 0, 0, "String.toString");
+                                    return str;
+                                case "startsWith":
+                                    checkArgCount(args, 1, 1, "StringTools.startsWith");
+                                    checkString(args[0], "StringTools.startsWith", "prefix");
+                                    return StringTools.startsWith(str, args[0]);
+                                case "endsWith":
+                                    checkArgCount(args, 1, 1, "StringTools.endsWith");
+                                    checkString(args[0], "StringTools.endsWith", "suffix");
+                                    return StringTools.endsWith(str, args[0]);
+                                case "trim":
+                                    checkArgCount(args, 0, 0, "StringTools.trim");
+                                    return StringTools.trim(str);
+                                case "ltrim":
+                                    checkArgCount(args, 0, 0, "StringTools.ltrim");
+                                    return StringTools.ltrim(str);
+                                case "rtrim":
+                                    checkArgCount(args, 0, 0, "StringTools.rtrim");
+                                    return StringTools.rtrim(str);
+                                case "replace":
+                                    checkArgCount(args, 2, 2, "StringTools.replace");
+                                    checkString(args[0], "StringTools.replace", "sub");
+                                    checkString(args[1], "StringTools.replace", "by");
+                                    return StringTools.replace(str, args[0], args[1]);
+                                case "lpad":
+                                    checkArgCount(args, 2, 2, "StringTools.lpad");
+                                    checkString(args[0], "StringTools.lpad", "char");
+                                    checkInt(args[1], "StringTools.lpad", "length");
+                                    return StringTools.lpad(str, args[0], args[1]);
+                                case "rpad":
+                                    checkArgCount(args, 2, 2, "StringTools.rpad");
+                                    checkString(args[0], "StringTools.rpad", "char");
+                                    checkInt(args[1], "StringTools.rpad", "length");
+                                    return StringTools.rpad(str, args[0], args[1]);
+                                default:
+                            }
+                        }
+                        if (Std.isOfType(obj, Array)) {
+                            var arr:Array<Dynamic> = cast obj;
+                            var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
+                            switch (field) {
+                                case "push":
+                                    checkArgCount(args, 1, 1, "Array.push");
+                                    return arr.push(args[0]);
+                                case "pop":
+                                    checkArgCount(args, 0, 0, "Array.pop");
+                                    return arr.pop();
+                                case "shift":
+                                    checkArgCount(args, 0, 0, "Array.shift");
+                                    return arr.shift();
+                                case "unshift":
+                                    checkArgCount(args, 1, 1, "Array.unshift");
+                                    arr.unshift(args[0]);
+                                    return null;
+                                case "remove":
+                                    checkArgCount(args, 1, 1, "Array.remove");
+                                    return arr.remove(args[0]);
+                                case "indexOf":
+                                    checkArgCount(args, 1, 2, "Array.indexOf");
+                                    if (args.length > 1) checkInt(args[1], "Array.indexOf", "start index");
+                                    return args.length > 1 ? arr.indexOf(args[0], args[1]) : arr.indexOf(args[0]);
+                                case "lastIndexOf":
+                                    checkArgCount(args, 1, 2, "Array.lastIndexOf");
+                                    if (args.length > 1) checkInt(args[1], "Array.lastIndexOf", "start index");
+                                    return args.length > 1 ? arr.lastIndexOf(args[0], args[1]) : arr.lastIndexOf(args[0]);
+                                case "insert":
+                                    checkArgCount(args, 2, 2, "Array.insert");
+                                    checkInt(args[0], "Array.insert", "index");
+                                    arr.insert(args[0], args[1]);
+                                    return null;
+                                case "reverse":
+                                    checkArgCount(args, 0, 0, "Array.reverse");
+                                    arr.reverse();
+                                    return null;
+                                case "sort":
+                                    checkArgCount(args, 1, 1, "Array.sort");
+                                    checkFunction(args[0], "Array.sort", "comparator");
+                                    arr.sort((a, b) -> Reflect.callMethod(null, args[0], [a, b]));
+                                    return null;
+                                case "resize":
+                                    checkArgCount(args, 1, 1, "Array.resize");
+                                    checkInt(args[0], "Array.resize", "length");
+                                    arr.resize(args[0]);
+                                    return null;
+                                case "contains":
+                                    checkArgCount(args, 1, 1, "Array.contains");
+                                    return arr.contains(args[0]);
+                                case "join":
+                                    checkArgCount(args, 1, 1, "Array.join");
+                                    checkString(args[0], "Array.join", "separator");
+                                    return arr.join(args[0]);
+                                case "slice":
+                                    checkArgCount(args, 1, 2, "Array.slice");
+                                    checkInt(args[0], "Array.slice", "start index");
+                                    if (args.length > 1) checkInt(args[1], "Array.slice", "end index");
+                                    return args.length > 1 ? arr.slice(args[0], args[1]) : arr.slice(args[0]);
+                                case "copy":
+                                    checkArgCount(args, 0, 0, "Array.copy");
+                                    return arr.copy();
+                                case "filter":
+                                    checkArgCount(args, 1, 1, "Array.filter");
+                                    checkFunction(args[0], "Array.filter", "callback");
+                                    return arr.filter((x) -> Reflect.callMethod(null, args[0], [x]));
+                                case "map":
+                                    checkArgCount(args, 1, 1, "Array.map");
+                                    checkFunction(args[0], "Array.map", "callback");
+                                    return arr.map((x) -> Reflect.callMethod(null, args[0], [x]));
+                                case "toString":
+                                    checkArgCount(args, 0, 0, "Array.toString");
+                                    return arr.toString();
+                                case "iterator":
+                                    checkArgCount(args, 0, 0, "Array.iterator");
+                                    return arr.iterator();
+                                case "keyValueIterator":
+                                    checkArgCount(args, 0, 0, "Array.keyValueIterator");
+                                    return arr.keyValueIterator();
+                                default:
+                            }
+                        }
+                        if (obj == Math) {
+                            var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
+                            switch (field) {
+                                case "abs":
+                                    checkArgCount(args, 1, 1, "Math.abs");
+                                    checkNum(args[0], "Math.abs");
+                                    return Math.abs(args[0]);
+                                case "sin":
+                                    checkArgCount(args, 1, 1, "Math.sin");
+                                    checkNum(args[0], "Math.sin");
+                                    return Math.sin(args[0]);
+                                case "cos":
+                                    checkArgCount(args, 1, 1, "Math.cos");
+                                    checkNum(args[0], "Math.cos");
+                                    return Math.cos(args[0]);
+                                case "tan":
+                                    checkArgCount(args, 1, 1, "Math.tan");
+                                    checkNum(args[0], "Math.tan");
+                                    return Math.tan(args[0]);
+                                case "atan2":
+                                    checkArgCount(args, 2, 2, "Math.atan2");
+                                    checkNum(args[0], "Math.atan2", "y");
+                                    checkNum(args[1], "Math.atan2", "x");
+                                    return Math.atan2(args[0], args[1]);
+                                case "sqrt":
+                                    checkArgCount(args, 1, 1, "Math.sqrt");
+                                    checkNum(args[0], "Math.sqrt");
+                                    return Math.sqrt(args[0]);
+                                case "pow":
+                                    checkArgCount(args, 2, 2, "Math.pow");
+                                    checkNum(args[0], "Math.pow", "base");
+                                    checkNum(args[1], "Math.pow", "exponent");
+                                    return Math.pow(args[0], args[1]);
+                                case "floor":
+                                    checkArgCount(args, 1, 1, "Math.floor");
+                                    checkNum(args[0], "Math.floor");
+                                    return Math.floor(args[0]);
+                                case "ceil":
+                                    checkArgCount(args, 1, 1, "Math.ceil");
+                                    checkNum(args[0], "Math.ceil");
+                                    return Math.ceil(args[0]);
+                                case "round":
+                                    checkArgCount(args, 1, 1, "Math.round");
+                                    checkNum(args[0], "Math.round");
+                                    return Math.round(args[0]);
+                                case "random":
+                                    checkArgCount(args, 0, 0, "Math.random");
+                                    return Math.random();
+                                case "min":
+                                    checkArgCount(args, 2, 2, "Math.min");
+                                    checkNum(args[0], "Math.min", "a");
+                                    checkNum(args[1], "Math.min", "b");
+                                    return Math.min(args[0], args[1]);
+                                case "max":
+                                    checkArgCount(args, 2, 2, "Math.max");
+                                    checkNum(args[0], "Math.max", "a");
+                                    checkNum(args[1], "Math.max", "b");
+                                    return Math.max(args[0], args[1]);
+                                case "acos":
+                                    checkArgCount(args, 1, 1, "Math.acos");
+                                    checkNum(args[0], "Math.acos");
+                                    return Math.acos(args[0]);
+                                case "asin":
+                                    checkArgCount(args, 1, 1, "Math.asin");
+                                    checkNum(args[0], "Math.asin");
+                                    return Math.asin(args[0]);
+                                case "atan":
+                                    checkArgCount(args, 1, 1, "Math.atan");
+                                    checkNum(args[0], "Math.atan");
+                                    return Math.atan(args[0]);
+                                case "exp":
+                                    checkArgCount(args, 1, 1, "Math.exp");
+                                    checkNum(args[0], "Math.exp");
+                                    return Math.exp(args[0]);
+                                case "log":
+                                    checkArgCount(args, 1, 1, "Math.log");
+                                    checkNum(args[0], "Math.log");
+                                    return Math.log(args[0]);
+                                case "isNaN":
+                                    checkArgCount(args, 1, 1, "Math.isNaN");
+                                    return Math.isNaN(args[0]);
+                                case "isFinite":
+                                    checkArgCount(args, 1, 1, "Math.isFinite");
+                                    return Math.isFinite(args[0]);
+                                default:
+                            }
+                        }
+                        if (Std.isOfType(obj, haxe.Constraints.IMap)) {
+                            var map:haxe.Constraints.IMap<Dynamic, Dynamic> = cast obj;
+                            var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
+                            switch (field) {
+                                case "exists":
+                                    checkArgCount(args, 1, 1, "Map.exists");
+                                    return map.exists(args[0]);
+                                case "get":
+                                    checkArgCount(args, 1, 1, "Map.get");
+                                    return map.get(args[0]);
+                                case "set":
+                                    checkArgCount(args, 2, 2, "Map.set");
+                                    map.set(args[0], args[1]);
+                                    return null;
+                                case "remove":
+                                    checkArgCount(args, 1, 1, "Map.remove");
+                                    return map.remove(args[0]);
+                                case "clear":
+                                    checkArgCount(args, 0, 0, "Map.clear");
+                                    map.clear();
+                                    return null;
+                                case "keys":
+                                    checkArgCount(args, 0, 0, "Map.keys");
+                                    return map.keys();
+                                case "iterator":
+                                    checkArgCount(args, 0, 0, "Map.iterator");
+                                    return map.iterator();
+                                case "keyValueIterator":
+                                    checkArgCount(args, 0, 0, "Map.keyValueIterator");
+                                    return map.keyValueIterator();
+                                case "toString":
+                                    checkArgCount(args, 0, 0, "Map.toString");
+                                    return map.toString();
+                                default:
+                            }
+                        }
+                        var method = Reflect.field(obj, field);
+                        if (method != null && Reflect.isFunction(method)) {
+                            var args = [for (a in argsExprs) eval(a, scope)];
+                            return Reflect.callMethod(obj, method, args);
+                        }
+                    }
                 }
                 
                 var callee = eval(calleeExpr, scope);
@@ -1378,20 +1692,42 @@ class Interp {
                         iterator = (cast iterable : Array<Dynamic>).iterator();
                     } else if (Std.isOfType(iterable, haxe.Constraints.IMap)) {
                         iterator = (cast iterable : haxe.Constraints.IMap<Dynamic, Dynamic>).iterator();
+                    } else if (Std.isOfType(iterable, IntIterator)) {
+                        iterator = iterable;
+                    } else if (Reflect.field(iterable, "hasNext") != null && Reflect.field(iterable, "next") != null) {
+                        iterator = iterable;
                     }
                     
-                    if (iterator != null && Reflect.field(iterator, "hasNext") != null && Reflect.field(iterator, "next") != null) {
-                        while (Reflect.callMethod(iterator, Reflect.field(iterator, "hasNext"), [])) {
-                            var item = Reflect.callMethod(iterator, Reflect.field(iterator, "next"), []);
-                            var fScope = new Scope(scope);
-                            fScope.declare(vName, item);
-                            try {
-                                lastVal = eval(body, fScope);
-                            } catch (flow:ControlFlow) {
-                                switch (flow) {
-                                    case Break: break;
-                                    case Continue: continue;
-                                    case Return(val): throw Return(val);
+                    if (iterator != null) {
+                        if (Std.isOfType(iterator, IntIterator)) {
+                            var it:IntIterator = cast iterator;
+                            while (it.hasNext()) {
+                                var item = it.next();
+                                var fScope = new Scope(scope);
+                                fScope.declare(vName, item);
+                                try {
+                                    lastVal = eval(body, fScope);
+                                } catch (flow:ControlFlow) {
+                                    switch (flow) {
+                                        case Break: break;
+                                        case Continue: continue;
+                                        case Return(val): throw Return(val);
+                                    }
+                                }
+                            }
+                        } else if (Reflect.field(iterator, "hasNext") != null && Reflect.field(iterator, "next") != null) {
+                            while (Reflect.callMethod(iterator, Reflect.field(iterator, "hasNext"), [])) {
+                                var item = Reflect.callMethod(iterator, Reflect.field(iterator, "next"), []);
+                                var fScope = new Scope(scope);
+                                fScope.declare(vName, item);
+                                try {
+                                    lastVal = eval(body, fScope);
+                                } catch (flow:ControlFlow) {
+                                    switch (flow) {
+                                        case Break: break;
+                                        case Continue: continue;
+                                        case Return(val): throw Return(val);
+                                    }
                                 }
                             }
                         }
@@ -1769,7 +2105,7 @@ class Interp {
         }
     }
 
-    function registerFullyQualified(fullName:String, value:Dynamic, scope:Scope) {
+    public function registerFullyQualified(fullName:String, value:Dynamic, scope:Scope) {
         var parts = fullName.split(".");
         if (parts.length == 1) {
             scope.declare(parts[0], value);

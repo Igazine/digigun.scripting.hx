@@ -184,9 +184,14 @@ class Lexer {
                 case "{": add(tokens, TBraceOpen);
                 case "}": add(tokens, TBraceClose);
                 case ",": add(tokens, TComma);
-                case ".": add(tokens, TDot);
+                case ".":
+                    if (peek(1) == "." && peek(2) == ".") add(tokens, TDotDotDot, 3);
+                    else add(tokens, TDot);
                 case ";": add(tokens, TSemicolon);
-                case "?": add(tokens, TQuestion);
+                case "?":
+                    if (peek(1) == ".") add(tokens, TQuestionDot, 2);
+                    else if (peek(1) == "?") add(tokens, TDoubleQuestion, 2);
+                    else add(tokens, TQuestion);
                 case ":": add(tokens, TColon);
                 
                 case "+":
