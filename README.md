@@ -240,7 +240,7 @@ To use third-party libraries (like `openfl`) inside Haxiom scripts, you must ens
 
 1. **Compilation Command**: To prevent `openfl` classes from being excluded during Dead Code Elimination, force include the `openfl` packages in your build command using Haxe's `--macro include`:
    ```bash
-   haxe -lib openfl -lib digigun.scripting.hx --macro "include('openfl.display')" --macro "include('openfl.events')" -main Main --interp
+   haxe -L openfl -L digigun.scripting.hx --macro "include('openfl.display')" --macro "include('openfl.events')" -main Main --interp
    ```
 
 2. **FFI Registration (Native Haxe Setup)**:
