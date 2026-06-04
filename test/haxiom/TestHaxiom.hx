@@ -918,6 +918,176 @@ class TestHaxiom {
             trace("Macro auto-exposed class call: " + exposed.multiply(10));
         ';
         haxiom.interpret(script40);
+
+        // 41. Abstracts Redirection and Execution
+        var color = new WrappedInt(10); // force compiler to keep abstract and its methods
+        var script41 = '
+            var w = new haxiom.WrappedInt(10);
+            trace("Abstract value multiply: " + w.multiply(3));
+            trace("Abstract getter double: " + w.double);
+        ';
+        haxiom.interpret(script41);
+
+        // 42. Generics Mapping and Instantiation
+        var pairStr = new GenericPair<String>("hello"); // force Haxe compiler to generate GenericPair_String variant
+        var pairInt = new GenericPair<Int>(42);         // force Haxe compiler to generate GenericPair_Int variant
+        var script42 = '
+            var p1 = new haxiom.GenericPair<String>("tamas");
+            var p2 = new haxiom.GenericPair<Int>(100);
+            trace("Generic String value: " + p1.getValue());
+            trace("Generic Int value: " + p2.getValue());
+        ';
+        haxiom.interpret(script42);
+
+        // 43. Typed Arrays and Lists
+        var forceList = new haxe.ds.List<Int>(); // force compiler to keep haxe.ds.List
+        forceList.add(1);
+        forceList.first();
+        forceList.isEmpty();
+        var script43 = '
+            var arr = new Array<String>();
+            arr.push("hello");
+            arr.push("world");
+            trace("Array<String> values: " + arr.join(", "));
+            
+            var list = new haxe.ds.List<Int>();
+            list.add(10);
+            list.add(20);
+            trace("List<Int> first: " + list.first() + ", isEmpty: " + list.isEmpty());
+        ';
+        haxiom.interpret(script43);
+
+        // 44. Static Extensions (using)
+        StringTools.hex(10, 2);
+        MyIntExtensions.doubleVal(2);
+        var script44 = '
+            import haxiom.MyIntExtensions;
+            using haxiom.MyIntExtensions;
+            using StringTools;
+            
+            var val = 21;
+            trace("Custom native using: " + val.doubleVal());
+            
+            var hexVal = 255;
+            trace("StringTools using: " + hexVal.hex(4));
+            
+            class LocalExt {
+                public static function square(n:Int):Int {
+                    return n * n;
+                }
+            }
+            
+            using LocalExt;
+            var num = 5;
+            trace("Local script using: " + num.square());
+        ';
+        haxiom.interpret(script44);
+
+        // 45. Array/Generator Comprehensions
+        var script45 = '
+            var basic = [for (x in 0...5) x];
+            trace("Basic comprehension: " + basic.join(","));
+            
+            var filtered = [for (x in 0...10) if (x % 2 == 0) x];
+            trace("Filtered comprehension: " + filtered.join(","));
+            
+            var nested = [for (x in 0...3) for (y in 0...x) y];
+            trace("Nested comprehension: " + nested.join(","));
+            
+            var blockComp = [for (x in 0...3) { var y = x * 2; y; }];
+            trace("Block comprehension: " + blockComp.join(","));
+            
+            var x = 0;
+            var whileComp = [while (x < 3) { x++; x; }];
+            trace("While comprehension: " + whileComp.join(","));
+            
+            var switchComp = [for (c in ["a", "b", "c"]) switch (c) {
+                case "a": 10;
+                case "b": 20;
+                default: 30;
+            }];
+            trace("Switch comprehension: " + switchComp.join(","));
+        ';
+        haxiom.interpret(script45);
+
+        // 46. Switch-Case Pattern Guards
+        var script46 = '
+            var checkVal = function(x:Int):String {
+                switch (x) {
+                    case v if (v < 0): return "negative";
+                    case v if (v == 0): return "zero";
+                    case v if (v > 0 && v < 10): return "small positive";
+                    default: return "large positive";
+                }
+            };
+            trace("Guard check -5: " + checkVal(-5));
+            trace("Guard check 0: " + checkVal(0));
+            trace("Guard check 5: " + checkVal(5));
+            trace("Guard check 20: " + checkVal(20));
+
+            enum TestColor {
+                Red(intensity:Int);
+                Green;
+            }
+            
+            var checkColor = function(c:TestColor):String {
+                switch (c) {
+                    case Red(i) if (i > 100): return "bright red";
+                    case Red(i) if (i <= 100): return "dark red";
+                    case Green: return "green";
+                }
+            };
+            
+            trace("Enum guard bright red: " + checkColor(Red(150)));
+            trace("Enum guard dark red: " + checkColor(Red(50)));
+            trace("Enum guard green: " + checkColor(Green));
+        ';
+        haxiom.interpret(script46);
+
+        // 47. Structural/Anonymous Type Validation
+        var script47 = '
+            // 1. Successful matching on literal object
+            var p:{name:String, age:Int} = {name: "tamas", age: 36};
+            trace("Anon match name: " + p.name + ", age: " + p.age);
+            
+            // 2. Successful nested matching
+            var p2:{name:String, address:{city:String}} = {name: "tamas", address: {city: "Budapest"}};
+            trace("Anon nested match city: " + p2.address.city);
+            
+            // 3. Class structural compatibility
+            class UserClass {
+                public var name:String = "Alice";
+                public var age:Int = 25;
+                public function new() {}
+            }
+            var u:{name:String, age:Int} = new UserClass();
+            trace("Anon class compatibility name: " + u.name);
+        ';
+        haxiom.interpret(script47);
+
+        // Assert validation errors
+        expectError('var p:{name:String, age:Int} = {name: "tamas"};', 'object is missing field "age"', "anon type missing field");
+        expectError('var p:{name:String, age:Int} = {name: "tamas", age: "thirty-six"};', 'Type mismatch in field "age": Type mismatch: expected Int but got String', "anon type wrong field type");
+
+        // 48. Improved Error Reporting (Line/Column info in runtime errors)
+        try {
+            haxiom.interpret("
+                var a:Int = 10;
+                a = 'not-an-int';
+            ");
+            throw "FAIL: expected ScriptException for invalid assignment";
+        } catch (e:haxiom.ScriptException) {
+            if (e.line == 3 && e.col == 21 && e.file == "script") {
+                trace("SUCCESS: ScriptException contains correct coordinates properties (line 3, col 21)");
+            } else {
+                throw "FAIL: ScriptException coordinate properties did not match. Expected line 3, col 21, file 'script' but got: " + e.line + ":" + e.col + " in " + e.file;
+            }
+            if (e.message.split("\n")[0].indexOf("at script:3:21") != -1) {
+                trace("SUCCESS: ScriptException first message line contains location details: " + e.message.split("\n")[0]);
+            } else {
+                throw "FAIL: ScriptException first line of message does not contain 'at script:3:21': " + e.message;
+            }
+        }
     }
 }
 
@@ -939,5 +1109,42 @@ class ExposedNativeClass {
     }
     public function multiply(v:Int):Int {
         return v * multiplier;
+    }
+}
+
+@:keep
+@:haxiom.expose
+abstract WrappedInt(Int) {
+    public inline function new(val:Int) {
+        this = val;
+    }
+    public function getValue():Int {
+        return this;
+    }
+    public function multiply(factor:Int):Int {
+        return this * factor;
+    }
+    public var double(get, never):Int;
+    inline function get_double():Int {
+        return this * 2;
+    }
+}
+
+@:haxiom.expose
+@:generic
+class GenericPair<T> {
+    public var value:T;
+    public function new(value:T) {
+        this.value = value;
+    }
+    public function getValue():T {
+        return value;
+    }
+}
+
+@:haxiom.expose
+class MyIntExtensions {
+    public static function doubleVal(v:Int):Int {
+        return v * 2;
     }
 }

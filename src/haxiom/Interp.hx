@@ -61,8 +61,8 @@ class Scope {
 
     public function declare(name:String, val:Dynamic, ?type:TypeDecl, ?isFinal:Bool):Void {
         variables.set(name, val);
-        if (type != null) types.set(name, type);
-        if (isFinal == true) finals.set(name, true);
+        if (type != null) types.set(name, type); else types.remove(name);
+        if (isFinal == true) finals.set(name, true); else finals.remove(name);
     }
 }
 
@@ -111,18 +111,18 @@ class HaxiomEnum {
 
 class HaxiomEnumInstance {
     public var enumType:HaxiomEnum;
-    public var constructor:String;
+    public var constructorName:String;
     public var args:Array<Dynamic>;
 
-    public function new(enumType:HaxiomEnum, constructor:String, args:Array<Dynamic>) {
+    public function new(enumType:HaxiomEnum, constructorName:String, args:Array<Dynamic>) {
         this.enumType = enumType;
-        this.constructor = constructor;
+        this.constructorName = constructorName;
         this.args = args;
     }
 
     public function toString():String {
-        if (args == null || args.length == 0) return constructor;
-        return constructor + "(" + args.join(", ") + ")";
+        if (args == null || args.length == 0) return constructorName;
+        return constructorName + "(" + args.join(", ") + ")";
     }
 }
 
@@ -145,6 +145,7 @@ class Interp {
     public var importWhitelist:Array<String> = null;
     public var importedModules:Map<String, Scope> = new Map();
     var currentConstructorInstance:Dynamic = null;
+    public var activeUsings:Array<Dynamic> = [];
 
     public var callStack:Array<{method:String, pos:Pos}> = [];
     public var errorHandler:Null<ScriptException->Void> = null;
@@ -208,6 +209,7 @@ class Interp {
     public function execute(expr:Expr):Dynamic {
         currentPackage = [];
         callStack = [];
+        activeUsings = [];
         lastEvalPos = expr.pos;
         try {
             return eval(expr, globals);
@@ -225,22 +227,25 @@ class Interp {
             if (isScriptException) {
                 finalException = e;
             } else {
-                traceLines.push('Runtime Error: ' + Std.string(e));
+                var errPos = lastEvalPos != null ? lastEvalPos : expr.pos;
+                var fileInfo = errPos.file != null ? errPos.file : "script";
+                var lineVal = errPos != null ? errPos.line : 1;
+                var colVal = errPos != null ? errPos.col : 1;
+
+                traceLines.push('Runtime Error: ' + Std.string(e) + ' at ' + fileInfo + ':' + lineVal + ':' + colVal);
                 var i = callStack.length - 1;
                 while (i >= 0) {
                     var frame = callStack[i];
-                    var fileInfo = frame.pos.file != null ? frame.pos.file : "script";
+                    var fileInfoFrame = frame.pos.file != null ? frame.pos.file : "script";
                     var framePos = (i == callStack.length - 1 && lastEvalPos != null) ? lastEvalPos : frame.pos;
-                    traceLines.push('    at ' + frame.method + ' (' + fileInfo + ':' + framePos.line + ':' + framePos.col + ')');
+                    traceLines.push('    at ' + frame.method + ' (' + fileInfoFrame + ':' + framePos.line + ':' + framePos.col + ')');
                     i--;
                 }
                 if (callStack.length == 0) {
-                    var errPos = lastEvalPos != null ? lastEvalPos : expr.pos;
-                    var fileInfo = errPos.file != null ? errPos.file : "script";
-                    traceLines.push('    at toplevel (' + fileInfo + ':' + errPos.line + ':' + errPos.col + ')');
+                    traceLines.push('    at toplevel (' + fileInfo + ':' + lineVal + ':' + colVal + ')');
                 }
                 formatted = traceLines.join("\n");
-                finalException = new haxiom.ScriptException(e, callStack.copy(), formatted);
+                finalException = new haxiom.ScriptException(e, callStack.copy(), formatted, lineVal, colVal, fileInfo);
             }
             
             if (errorHandler != null) {
@@ -622,6 +627,8 @@ class Interp {
                 checkMemberAccess(inst.cls, m.isPublic);
                 return bindMethod(obj, m);
             }
+            var usingRes = resolveUsing(obj, field);
+            if (usingRes != null) return usingRes;
             throw 'Method or field "$field" not found on class ${inst.cls.name}';
         }
         
@@ -638,13 +645,55 @@ class Interp {
                 checkMemberAccess(cls, m.isPublic);
                 return bindMethod(obj, m);
             }
+            var usingRes = resolveUsing(obj, field);
+            if (usingRes != null) return usingRes;
             throw 'Static method or field "$field" not found on class ${cls.name}';
         }
 
         // Native Haxe reflection
-        var f = Reflect.field(obj, field);
+        var f = Reflect.getProperty(obj, field);
+            // Check if this is an abstract method or property redirection closure/getter
+            for (absName in haxiom.FFI.exposedAbstracts.keys()) {
+                var absInfo = haxiom.FFI.exposedAbstracts.get(absName);
+                var getterName = "get_" + field;
+                var isGetter = absInfo.methods.indexOf(getterName) != -1;
+                var methodName = isGetter ? getterName : field;
+                
+                if (absInfo.methods.indexOf(methodName) != -1) {
+                    var matchesType = false;
+                    switch (absInfo.underlying) {
+                        case "Int": matchesType = Std.isOfType(obj, Int);
+                        case "Float": matchesType = Std.isOfType(obj, Float);
+                        case "String": matchesType = Std.isOfType(obj, String);
+                        case "Bool": matchesType = Std.isOfType(obj, Bool);
+                        default:
+                            var cls = Type.resolveClass(absInfo.underlying);
+                            if (cls != null) matchesType = Std.isOfType(obj, cls);
+                    }
+                    
+                    if (matchesType) {
+                        var implCls = resolveAbstractImpl(absName, absInfo.implClass);
+                        if (implCls != null) {
+                            var m = Reflect.field(implCls, methodName);
+                            if (m != null) {
+                                if (isGetter) {
+                                    return Reflect.callMethod(null, m, [obj]);
+                                } else {
+                                    return Reflect.makeVarArgs(function(args:Array<Dynamic>) {
+                                        return Reflect.callMethod(null, m, [obj].concat(args));
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         if (Reflect.isFunction(f)) return f;
-        return f;
+        if (f != null) return f;
+        
+        var usingRes = resolveUsing(obj, field);
+        if (usingRes != null) return usingRes;
+        return null;
     }
 
     function assignField(obj:Dynamic, field:String, val:Dynamic, scope:Scope):Dynamic {
@@ -682,7 +731,39 @@ class Interp {
                 }
                 cls.staticFields.set(field, val);
             } else {
-                Reflect.setField(obj, field, val);
+                // Check if this is an abstract setter redirection
+                var setterResolved = false;
+                for (absName in haxiom.FFI.exposedAbstracts.keys()) {
+                    var absInfo = haxiom.FFI.exposedAbstracts.get(absName);
+                    var setterName = "set_" + field;
+                    if (absInfo.methods.indexOf(setterName) != -1) {
+                        var matchesType = false;
+                        switch (absInfo.underlying) {
+                            case "Int": matchesType = Std.isOfType(obj, Int);
+                            case "Float": matchesType = Std.isOfType(obj, Float);
+                            case "String": matchesType = Std.isOfType(obj, String);
+                            case "Bool": matchesType = Std.isOfType(obj, Bool);
+                            default:
+                                var cls = Type.resolveClass(absInfo.underlying);
+                                if (cls != null) matchesType = Std.isOfType(obj, cls);
+                        }
+                        
+                        if (matchesType) {
+                            var implCls = resolveAbstractImpl(absName, absInfo.implClass);
+                            if (implCls != null) {
+                                var m = Reflect.field(implCls, setterName);
+                                if (m != null) {
+                                    Reflect.callMethod(null, m, [obj, val]);
+                                    setterResolved = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+                if (!setterResolved) {
+                    Reflect.setProperty(obj, field, val);
+                }
             }
         }
         return val;
@@ -696,6 +777,9 @@ class Interp {
                 return v;
 
             case EIdent(name):
+                var pathRes = tryResolveExpressionPath(e, scope);
+                if (pathRes.success) return pathRes.value;
+                
                 if (name == "this") return currentThis;
                 if (scope.exists(name)) return scope.get(name);
                 
@@ -879,6 +963,9 @@ class Interp {
                 return unopRes;
 
             case EField(objExpr, field):
+                var pathRes = tryResolveExpressionPath(e, scope);
+                if (pathRes.success) return pathRes.value;
+                
                 switch (objExpr.def) {
                     case EIdent("super"):
                         if (currentThis != null && Std.isOfType(currentThis, HaxiomInstance)) {
@@ -895,6 +982,9 @@ class Interp {
                 return evalField(obj, field, scope, pos);
 
             case ESafeField(objExpr, field):
+                var pathRes = tryResolveExpressionPath(e, scope);
+                if (pathRes.success) return pathRes.value;
+                
                 var obj = eval(objExpr, scope);
                 if (obj == null) return null;
                 return evalField(obj, field, scope, pos);
@@ -1256,6 +1346,34 @@ class Interp {
                             var args = [for (a in argsExprs) eval(a, scope)];
                             return Reflect.callMethod(obj, method, args);
                         }
+                        
+                        // Check if this is an abstract method redirection call
+                        for (absName in haxiom.FFI.exposedAbstracts.keys()) {
+                            var absInfo = haxiom.FFI.exposedAbstracts.get(absName);
+                            if (absInfo.methods.indexOf(field) != -1) {
+                                var matchesType = false;
+                                switch (absInfo.underlying) {
+                                    case "Int": matchesType = Std.isOfType(obj, Int);
+                                    case "Float": matchesType = Std.isOfType(obj, Float);
+                                    case "String": matchesType = Std.isOfType(obj, String);
+                                    case "Bool": matchesType = Std.isOfType(obj, Bool);
+                                    default:
+                                        var cls = Type.resolveClass(absInfo.underlying);
+                                        if (cls != null) matchesType = Std.isOfType(obj, cls);
+                                }
+                                
+                                if (matchesType) {
+                                    var implCls = resolveAbstractImpl(absName, absInfo.implClass);
+                                    if (implCls != null) {
+                                        var m = Reflect.field(implCls, field);
+                                        if (m != null) {
+                                            var args = [for (a in argsExprs) eval(a, scope)];
+                                            return Reflect.callMethod(null, m, [obj].concat(args));
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
                 
@@ -1318,6 +1436,10 @@ class Interp {
                     return inst;
                 }
                 
+                if (callee == null) {
+                    throw "Callee is null or undefined";
+                }
+                
                 if (Type.getClassName(cast callee) != null) {
                     var className = Type.getClassName(cast callee);
                     switch (className) {
@@ -1333,6 +1455,152 @@ class Interp {
                 }
                 
                 throw "Callee is not a callable function or constructor";
+
+            case ENew(typeDecl, argsExprs):
+                var args = [for (a in argsExprs) eval(a, scope)];
+                switch (typeDecl) {
+                    case TPath(path, params):
+                        var fqName = path.join(".");
+                        var callee:Dynamic = resolveTypePath(path, scope);
+                        
+                        // 1. Check Generic Mapping Lookup
+                        if (params.length > 0) {
+                            var paramNames = [];
+                            for (p in params) {
+                                switch (p) {
+                                    case TPath(pPath, _):
+                                        var resolvedParam = resolveTypePath(pPath, scope);
+                                        if (resolvedParam != null) {
+                                            if (Std.isOfType(resolvedParam, Class)) {
+                                                var className = Type.getClassName(resolvedParam);
+                                                if (className != null) {
+                                                    paramNames.push(className);
+                                                } else {
+                                                    paramNames.push(pPath.join("."));
+                                                }
+                                            } else if (Std.isOfType(resolvedParam, HaxiomClass)) {
+                                                paramNames.push((cast resolvedParam : HaxiomClass).name);
+                                            } else {
+                                                paramNames.push(pPath.join("."));
+                                            }
+                                        } else {
+                                            paramNames.push(pPath.join("."));
+                                        }
+                                    default:
+                                        paramNames.push("Dynamic");
+                                }
+                            }
+                            var genericSig = fqName + "<" + paramNames.join(",") + ">";
+                            var mappedGenClass = haxiom.FFI.exposedGenerics.get(genericSig);
+                            if (mappedGenClass != null) {
+                                var cls = Type.resolveClass(mappedGenClass);
+                                if (cls != null) callee = cls;
+                            }
+                        }
+                        
+                        // 2. Check Multi-type Map Factory
+                        if (fqName == "Map" || fqName == "haxe.ds.Map") {
+                            if (params.length > 0) {
+                                switch (params[0]) {
+                                    case TPath(pPath, _):
+                                        var keyName = pPath[pPath.length - 1];
+                                        if (keyName == "String") {
+                                            return new haxe.ds.StringMap<Dynamic>();
+                                        } else if (keyName == "Int") {
+                                            return new haxe.ds.IntMap<Dynamic>();
+                                        } else {
+                                            return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
+                                        }
+                                    default:
+                                }
+                            }
+                            return new haxe.ds.StringMap<Dynamic>();
+                        }
+                        
+                        // 3. Check Exposed Abstracts constructor redirection
+                        var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
+                        if (absInfo != null) {
+                            var implCls = resolveAbstractImpl(fqName, absInfo.implClass);
+                            if (implCls != null) {
+                                var newMethod = Reflect.field(implCls, "_new");
+                                if (newMethod != null) {
+                                    return Reflect.callMethod(null, newMethod, args);
+                                }
+                            }
+                        }
+                        
+                        // 4. Instantiate Class (Haxiom or Native)
+                        if (callee == null) {
+                            throw 'Class not found: $fqName';
+                        }
+                        
+                        if (Std.isOfType(callee, HaxiomClass)) {
+                            var cls:HaxiomClass = cast callee;
+                            var inst = new HaxiomInstance(cls);
+                            
+                            var curr = cls;
+                            while (curr != null) {
+                                for (f in curr.fields) {
+                                    if (!f.isStatic) {
+                                        inst.fields.set(f.name, f.expr != null ? eval(f.expr, scope) : null);
+                                    }
+                                }
+                                curr = curr.parent;
+                            }
+                            
+                            var constr = findMethod(cls, "new");
+                            if (constr != null) {
+                                checkMemberAccess(cls, constr.isPublic);
+                                var cScope = new Scope(scope);
+                                cScope.declare("this", inst);
+                                for (i in 0...constr.args.length) {
+                                    var arg = constr.args[i];
+                                    var val = i < args.length ? args[i] : null;
+                                    checkType(val, arg.type, cScope);
+                                    cScope.declare(arg.name, val, arg.type);
+                                }
+                                var oldThis = currentThis;
+                                currentThis = inst;
+                                var oldConstrInst = currentConstructorInstance;
+                                currentConstructorInstance = inst;
+                                pushFrame(cls.name + ".new", constr.body.pos);
+                                try {
+                                    eval(constr.body, cScope);
+                                    popFrame();
+                                } catch (e:ControlFlow) {
+                                    popFrame();
+                                    switch (e) {
+                                        case Return(_):
+                                        default: throw e;
+                                    }
+                                } catch (err:Dynamic) {
+                                    popFrame();
+                                    throw err;
+                                }
+                                currentConstructorInstance = oldConstrInst;
+                                currentThis = oldThis;
+                            }
+                            return inst;
+                        }
+                        
+                        if (Type.getClassName(cast callee) != null) {
+                            var className = Type.getClassName(cast callee);
+                            switch (className) {
+                                case "haxe.ds.StringMap":
+                                    return new haxe.ds.StringMap<Dynamic>();
+                                case "haxe.ds.IntMap":
+                                    return new haxe.ds.IntMap<Dynamic>();
+                                case "haxe.ds.ObjectMap":
+                                    return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
+                                default:
+                                    return Type.createInstance(cast callee, args);
+                            }
+                        }
+                        
+                        throw 'Cannot instantiate type: $fqName';
+                    default:
+                        throw "Constructor call expects a type path";
+                }
 
             case EArrayDecl(values):
                 return [for (v in values) eval(v, scope)];
@@ -1524,6 +1792,51 @@ class Interp {
                         scope.declare(shortName, nativeClass);
                         return null;
                     }
+                    var nativeEnum = Type.resolveEnum(fqName);
+                    if (nativeEnum != null) {
+                        scope.declare(shortName, nativeEnum);
+                        return null;
+                    }
+                    
+                    // Module check
+                    if (FFI.exposedModules.exists(fqName)) {
+                        var types = FFI.exposedModules.get(fqName);
+                        for (typeFq in types) {
+                            var subParts = typeFq.split(".");
+                            var subShortName = subParts[subParts.length - 1];
+                            var nc = Type.resolveClass(typeFq);
+                            if (nc != null) {
+                                scope.declare(subShortName, nc);
+                            } else {
+                                var ne = Type.resolveEnum(typeFq);
+                                if (ne != null) {
+                                    scope.declare(subShortName, ne);
+                                }
+                            }
+                        }
+                        return null;
+                    }
+                    
+                    // Module subtype check
+                    for (modKey in FFI.exposedModules.keys()) {
+                        if (StringTools.startsWith(fqName, modKey + ".")) {
+                            var subName = fqName.substr(modKey.length + 1);
+                            var lastDot = modKey.lastIndexOf(".");
+                            var parentPkg = lastDot != -1 ? modKey.substring(0, lastDot) : "";
+                            var runtimeFq = parentPkg != "" ? parentPkg + "." + subName : subName;
+                            
+                            var nc = Type.resolveClass(runtimeFq);
+                            if (nc != null) {
+                                scope.declare(shortName, nc);
+                                return null;
+                            }
+                            var ne = Type.resolveEnum(runtimeFq);
+                            if (ne != null) {
+                                scope.declare(shortName, ne);
+                                return null;
+                            }
+                        }
+                    }
                 }
                 
                 if (moduleResolver != null) {
@@ -1544,6 +1857,20 @@ class Interp {
                 }
                 
                 throw 'Could not resolve import $fqName';
+
+            case EUsing(path):
+                var fqName = path.join(".");
+                if (!isImportWhitelisted(fqName)) {
+                    throw 'Using $fqName is not whitelisted';
+                }
+                var resolved = resolveTypePath(path, scope);
+                if (resolved == null) {
+                    throw 'Could not resolve using target: $fqName';
+                }
+                if (activeUsings.indexOf(resolved) == -1) {
+                    activeUsings.push(resolved);
+                }
+                return null;
 
             case EThrow(expr):
                 var val = eval(expr, scope);
@@ -1743,9 +2070,18 @@ class Interp {
                     for (vExpr in c.values) {
                         var caseScope = new Scope(scope);
                         if (matchPattern(val, vExpr, scope, caseScope)) {
-                            matched = true;
-                            result = eval(c.expr, caseScope);
-                            break;
+                            var guardOk = true;
+                            if (c.guard != null) {
+                                var guardVal = eval(c.guard, caseScope);
+                                if (guardVal != true) {
+                                    guardOk = false;
+                                }
+                            }
+                            if (guardOk) {
+                                matched = true;
+                                result = eval(c.expr, caseScope);
+                                break;
+                            }
                         }
                     }
                     if (matched) break;
@@ -1885,7 +2221,12 @@ class Interp {
                         var enumInst:HaxiomEnumInstance = cast inScopeVal;
                         if (Std.isOfType(val, HaxiomEnumInstance)) {
                             var valInst:HaxiomEnumInstance = cast val;
-                            return valInst.enumType == enumInst.enumType && valInst.constructor == enumInst.constructor;
+                            return valInst.enumType == enumInst.enumType && valInst.constructorName == enumInst.constructorName;
+                        }
+                        return false;
+                    } else if (Reflect.isEnumValue(inScopeVal)) {
+                        if (Reflect.isEnumValue(val)) {
+                            return Type.enumEq(val, inScopeVal);
                         }
                         return false;
                     }
@@ -1894,32 +2235,61 @@ class Interp {
                 return true;
                 
             case ECall(calleeExpr, args):
+                var constructorName = "";
+                var expectedEnum:Dynamic = null;
                 switch (calleeExpr.def) {
-                    case EIdent(constructorName):
-                        if (Std.isOfType(val, HaxiomEnumInstance)) {
-                            var valInst:HaxiomEnumInstance = cast val;
-                            if (valInst.constructor == constructorName) {
-                                if (args.length == valInst.args.length) {
-                                    for (i in 0...args.length) {
-                                        if (!matchPattern(valInst.args[i], args[i], scope, outBindings)) {
-                                            return false;
-                                        }
+                    case EIdent(name): constructorName = name;
+                    case EField(objExpr, field): 
+                        constructorName = field;
+                        try {
+                            expectedEnum = eval(objExpr, scope);
+                        } catch (e:Dynamic) {}
+                    default:
+                }
+                
+                if (constructorName != "") {
+                    if (Std.isOfType(val, HaxiomEnumInstance)) {
+                        var valInst:HaxiomEnumInstance = cast val;
+                        if (valInst.constructorName == constructorName) {
+                            if (expectedEnum != null && valInst.enumType != expectedEnum) {
+                                return false;
+                            }
+                            if (args.length == valInst.args.length) {
+                                for (i in 0...args.length) {
+                                    if (!matchPattern(valInst.args[i], args[i], scope, outBindings)) {
+                                        return false;
                                     }
-                                    return true;
                                 }
+                                return true;
                             }
                         }
-                        return false;
-                    default:
-                        return false;
+                    } else if (Reflect.isEnumValue(val)) {
+                        var nativeCtor = Type.enumConstructor(val);
+                        var nativeParams = Type.enumParameters(val);
+                        if (nativeCtor == constructorName) {
+                            if (expectedEnum != null) {
+                                var valEnum = Type.getEnum(val);
+                                if (valEnum != expectedEnum) return false;
+                            }
+                            if (args.length == nativeParams.length) {
+                                for (i in 0...args.length) {
+                                    if (!matchPattern(nativeParams[i], args[i], scope, outBindings)) {
+                                        return false;
+                                    }
+                                }
+                                return true;
+                            }
+                        }
+                    }
                 }
+                return false;
                 
             default:
                 var patVal = eval(pattern, scope);
                 if (Std.isOfType(val, HaxiomEnumInstance) && Std.isOfType(patVal, HaxiomEnumInstance)) {
                     var valInst:HaxiomEnumInstance = cast val;
                     var patInst:HaxiomEnumInstance = cast patVal;
-                    if (valInst.enumType != patInst.enumType || valInst.constructor != patInst.constructor) {
+                    if (valInst.enumType != patInst.enumType || valInst.constructorName != patInst.constructorName) {
                         return false;
                     }
                     if (valInst.args.length != patInst.args.length) return false;
@@ -1927,6 +2297,8 @@ class Interp {
                         if (valInst.args[i] != patInst.args[i]) return false;
                     }
                     return true;
+                } else if (Reflect.isEnumValue(val) && Reflect.isEnumValue(patVal)) {
+                    return Type.enumEq(val, patVal);
                 }
                 return val == patVal;
         }
@@ -1995,6 +2367,76 @@ class Interp {
         return boundFunc;
     }
 
+    function bindStaticExtensionMethod(obj:Dynamic, method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}):Dynamic {
+        var func = (callArgs:Array<Dynamic>) -> {
+            var fScope = new Scope(globals);
+            var fullArgs = [obj].concat(callArgs);
+            for (i in 0...method.args.length) {
+                var arg = method.args[i];
+                var val = i < fullArgs.length ? fullArgs[i] : null;
+                checkType(val, arg.type, fScope);
+                fScope.declare(arg.name, val, arg.type);
+            }
+            var oldThis = currentThis;
+            currentThis = null;
+            var className = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast(obj, HaxiomInstance).cls.name) : "static";
+            pushFrame(className + "." + method.name, method.body.pos);
+            try {
+                var res = eval(method.body, fScope);
+                checkType(res, method.retType, fScope);
+                currentThis = oldThis;
+                popFrame();
+                return res;
+            } catch (flow:ControlFlow) {
+                currentThis = oldThis;
+                popFrame();
+                switch (flow) {
+                    case Return(val):
+                        checkType(val, method.retType, fScope);
+                        return val;
+                    default: throw flow;
+                }
+            }
+        };
+        var arity = method.args.length - 1;
+        if (arity < 0) arity = 0;
+        var boundFunc:Dynamic = switch (arity) {
+            case 0: () -> func([]);
+            case 1: (a) -> func([a]);
+            case 2: (a, b) -> func([a, b]);
+            case 3: (a, b, c) -> func([a, b, c]);
+            case 4: (a, b, c, d) -> func([a, b, c, d]);
+            default: (callArgs:Array<Dynamic>) -> func(callArgs);
+        };
+        return boundFunc;
+    }
+
+    function resolveUsing(obj:Dynamic, field:String):Dynamic {
+        if (activeUsings == null || activeUsings.length == 0) return null;
+        var i = activeUsings.length - 1;
+        while (i >= 0) {
+            var usingTarget = activeUsings[i];
+            if (usingTarget != null) {
+                if (Std.isOfType(usingTarget, HaxiomClass)) {
+                    var cls:HaxiomClass = cast usingTarget;
+                    var m = findStaticMethod(cls, field);
+                    if (m != null) {
+                        return bindStaticExtensionMethod(obj, m);
+                    }
+                } else {
+                    var m = Reflect.field(usingTarget, field);
+                    if (m != null && Reflect.isFunction(m)) {
+                        return Reflect.makeVarArgs(function(args:Array<Dynamic>) {
+                            return Reflect.callMethod(null, m, [obj].concat(args));
+                        });
+                    }
+                }
+            }
+            i--;
+        }
+        return null;
+    }
+
     public function checkType(val:Dynamic, type:TypeDecl, scope:Scope):Void {
         if (type == null) return;
         switch (type) {
@@ -2061,8 +2503,63 @@ class Interp {
                 }
             case TFun(args, ret):
                 if (!Reflect.isFunction(val)) throw "Type mismatch: expected Function";
+            case TAnonymous(fields):
+                if (val == null) return;
+                if (Reflect.isFunction(val) || Std.isOfType(val, Int) || Std.isOfType(val, Float) || Std.isOfType(val, Bool) || Std.isOfType(val, String)) {
+                    throw 'Type mismatch: expected anonymous structure but got ' + getTypeName(val);
+                }
+                for (field in fields) {
+                    var res = hasAndGetField(val, field.name);
+                    if (!res.exists) {
+                        throw 'Type mismatch: object is missing field "${field.name}"';
+                    }
+                    try {
+                        checkType(res.val, field.type, scope);
+                    } catch (e:Dynamic) {
+                        throw 'Type mismatch in field "${field.name}": ' + Std.string(e);
+                    }
+                }
             default:
         }
+    }
+
+    function hasAndGetField(obj:Dynamic, fieldName:String):{exists:Bool, val:Dynamic} {
+        if (obj == null) return {exists: false, val: null};
+        if (Std.isOfType(obj, HaxiomInstance)) {
+            var inst:HaxiomInstance = cast obj;
+            if (inst.fields.exists(fieldName)) {
+                return {exists: true, val: inst.fields.get(fieldName)};
+            }
+            var m = findMethod(inst.cls, fieldName);
+            if (m != null) {
+                return {exists: true, val: bindMethod(inst, m)};
+            }
+            var fDef = findFieldDef(inst.cls, fieldName);
+            if (fDef != null) {
+                var fieldVal:Dynamic = null;
+                if (fDef.property != null && fDef.property.get == "get") {
+                    var gm = findMethod(inst.cls, "get_" + fieldName);
+                    if (gm != null) {
+                        fieldVal = Reflect.callMethod(null, bindMethod(inst, gm), []);
+                    }
+                }
+                return {exists: true, val: fieldVal};
+            }
+            return {exists: false, val: null};
+        }
+        
+        if (Reflect.hasField(obj, fieldName)) {
+            return {exists: true, val: Reflect.field(obj, fieldName)};
+        }
+        var prop = Reflect.getProperty(obj, fieldName);
+        if (prop != null) {
+            return {exists: true, val: prop};
+        }
+        var f = Reflect.field(obj, fieldName);
+        if (f != null) {
+            return {exists: true, val: f};
+        }
+        return {exists: false, val: null};
     }
 
     // Dynamic map/array subscript helpers
@@ -2105,6 +2602,130 @@ class Interp {
         }
     }
 
+    function getExprPath(e:Expr):Array<String> {
+        if (e == null) return null;
+        switch (e.def) {
+            case EIdent(name):
+                return [name];
+            case EField(objExpr, field):
+                var sub = getExprPath(objExpr);
+                if (sub != null) {
+                    return sub.concat([field]);
+                }
+            default:
+        }
+        return null;
+    }
+
+    function isPackageObject(val:Dynamic):Bool {
+        if (val == null) return false;
+        return Reflect.field(val, "__isHaxiomPackage") == true;
+    }
+
+    function tryResolveExpressionPath(e:Expr, scope:Scope):{success:Bool, value:Dynamic} {
+        var path = getExprPath(e);
+        if (path == null || path.length == 0) return {success: false, value: null};
+        
+        var first = path[0];
+        if (scope.exists(first)) {
+            var val = scope.get(first);
+            if (!isPackageObject(val)) {
+                return {success: false, value: null};
+            }
+        }
+        
+        var len = path.length;
+        while (len > 0) {
+            var prefix = path.slice(0, len);
+            var fqName = prefix.join(".");
+            
+            var resolvedType:Dynamic = null;
+            var cls = Type.resolveClass(fqName);
+            if (cls != null) {
+                resolvedType = cls;
+            } else {
+                var enm = Type.resolveEnum(fqName);
+                if (enm != null) {
+                    resolvedType = enm;
+                }
+            }
+            
+            if (resolvedType == null) {
+                for (modKey in FFI.exposedModules.keys()) {
+                    if (StringTools.startsWith(fqName, modKey + ".")) {
+                        var subName = fqName.substr(modKey.length + 1);
+                        var lastDot = modKey.lastIndexOf(".");
+                        var parentPkg = lastDot != -1 ? modKey.substring(0, lastDot) : "";
+                        var runtimeFq = parentPkg != "" ? parentPkg + "." + subName : subName;
+                        
+                        var c = Type.resolveClass(runtimeFq);
+                        if (c != null) {
+                            resolvedType = c;
+                            break;
+                        }
+                        var enm = Type.resolveEnum(runtimeFq);
+                        if (enm != null) {
+                            resolvedType = enm;
+                            break;
+                        }
+                    }
+                }
+            }
+            
+            if (resolvedType != null) {
+                var remaining = path.slice(len);
+                var current:Dynamic = resolvedType;
+                for (field in remaining) {
+                    if (current == null) {
+                        return {success: true, value: null};
+                    }
+                    current = Reflect.field(current, field);
+                }
+                return {success: true, value: current};
+            }
+            
+            len--;
+        }
+        
+        return {success: false, value: null};
+    }
+
+    function resolveTypePath(path:Array<String>, scope:Scope):Dynamic {
+        var name = path[0];
+        var val:Dynamic = null;
+        if (scope.exists(name)) {
+            val = scope.get(name);
+            for (i in 1...path.length) {
+                if (val == null) break;
+                val = Reflect.field(val, path[i]);
+            }
+        }
+        
+        if (val != null) return val;
+        
+        var fqName = path.join(".");
+        var cls = Type.resolveClass(fqName);
+        if (cls != null) return cls;
+        var enm = Type.resolveEnum(fqName);
+        if (enm != null) return enm;
+        
+        // Check if fqName is a module subtype compile-time path
+        for (modKey in FFI.exposedModules.keys()) {
+            if (StringTools.startsWith(fqName, modKey + ".")) {
+                var subName = fqName.substr(modKey.length + 1);
+                var lastDot = modKey.lastIndexOf(".");
+                var parentPkg = lastDot != -1 ? modKey.substring(0, lastDot) : "";
+                var runtimeFq = parentPkg != "" ? parentPkg + "." + subName : subName;
+                
+                var c = Type.resolveClass(runtimeFq);
+                if (c != null) return c;
+                var e = Type.resolveEnum(runtimeFq);
+                if (e != null) return e;
+            }
+        }
+        return null;
+    }
+
     public function registerFullyQualified(fullName:String, value:Dynamic, scope:Scope) {
         var parts = fullName.split(".");
         if (parts.length == 1) {
@@ -2118,6 +2739,7 @@ class Interp {
             current = scope.get(firstPart);
         } else {
             current = {};
+            Reflect.setField(current, "__isHaxiomPackage", true);
             scope.declare(firstPart, current);
         }
         
@@ -2127,6 +2749,7 @@ class Interp {
                 current = Reflect.field(current, part);
             } else {
                 var nextObj = {};
+                Reflect.setField(nextObj, "__isHaxiomPackage", true);
                 Reflect.setField(current, part, nextObj);
                 current = nextObj;
             }
@@ -2145,6 +2768,14 @@ class Interp {
             }
         }
         return false;
+    }
+
+    function resolveAbstractImpl(absName:String, implClassName:String):Dynamic {
+        var implCls = haxiom.FFI.abstractImpls.get(absName);
+        if (implCls == null) {
+            implCls = Type.resolveClass(implClassName);
+        }
+        return implCls;
     }
 
     function getOrLoadModule(fqName:String):Scope {

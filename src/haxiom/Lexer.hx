@@ -99,6 +99,7 @@ class Lexer {
                     case "interface": TInterface;
                     case "implements": TImplements;
                     case "enum": TEnum;
+                    case "using": TUsing;
                     default: TIdent(id);
                 };
                 tokens.push({ def: def, pos: { line: startLine, col: startCol } });

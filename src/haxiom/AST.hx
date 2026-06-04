@@ -50,6 +50,7 @@ enum TokenDef {
     TInterface;
     TImplements;
     TEnum;
+    TUsing;
     
     // Operators
     TPlus;
@@ -145,19 +146,21 @@ enum ExprDef {
     EWhile(cond:Expr, e:Expr);
     EDoWhile(cond:Expr, e:Expr);
     EFor(v:String, it:Expr, e:Expr);
-    ESwitch(expr:Expr, cases:Array<{values:Array<Expr>, expr:Expr}>, ?defExpr:Expr);
+    ESwitch(expr:Expr, cases:Array<{values:Array<Expr>, ?guard:Expr, expr:Expr}>, ?defExpr:Expr);
     EReturn(?e:Expr);
     EBreak;
     EContinue;
     
     EPackage(path:Array<String>);
     EImport(path:Array<String>, ?alias:String);
+    EUsing(path:Array<String>);
     EThrow(expr:Expr);
     ETry(tryExpr:Expr, catches:Array<{name:String, type:Null<TypeDecl>, body:Expr}>);
     ECast(expr:Expr, ?type:TypeDecl);
     EInterface(name:String, methods:Array<{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>}>, ?parents:Array<String>);
     EEnum(name:String, constructors:Array<{name:String, args:Null<Array<{name:String, type:Null<TypeDecl>}>>}>);
     ESafeField(e:Expr, field:String);
+    ENew(type:TypeDecl, args:Array<Expr>);
 }
 
 typedef Expr = {

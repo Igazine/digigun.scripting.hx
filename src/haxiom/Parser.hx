@@ -5,6 +5,7 @@ import haxiom.AST;
 class Parser {
     var tokens:Array<Token>;
     var pos:Int = 0;
+    var compCounter:Int = 0;
 
     public function new(tokens:Array<Token>) {
         this.tokens = tokens;
@@ -61,6 +62,15 @@ class Parser {
                 }
                 match(TSemicolon);
                 return mk(EImport(path, alias), t.pos);
+            case TUsing:
+                next();
+                var path = [];
+                path.push(expectIdent());
+                while (match(TDot)) {
+                    path.push(expectIdent());
+                }
+                match(TSemicolon);
+                return mk(EUsing(path), t.pos);
             case TThrow:
                 next();
                 var e = parseExpr();
@@ -302,6 +312,10 @@ class Parser {
                 while (match(TComma)) {
                     values.push(parseExpr());
                 }
+                var guard = null;
+                if (match(TIf)) {
+                    guard = parseExpr();
+                }
                 expect(TColon);
                 skipNewlines();
                 var cExprs = [];
@@ -309,7 +323,7 @@ class Parser {
                     cExprs.push(parseStatement());
                     skipNewlines();
                 }
-                cases.push({ values: values, expr: mk(EBlock(cExprs), caseT.pos) });
+                cases.push({ values: values, guard: guard, expr: mk(EBlock(cExprs), caseT.pos) });
             } else if (match(TDefault)) {
                 expect(TColon);
                 skipNewlines();
@@ -620,7 +634,9 @@ class Parser {
                 return mk(EIdent("super"), t.pos);
             case TNew:
                 next();
-                return parsePostfix();
+                var type = parseType(false);
+                var args = parseCallArgs();
+                return mk(ENew(type, args), t.pos);
             case TIdent(v):
                 next();
                 // Check if it's an arrow function: arg -> body
@@ -683,6 +699,12 @@ class Parser {
                 if (is(TBracketClose)) {
                     next();
                     return mk(EArrayDecl([]), t.pos);
+                }
+                var nextT = peek();
+                if (nextT.def == TFor || nextT.def == TWhile || nextT.def == TIf) {
+                    var compStmt = parseStatement();
+                    expect(TBracketClose);
+                    return desugarComprehension(compStmt, t.pos);
                 }
                 var first = parseExpr();
                 if (match(TMapArrow)) {
@@ -763,6 +785,33 @@ class Parser {
     }
 
     function parseType(allowArrow:Bool = true):TypeDecl {
+        if (match(TBraceOpen)) {
+            var fields = [];
+            skipNewlines();
+            if (!is(TBraceClose)) {
+                var fName = expectIdent();
+                expect(TColon);
+                var fType = parseType(allowArrow);
+                fields.push({ name: fName, type: fType });
+                while (match(TComma) || match(TSemicolon)) {
+                    skipNewlines();
+                    if (is(TBraceClose)) break;
+                    var nextName = expectIdent();
+                    expect(TColon);
+                    var nextType = parseType(allowArrow);
+                    fields.push({ name: nextName, type: nextType });
+                }
+            }
+            skipNewlines();
+            expect(TBraceClose);
+            var baseType = TAnonymous(fields);
+            if (allowArrow && match(TArrow)) {
+                var ret = parseType(allowArrow);
+                return TFun([baseType], ret);
+            }
+            return baseType;
+        }
+
         if (match(TParenOpen)) {
             var args = [];
             while (!is(TParenClose) && !is(TEof)) {
@@ -921,5 +970,52 @@ class Parser {
         }
         expect(TBraceClose);
         return mk(EEnum(name, constructors), t.pos);
+    }
+
+    function desugarComprehension(stmt:Expr, pos:Pos):Expr {
+        var arrName = "__comp_arr_" + (compCounter++);
+        var transformed = transformComprehension(stmt, arrName);
+        var varDecl = mk(EVar(arrName, null, mk(EArrayDecl([]), pos)), pos);
+        var retExpr = mk(EIdent(arrName), pos);
+        return mk(EBlock([varDecl, transformed, retExpr]), pos);
+    }
+
+    function transformComprehension(expr:Expr, arrName:String):Expr {
+        if (expr == null) return null;
+        var pos = expr.pos;
+        switch (expr.def) {
+            case EBlock(exprs):
+                if (exprs.length > 0) {
+                    var lastIdx = exprs.length - 1;
+                    exprs[lastIdx] = transformComprehension(exprs[lastIdx], arrName);
+                }
+                return expr;
+            case EIf(cond, e1, e2):
+                var newE1 = transformComprehension(e1, arrName);
+                var newE2 = e2 != null ? transformComprehension(e2, arrName) : null;
+                return mk(EIf(cond, newE1, newE2), pos);
+            case EFor(v, it, body):
+                var newBody = transformComprehension(body, arrName);
+                return mk(EFor(v, it, newBody), pos);
+            case EWhile(cond, body):
+                var newBody = transformComprehension(body, arrName);
+                return mk(EWhile(cond, newBody), pos);
+            case EDoWhile(cond, body):
+                var newBody = transformComprehension(body, arrName);
+                return mk(EDoWhile(cond, newBody), pos);
+            case ESwitch(switchExpr, cases, defExpr):
+                var newCases = [for (c in cases) { values: c.values, guard: c.guard, expr: transformComprehension(c.expr, arrName) }];
+                var newDefExpr = defExpr != null ? transformComprehension(defExpr, arrName) : null;
+                return mk(ESwitch(switchExpr, newCases, newDefExpr), pos);
+            case ETry(tryExpr, catches):
+                var newTryExpr = transformComprehension(tryExpr, arrName);
+                var newCatches = [for (c in catches) { name: c.name, type: c.type, body: transformComprehension(c.body, arrName) }];
+                return mk(ETry(newTryExpr, newCatches), pos);
+            case EBreak, EContinue, EReturn(_), EThrow(_):
+                return expr;
+            default:
+                var pushField = mk(EField(mk(EIdent(arrName), pos), "push"), pos);
+                return mk(ECall(pushField, [expr]), pos);
+        }
     }
 }
