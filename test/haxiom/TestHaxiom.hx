@@ -1088,6 +1088,52 @@ class TestHaxiom {
                 throw "FAIL: ScriptException first line of message does not contain 'at script:3:21': " + e.message;
             }
         }
+
+        // 49. Expanded Standard Library
+        var script49 = '
+            // 1. Std.isOfType on native types
+            trace("isOfType Array: " + Std.isOfType([], Array));
+            trace("isOfType Map: " + Std.isOfType(["x" => 1], Map));
+            
+            // 2. Global constructors & factory Map fallback
+            var listInstance = new List();
+            listInstance.add("item1");
+            listInstance.push("item2");
+            trace("List first: " + listInstance.first() + ", size: " + listInstance.toString());
+            
+            var mapInstance = new Map();
+            mapInstance.set("key", "val");
+            trace("Map fallback default key: " + mapInstance.get("key"));
+
+            // 3. String static and instance methods
+            var charA = String.fromCharCode(65);
+            trace("String.fromCharCode(65): " + charA);
+            
+            var escaped = "hello world".urlEncode();
+            trace("urlEncode: " + escaped);
+            trace("urlDecode: " + escaped.urlDecode());
+
+            // 4. StringTools usage
+            trace("StringTools.hex(255): " + StringTools.hex(255));
+            
+            // 5. StringTools static extension (using)
+            using StringTools;
+            trace("replace using: " + "a-b-c".replace("-", "_"));
+
+            // 6. Array concat method
+            var a1 = [1, 2];
+            var a2 = [3, 4];
+            var merged = a1.concat(a2);
+            trace("Array concat: " + merged.join(","));
+
+            // 7. Lambda direct and static extension usage
+            var listForLambda = [10, 20, 30];
+            trace("Lambda.has 20: " + Lambda.has(listForLambda, 20));
+            
+            using Lambda;
+            trace("Lambda exists: " + listForLambda.exists(function(x) { return x > 15; }));
+        ';
+        haxiom.interpret(script49);
     }
 }
 

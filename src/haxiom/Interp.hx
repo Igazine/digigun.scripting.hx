@@ -169,11 +169,15 @@ class Interp {
         globals.declare("Math", Math);
         
         // Expose global Std object
+        var mapPlaceholder = { __isMapPlaceholder: true };
         var stdObj = {
             string: Std.string,
             parseInt: Std.parseInt,
             parseFloat: Std.parseFloat,
             isOfType: (v:Dynamic, t:Dynamic) -> {
+                if (t == mapPlaceholder) {
+                    return Std.isOfType(v, haxe.Constraints.IMap);
+                }
                 if (Std.isOfType(t, HaxiomClass)) {
                     if (v == null || !Std.isOfType(v, HaxiomInstance)) return false;
                     var inst:HaxiomInstance = cast v;
@@ -201,6 +205,46 @@ class Interp {
             }
         };
         globals.declare("Std", stdObj);
+        globals.declare("String", String);
+        globals.declare("Array", Array);
+        globals.declare("List", haxe.ds.List);
+        globals.declare("Map", mapPlaceholder);
+        globals.declare("StringTools", StringTools);
+        
+        var lambdaObj = {
+            array: (it:Dynamic) -> Lambda.array(it),
+            list: (it:Dynamic) -> Lambda.list(it),
+            count: (it:Dynamic, ?pred:Dynamic) -> {
+                if (pred == null) return Lambda.count(it);
+                return Lambda.count(it, (x) -> Reflect.callMethod(null, pred, [x]));
+            },
+            empty: (it:Dynamic) -> Lambda.empty(it),
+            indexOf: (it:Dynamic, val:Dynamic) -> Lambda.indexOf(it, val),
+            find: (it:Dynamic, f:Dynamic) -> {
+                return Lambda.find(it, (x) -> Reflect.callMethod(null, f, [x]));
+            },
+            exists: (it:Dynamic, f:Dynamic) -> {
+                return Lambda.exists(it, (x) -> Reflect.callMethod(null, f, [x]));
+            },
+            foreach: (it:Dynamic, f:Dynamic) -> {
+                return Lambda.foreach(it, (x) -> Reflect.callMethod(null, f, [x]));
+            },
+            iter: (it:Dynamic, f:Dynamic) -> {
+                Lambda.iter(it, (x) -> Reflect.callMethod(null, f, [x]));
+                return null;
+            },
+            map: (it:Dynamic, f:Dynamic) -> {
+                return Lambda.map(it, (x) -> Reflect.callMethod(null, f, [x]));
+            },
+            filter: (it:Dynamic, f:Dynamic) -> {
+                return Lambda.filter(it, (x) -> Reflect.callMethod(null, f, [x]));
+            },
+            fold: (it:Dynamic, f:Dynamic, first:Dynamic) -> {
+                return Lambda.fold(it, (x, acc) -> Reflect.callMethod(null, f, [x, acc]), first);
+            },
+            has: (it:Dynamic, el:Dynamic) -> Lambda.has(it, el)
+        };
+        globals.declare("Lambda", lambdaObj);
         
         // Ensure DCE keep
         HaxiomAnchor.keep();
@@ -388,6 +432,17 @@ class Interp {
                         checkInt(l, "StringTools.rpad", "length");
                         return StringTools.rpad(str, c, l);
                     };
+                case "urlEncode":
+                    return () -> StringTools.urlEncode(str);
+                case "urlDecode":
+                    return () -> StringTools.urlDecode(str);
+                case "htmlEscape":
+                    return (?quotes:Dynamic) -> {
+                        if (quotes != null && !Std.isOfType(quotes, Bool)) throw "String.htmlEscape expected a Bool for quotes";
+                        return StringTools.htmlEscape(str, quotes);
+                    };
+                case "htmlUnescape":
+                    return () -> StringTools.htmlUnescape(str);
                 default:
             }
         }
@@ -395,6 +450,11 @@ class Interp {
             var arr:Array<Dynamic> = cast obj;
             if (field == "length") return arr.length;
             switch (field) {
+                case "concat":
+                    return (other:Dynamic) -> {
+                        if (!Std.isOfType(other, Array)) throw "Array.concat expected an Array for argument but got " + getTypeName(other);
+                        return arr.concat(other);
+                    };
                 case "push":
                     return (x:Dynamic) -> arr.push(x);
                 case "pop":
@@ -472,6 +532,158 @@ class Interp {
                     return () -> arr.iterator();
                 case "keyValueIterator":
                     return () -> arr.keyValueIterator();
+                default:
+            }
+        }
+        if (Std.isOfType(obj, haxe.ds.List)) {
+            var list:haxe.ds.List<Dynamic> = cast obj;
+            switch (field) {
+                case "add":
+                    return (item:Dynamic) -> {
+                        list.add(item);
+                        return null;
+                    };
+                case "push":
+                    return (item:Dynamic) -> {
+                        list.push(item);
+                        return null;
+                    };
+                case "first":
+                    return () -> list.first();
+                case "last":
+                    return () -> list.last();
+                case "pop":
+                    return () -> list.pop();
+                case "isEmpty":
+                    return () -> list.isEmpty();
+                case "clear":
+                    return () -> {
+                        list.clear();
+                        return null;
+                    };
+                case "remove":
+                    return (item:Dynamic) -> list.remove(item);
+                case "iterator":
+                    return () -> list.iterator();
+                case "toString":
+                    return () -> list.toString();
+                case "join":
+                    return (sep:Dynamic) -> {
+                        checkString(sep, "List.join", "separator");
+                        return list.join(sep);
+                    };
+                case "filter":
+                    return (f:Dynamic) -> {
+                        checkFunction(f, "List.filter", "callback");
+                        return list.filter((x) -> Reflect.callMethod(null, f, [x]));
+                    };
+                case "map":
+                    return (f:Dynamic) -> {
+                        checkFunction(f, "List.map", "callback");
+                        return list.map((x) -> Reflect.callMethod(null, f, [x]));
+                    };
+                default:
+            }
+        }
+        if (obj == String) {
+            switch (field) {
+                case "fromCharCode":
+                    return (code:Dynamic) -> {
+                        checkInt(code, "String.fromCharCode", "code");
+                        return String.fromCharCode(code);
+                    };
+                default:
+            }
+        }
+        if (obj == StringTools) {
+            switch (field) {
+                case "urlEncode":
+                    return (s:Dynamic) -> {
+                        checkString(s, "StringTools.urlEncode", "s");
+                        return StringTools.urlEncode(s);
+                    };
+                case "urlDecode":
+                    return (s:Dynamic) -> {
+                        checkString(s, "StringTools.urlDecode", "s");
+                        return StringTools.urlDecode(s);
+                    };
+                case "htmlEscape":
+                    return (s:Dynamic, ?quotes:Dynamic) -> {
+                        checkString(s, "StringTools.htmlEscape", "s");
+                        if (quotes != null && !Std.isOfType(quotes, Bool)) throw "StringTools.htmlEscape expected a Bool for quotes";
+                        return StringTools.htmlEscape(s, quotes);
+                    };
+                case "htmlUnescape":
+                    return (s:Dynamic) -> {
+                        checkString(s, "StringTools.htmlUnescape", "s");
+                        return StringTools.htmlUnescape(s);
+                    };
+                case "hex":
+                    return (n:Dynamic, ?digits:Dynamic) -> {
+                        checkInt(n, "StringTools.hex", "n");
+                        if (digits != null) checkInt(digits, "StringTools.hex", "digits");
+                        return StringTools.hex(n, digits);
+                    };
+                case "fastCodeAt":
+                    return (s:Dynamic, index:Dynamic) -> {
+                        checkString(s, "StringTools.fastCodeAt", "s");
+                        checkInt(index, "StringTools.fastCodeAt", "index");
+                        return StringTools.fastCodeAt(s, index);
+                    };
+                case "isSpace":
+                    return (s:Dynamic, index:Dynamic) -> {
+                        checkString(s, "StringTools.isSpace", "s");
+                        checkInt(index, "StringTools.isSpace", "index");
+                        return StringTools.isSpace(s, index);
+                    };
+                case "trim":
+                    return (s:Dynamic) -> {
+                        checkString(s, "StringTools.trim", "s");
+                        return StringTools.trim(s);
+                    };
+                case "ltrim":
+                    return (s:Dynamic) -> {
+                        checkString(s, "StringTools.ltrim", "s");
+                        return StringTools.ltrim(s);
+                    };
+                case "rtrim":
+                    return (s:Dynamic) -> {
+                        checkString(s, "StringTools.rtrim", "s");
+                        return StringTools.rtrim(s);
+                    };
+                case "replace":
+                    return (s:Dynamic, sub:Dynamic, by:Dynamic) -> {
+                        checkString(s, "StringTools.replace", "s");
+                        checkString(sub, "StringTools.replace", "sub");
+                        checkString(by, "StringTools.replace", "by");
+                        return StringTools.replace(s, sub, by);
+                    };
+                case "startsWith":
+                    return (s:Dynamic, prefix:Dynamic) -> {
+                        checkString(s, "StringTools.startsWith", "s");
+                        checkString(prefix, "StringTools.startsWith", "prefix");
+                        return StringTools.startsWith(s, prefix);
+                    };
+                case "endsWith":
+                    return (s:Dynamic, suffix:Dynamic) -> {
+                        checkString(s, "StringTools.endsWith", "s");
+                        checkString(suffix, "StringTools.endsWith", "suffix");
+                        return StringTools.endsWith(s, suffix);
+                    };
+                case "lpad":
+                    return (s:Dynamic, c:Dynamic, l:Dynamic) -> {
+                        checkString(s, "StringTools.lpad", "s");
+                        checkString(c, "StringTools.lpad", "char");
+                        checkInt(l, "StringTools.lpad", "length");
+                        return StringTools.lpad(s, c, l);
+                    };
+                case "rpad":
+                    return (s:Dynamic, c:Dynamic, l:Dynamic) -> {
+                        checkString(s, "StringTools.rpad", "s");
+                        checkString(c, "StringTools.rpad", "char");
+                        checkInt(l, "StringTools.rpad", "length");
+                        return StringTools.rpad(s, c, l);
+                    };
                 default:
             }
         }
@@ -1048,7 +1260,7 @@ class Interp {
                 }
                 
                 if (objExpr != null && field != null) {
-                    var obj = eval(objExpr, scope);
+                    var obj:Dynamic = eval(objExpr, scope);
                     if (obj == null) {
                         if (isSafe) return null;
                         throw 'Cannot call method "$field" of null';
@@ -1133,6 +1345,19 @@ class Interp {
                                     checkString(args[0], "StringTools.rpad", "char");
                                     checkInt(args[1], "StringTools.rpad", "length");
                                     return StringTools.rpad(str, args[0], args[1]);
+                                case "urlEncode":
+                                    checkArgCount(args, 0, 0, "StringTools.urlEncode");
+                                    return StringTools.urlEncode(str);
+                                case "urlDecode":
+                                    checkArgCount(args, 0, 0, "StringTools.urlDecode");
+                                    return StringTools.urlDecode(str);
+                                case "htmlEscape":
+                                    checkArgCount(args, 0, 1, "StringTools.htmlEscape");
+                                    if (args.length > 0 && !Std.isOfType(args[0], Bool)) throw "StringTools.htmlEscape expected a Bool for quotes";
+                                    return args.length > 0 ? StringTools.htmlEscape(str, args[0]) : StringTools.htmlEscape(str);
+                                case "htmlUnescape":
+                                    checkArgCount(args, 0, 0, "StringTools.htmlUnescape");
+                                    return StringTools.htmlUnescape(str);
                                 default:
                             }
                         }
@@ -1140,6 +1365,10 @@ class Interp {
                             var arr:Array<Dynamic> = cast obj;
                             var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
                             switch (field) {
+                                case "concat":
+                                    checkArgCount(args, 1, 1, "Array.concat");
+                                    if (!Std.isOfType(args[0], Array)) throw "Array.concat expected an Array but got " + getTypeName(args[0]);
+                                    return arr.concat(args[0]);
                                 case "push":
                                     checkArgCount(args, 1, 1, "Array.push");
                                     return arr.push(args[0]);
@@ -1218,6 +1447,146 @@ class Interp {
                                 default:
                             }
                         }
+                        if (Std.isOfType(obj, haxe.ds.List)) {
+                             var list:haxe.ds.List<Dynamic> = cast obj;
+                             var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
+                             switch (field) {
+                                 case "add":
+                                     checkArgCount(args, 1, 1, "List.add");
+                                     list.add(args[0]);
+                                     return null;
+                                 case "push":
+                                     checkArgCount(args, 1, 1, "List.push");
+                                     list.push(args[0]);
+                                     return null;
+                                 case "first":
+                                     checkArgCount(args, 0, 0, "List.first");
+                                     return list.first();
+                                 case "last":
+                                     checkArgCount(args, 0, 0, "List.last");
+                                     return list.last();
+                                 case "pop":
+                                     checkArgCount(args, 0, 0, "List.pop");
+                                     return list.pop();
+                                 case "isEmpty":
+                                     checkArgCount(args, 0, 0, "List.isEmpty");
+                                     return list.isEmpty();
+                                 case "clear":
+                                     checkArgCount(args, 0, 0, "List.clear");
+                                     list.clear();
+                                     return null;
+                                 case "remove":
+                                     checkArgCount(args, 1, 1, "List.remove");
+                                     return list.remove(args[0]);
+                                 case "iterator":
+                                     checkArgCount(args, 0, 0, "List.iterator");
+                                     return list.iterator();
+                                 case "toString":
+                                     checkArgCount(args, 0, 0, "List.toString");
+                                     return list.toString();
+                                 case "join":
+                                     checkArgCount(args, 1, 1, "List.join");
+                                     checkString(args[0], "List.join", "separator");
+                                     return list.join(args[0]);
+                                 case "filter":
+                                     checkArgCount(args, 1, 1, "List.filter");
+                                     checkFunction(args[0], "List.filter", "callback");
+                                     return list.filter((x) -> Reflect.callMethod(null, args[0], [x]));
+                                 case "map":
+                                     checkArgCount(args, 1, 1, "List.map");
+                                     checkFunction(args[0], "List.map", "callback");
+                                     return list.map((x) -> Reflect.callMethod(null, args[0], [x]));
+                                 default:
+                             }
+                         }
+                        if (obj == String) {
+                             var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
+                             switch (field) {
+                                 case "fromCharCode":
+                                     checkArgCount(args, 1, 1, "String.fromCharCode");
+                                     checkInt(args[0], "String.fromCharCode", "code");
+                                     return String.fromCharCode(args[0]);
+                                 default:
+                             }
+                         }
+                         if (obj == StringTools) {
+                             var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
+                             switch (field) {
+                                 case "urlEncode":
+                                     checkArgCount(args, 1, 1, "StringTools.urlEncode");
+                                     checkString(args[0], "StringTools.urlEncode", "s");
+                                     return StringTools.urlEncode(args[0]);
+                                 case "urlDecode":
+                                     checkArgCount(args, 1, 1, "StringTools.urlDecode");
+                                     checkString(args[0], "StringTools.urlDecode", "s");
+                                     return StringTools.urlDecode(args[0]);
+                                 case "htmlEscape":
+                                     checkArgCount(args, 1, 2, "StringTools.htmlEscape");
+                                     checkString(args[0], "StringTools.htmlEscape", "s");
+                                     if (args.length > 1 && !Std.isOfType(args[1], Bool)) throw "StringTools.htmlEscape expected a Bool for quotes";
+                                     return args.length > 1 ? StringTools.htmlEscape(args[0], args[1]) : StringTools.htmlEscape(args[0]);
+                                 case "htmlUnescape":
+                                     checkArgCount(args, 1, 1, "StringTools.htmlUnescape");
+                                     checkString(args[0], "StringTools.htmlUnescape", "s");
+                                     return StringTools.htmlUnescape(args[0]);
+                                 case "hex":
+                                     checkArgCount(args, 1, 2, "StringTools.hex");
+                                     checkInt(args[0], "StringTools.hex", "n");
+                                     if (args.length > 1) checkInt(args[1], "StringTools.hex", "digits");
+                                     return args.length > 1 ? StringTools.hex(args[0], args[1]) : StringTools.hex(args[0]);
+                                 case "fastCodeAt":
+                                     checkArgCount(args, 2, 2, "StringTools.fastCodeAt");
+                                     checkString(args[0], "StringTools.fastCodeAt", "s");
+                                     checkInt(args[1], "StringTools.fastCodeAt", "index");
+                                     return StringTools.fastCodeAt(args[0], args[1]);
+                                 case "isSpace":
+                                     checkArgCount(args, 2, 2, "StringTools.isSpace");
+                                     checkString(args[0], "StringTools.isSpace", "s");
+                                     checkInt(args[1], "StringTools.isSpace", "index");
+                                     return StringTools.isSpace(args[0], args[1]);
+                                 case "trim":
+                                     checkArgCount(args, 1, 1, "StringTools.trim");
+                                     checkString(args[0], "StringTools.trim", "s");
+                                     return StringTools.trim(args[0]);
+                                 case "ltrim":
+                                     checkArgCount(args, 1, 1, "StringTools.ltrim");
+                                     checkString(args[0], "StringTools.ltrim", "s");
+                                     return StringTools.ltrim(args[0]);
+                                 case "rtrim":
+                                     checkArgCount(args, 1, 1, "StringTools.rtrim");
+                                     checkString(args[0], "StringTools.rtrim", "s");
+                                     return StringTools.rtrim(args[0]);
+                                 case "replace":
+                                     checkArgCount(args, 3, 3, "StringTools.replace");
+                                     checkString(args[0], "StringTools.replace", "s");
+                                     checkString(args[1], "StringTools.replace", "sub");
+                                     checkString(args[2], "StringTools.replace", "by");
+                                     return StringTools.replace(args[0], args[1], args[2]);
+                                 case "startsWith":
+                                     checkArgCount(args, 2, 2, "StringTools.startsWith");
+                                     checkString(args[0], "StringTools.startsWith", "s");
+                                     checkString(args[1], "StringTools.startsWith", "prefix");
+                                     return StringTools.startsWith(args[0], args[1]);
+                                 case "endsWith":
+                                     checkArgCount(args, 2, 2, "StringTools.endsWith");
+                                     checkString(args[0], "StringTools.endsWith", "s");
+                                     checkString(args[1], "StringTools.endsWith", "suffix");
+                                     return StringTools.endsWith(args[0], args[1]);
+                                 case "lpad":
+                                     checkArgCount(args, 3, 3, "StringTools.lpad");
+                                     checkString(args[0], "StringTools.lpad", "s");
+                                     checkString(args[1], "StringTools.lpad", "char");
+                                     checkInt(args[2], "StringTools.lpad", "length");
+                                     return StringTools.lpad(args[0], args[1], args[2]);
+                                 case "rpad":
+                                     checkArgCount(args, 3, 3, "StringTools.rpad");
+                                     checkString(args[0], "StringTools.rpad", "s");
+                                     checkString(args[1], "StringTools.rpad", "char");
+                                     checkInt(args[2], "StringTools.rpad", "length");
+                                     return StringTools.rpad(args[0], args[1], args[2]);
+                                 default:
+                             }
+                         }
                         if (obj == Math) {
                             var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
                             switch (field) {
@@ -2454,6 +2823,15 @@ class Interp {
                         if (!Std.isOfType(val, String)) throw 'Type mismatch: expected String but got ${val == null ? "null" : Std.string(val)}';
                     case "Bool":
                         if (!Std.isOfType(val, Bool)) throw 'Type mismatch: expected Bool but got ${val == null ? "null" : Std.string(val)}';
+                    case "Array":
+                        if (val == null) return;
+                        if (!Std.isOfType(val, Array)) throw 'Type mismatch: expected Array but got ${val == null ? "null" : Std.string(val)}';
+                    case "List" | "haxe.ds.List":
+                        if (val == null) return;
+                        if (!Std.isOfType(val, haxe.ds.List)) throw 'Type mismatch: expected List but got ${val == null ? "null" : Std.string(val)}';
+                    case "Map" | "haxe.ds.Map":
+                        if (val == null) return;
+                        if (!Std.isOfType(val, haxe.Constraints.IMap)) throw 'Type mismatch: expected Map but got ${val == null ? "null" : Std.string(val)}';
                     default:
                         // Subclass type checking for Haxiom classes
                         if (scope.exists(typeName)) {
