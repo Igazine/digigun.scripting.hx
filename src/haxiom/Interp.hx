@@ -195,7 +195,7 @@ class Interp {
                     var curr = inst.cls;
                     while (curr != null) {
                         for (itfName in curr.interfaces) {
-                            if (itfName == itf.name) return true;
+                            if (isInterfaceCompatible(itfName, itf.name, globals)) return true;
                         }
                         curr = curr.parent;
                     }
@@ -2029,7 +2029,27 @@ class Interp {
                         }
                         var itf:HaxiomInterface = cast itfVal;
                         cls.interfaces.push(itf.name);
-                        for (itfMethod in itf.methods) {
+                        
+                        var allItfMethods = new Map();
+                        var visitedItf = new Map();
+                        function collectMethods(currItf:HaxiomInterface) {
+                            if (visitedItf.exists(currItf.name)) return;
+                            visitedItf.set(currItf.name, true);
+                            for (mKey in currItf.methods.keys()) {
+                                if (!allItfMethods.exists(mKey)) {
+                                    allItfMethods.set(mKey, currItf.methods.get(mKey));
+                                }
+                            }
+                            for (pName in currItf.parents) {
+                                var pItfVal = scope.get(pName);
+                                if (pItfVal != null && Std.isOfType(pItfVal, HaxiomInterface)) {
+                                    collectMethods(cast pItfVal);
+                                }
+                            }
+                        }
+                        collectMethods(itf);
+
+                        for (itfMethod in allItfMethods) {
                             var classMethod = findMethod(cls, itfMethod.name);
                             if (classMethod == null) {
                                 if (itfMethod.body != null) {
@@ -2806,6 +2826,18 @@ class Interp {
         return null;
     }
 
+    function isInterfaceCompatible(implName:String, targetItfName:String, scope:Scope):Bool {
+        if (implName == targetItfName) return true;
+        var itfVal = scope.get(implName);
+        if (itfVal != null && Std.isOfType(itfVal, HaxiomInterface)) {
+            var itf:HaxiomInterface = cast itfVal;
+            for (pName in itf.parents) {
+                if (isInterfaceCompatible(pName, targetItfName, scope)) return true;
+            }
+        }
+        return false;
+    }
+
     public function checkType(val:Dynamic, type:TypeDecl, scope:Scope):Void {
         if (type == null) return;
         switch (type) {
@@ -2855,7 +2887,7 @@ class Interp {
                                 var curr = inst.cls;
                                 while (curr != null) {
                                     for (itfName in curr.interfaces) {
-                                        if (itfName == itf.name) return;
+                                        if (isInterfaceCompatible(itfName, itf.name, scope)) return;
                                     }
                                     curr = curr.parent;
                                 }

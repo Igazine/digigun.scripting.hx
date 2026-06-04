@@ -1134,6 +1134,104 @@ class TestHaxiom {
             trace("Lambda exists: " + listForLambda.exists(function(x) { return x > 15; }));
         ';
         haxiom.interpret(script49);
+
+        // 50. Interface Compliance Checking
+        var script50 = '
+            interface IParent {
+                function parentMethod():Void;
+            }
+            interface IChild extends IParent {
+                function childMethod():Void;
+            }
+            
+            class GoodChild implements IChild {
+                public function new() {}
+                public function parentMethod():Void {}
+                public function childMethod():Void {}
+            }
+            
+            var inst = new GoodChild();
+            trace("isOfType GoodChild IChild: " + Std.isOfType(inst, IChild));
+            trace("isOfType GoodChild IParent: " + Std.isOfType(inst, IParent));
+            
+            var p:IParent = inst;
+            var c:IChild = inst;
+            trace("Type checking assignments passed successfully.");
+        ';
+        haxiom.interpret(script50);
+
+        // Verify compile-time validation for missing parent interface method
+        var script50_missing_parent = '
+            interface IParent {
+                function parentMethod():Void;
+            }
+            interface IChild extends IParent {
+                function childMethod():Void;
+            }
+            class BadChild implements IChild {
+                public function new() {}
+                public function childMethod():Void {}
+            }
+        ';
+        var errorThrown = false;
+        try {
+            haxiom.interpret(script50_missing_parent);
+        } catch (e:Dynamic) {
+            errorThrown = true;
+            trace("Expected error for missing parent method caught: " + e);
+        }
+        if (!errorThrown) {
+            throw "FAIL: Expected exception for missing parent method was not thrown.";
+        }
+
+        // Verify compile-time validation for missing child interface method
+        var script50_missing_child = '
+            interface IParent {
+                function parentMethod():Void;
+            }
+            interface IChild extends IParent {
+                function childMethod():Void;
+            }
+            class BadChild2 implements IChild {
+                public function new() {}
+                public function parentMethod():Void {}
+            }
+        ';
+        errorThrown = false;
+        try {
+            haxiom.interpret(script50_missing_child);
+        } catch (e:Dynamic) {
+            errorThrown = true;
+            trace("Expected error for missing child method caught: " + e);
+        }
+        if (!errorThrown) {
+            throw "FAIL: Expected exception for missing child method was not thrown.";
+        }
+
+        // Verify compile-time validation for argument count mismatch on parent interface method
+        var script50_arg_mismatch = '
+            interface IParent {
+                function parentMethod(arg:Int):Void;
+            }
+            interface IChild extends IParent {
+                function childMethod():Void;
+            }
+            class BadChild3 implements IChild {
+                public function new() {}
+                public function parentMethod():Void {}
+                public function childMethod():Void {}
+            }
+        ';
+        errorThrown = false;
+        try {
+            haxiom.interpret(script50_arg_mismatch);
+        } catch (e:Dynamic) {
+            errorThrown = true;
+            trace("Expected error for parent method argument count mismatch caught: " + e);
+        }
+        if (!errorThrown) {
+            throw "FAIL: Expected exception for argument count mismatch was not thrown.";
+        }
     }
 }
 
