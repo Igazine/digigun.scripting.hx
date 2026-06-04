@@ -100,6 +100,7 @@ class Lexer {
                     case "implements": TImplements;
                     case "enum": TEnum;
                     case "using": TUsing;
+                    case "abstract": TAbstract;
                     default: TIdent(id);
                 };
                 tokens.push({ def: def, pos: { line: startLine, col: startCol } });

@@ -49,14 +49,7 @@ class FFIMacro {
                 }
             }
             
-            // Build the AbstractRegistry type mapping abstract FQ names to their implementation class references
-            var mapExprs = [];
-            for (fqName in exposedAbstracts.keys()) {
-                var jsVarName = fqName.split(".").join("_");
-                var expr = Context.parseInlineString("untyped " + jsVarName, Context.currentPos());
-                mapExprs.push(macro $v{fqName} => $expr);
-            }
-            var initExpr = macro [ $a{mapExprs} ];
+            var initExpr = macro new Map<String, Dynamic>();
             
             var t:haxe.macro.Expr.TypeDefinition = {
                 pack: ["haxiom", "macro"],

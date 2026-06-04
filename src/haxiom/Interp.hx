@@ -13,6 +13,38 @@ class Scope {
     public var types:Map<String, TypeDecl> = new Map();
     public var finals:Map<String, Bool> = new Map();
     public var parent:Scope;
+    public var isCaptured:Bool = false;
+
+    public static var pool:Array<Scope> = [];
+
+    public static function create(?parent:Scope):Scope {
+        if (pool.length > 0) {
+            var s = pool.pop();
+            s.parent = parent;
+            s.isCaptured = false;
+            return s;
+        }
+        return new Scope(parent);
+    }
+
+    public static function recycle(s:Scope):Void {
+        if (s == null || s.isCaptured) return;
+        if (pool.indexOf(s) != -1) return;
+        s.variables.clear();
+        s.types.clear();
+        s.finals.clear();
+        s.parent = null;
+        s.isCaptured = false;
+        pool.push(s);
+    }
+
+    public function markCaptured():Void {
+        if (isCaptured) return;
+        isCaptured = true;
+        if (parent != null) {
+            parent.markCaptured();
+        }
+    }
     
     public function new(?parent:Scope) {
         this.parent = parent;
@@ -68,11 +100,13 @@ class Scope {
 
 class HaxiomClass {
     public var name:String;
+    public var params:Array<String> = [];
+    public var parentType:TypeDecl;
     public var parent:HaxiomClass;
     public var fields:Map<String, {name:String, expr:Expr, isStatic:Bool, isPublic:Bool, ?property:{get:String, set:String}}> = new Map();
     public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}> = new Map();
     public var staticFields:Map<String, Dynamic> = new Map();
-    public var interfaces:Array<String> = [];
+    public var interfaces:Array<TypeDecl> = [];
 
     public function new(name:String, ?parent:HaxiomClass) {
         this.name = name;
@@ -82,10 +116,11 @@ class HaxiomClass {
 
 class HaxiomInterface {
     public var name:String;
+    public var params:Array<String> = [];
     public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>}> = new Map();
-    public var parents:Array<String>;
+    public var parents:Array<TypeDecl> = [];
 
-    public function new(name:String, ?parents:Array<String>) {
+    public function new(name:String, ?parents:Array<TypeDecl>) {
         this.name = name;
         this.parents = parents != null ? parents : [];
     }
@@ -94,6 +129,7 @@ class HaxiomInterface {
 class HaxiomInstance {
     public var cls:HaxiomClass;
     public var fields:Map<String, Dynamic> = new Map();
+    public var genericBindings:Map<String, TypeDecl> = new Map();
     
     public function new(cls:HaxiomClass) {
         this.cls = cls;
@@ -126,6 +162,34 @@ class HaxiomEnumInstance {
     }
 }
 
+class HaxiomAbstract {
+    public var name:String;
+    public var params:Array<String> = [];
+    public var underlyingType:TypeDecl;
+    public var fields:Map<String, {name:String, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}}> = new Map();
+    public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}> = new Map();
+    public var staticFields:Map<String, Dynamic> = new Map();
+
+    public function new(name:String, underlyingType:TypeDecl) {
+        this.name = name;
+        this.underlyingType = underlyingType;
+    }
+}
+
+class HaxiomAbstractInstance {
+    public var abstractType:HaxiomAbstract;
+    public var underlyingValue:Dynamic;
+
+    public function new(abstractType:HaxiomAbstract, underlyingValue:Dynamic) {
+        this.abstractType = abstractType;
+        this.underlyingValue = underlyingValue;
+    }
+
+    public function toString():String {
+        return Std.string(underlyingValue);
+    }
+}
+
 @:keep
 class HaxiomAnchor {
     public static function keep() {
@@ -145,6 +209,7 @@ class Interp {
     public var importWhitelist:Array<String> = null;
     public var importedModules:Map<String, Scope> = new Map();
     var currentConstructorInstance:Dynamic = null;
+    var inAbstractMethod:Bool = false;
     public var activeUsings:Array<Dynamic> = [];
 
     public var callStack:Array<{method:String, pos:Pos}> = [];
@@ -194,12 +259,22 @@ class Interp {
                     var itf:HaxiomInterface = cast t;
                     var curr = inst.cls;
                     while (curr != null) {
-                        for (itfName in curr.interfaces) {
-                            if (isInterfaceCompatible(itfName, itf.name, globals)) return true;
+                        for (itfDecl in curr.interfaces) {
+                            switch (itfDecl) {
+                                case TPath(itfPath, _):
+                                    var itfName = itfPath.join(".");
+                                    if (isInterfaceCompatible(itfName, itf.name, globals)) return true;
+                                default:
+                            }
                         }
                         curr = curr.parent;
                     }
                     return false;
+                }
+                if (Std.isOfType(t, HaxiomAbstract)) {
+                    if (v == null || !Std.isOfType(v, HaxiomAbstractInstance)) return false;
+                    var inst:HaxiomAbstractInstance = cast v;
+                    return inst.abstractType == t;
                 }
                 return Std.isOfType(v, t);
             }
@@ -822,6 +897,25 @@ class Interp {
             }
         }
         
+        if (Std.isOfType(obj, HaxiomAbstractInstance)) {
+            var inst:HaxiomAbstractInstance = cast obj;
+            var abs = inst.abstractType;
+            if (abs.fields.exists(field)) {
+                var fDef = abs.fields.get(field);
+                if (fDef.property != null && fDef.property.get == "get") {
+                    var m = abs.methods.get("get_" + field);
+                    if (m != null) {
+                        return Reflect.callMethod(null, bindMethod(obj, m), []);
+                    }
+                }
+            }
+            if (abs.methods.exists(field)) {
+                var m = abs.methods.get(field);
+                return bindMethod(obj, m);
+            }
+            return evalField(inst.underlyingValue, field, scope, pos);
+        }
+
         if (Std.isOfType(obj, HaxiomInstance)) {
             var inst:HaxiomInstance = cast obj;
             var fDef = findFieldDef(inst.cls, field);
@@ -909,6 +1003,21 @@ class Interp {
     }
 
     function assignField(obj:Dynamic, field:String, val:Dynamic, scope:Scope):Dynamic {
+        if (Std.isOfType(obj, HaxiomAbstractInstance)) {
+            var inst:HaxiomAbstractInstance = cast obj;
+            var abs = inst.abstractType;
+            if (abs.fields.exists(field)) {
+                var fDef = abs.fields.get(field);
+                if (fDef.property != null && fDef.property.set == "set") {
+                    var m = abs.methods.get("set_" + field);
+                    if (m != null) {
+                        return Reflect.callMethod(null, bindMethod(obj, m), [val]);
+                    }
+                }
+            }
+            return assignField(inst.underlyingValue, field, val, scope);
+        }
+
         if (Std.isOfType(obj, HaxiomInstance)) {
             var inst:HaxiomInstance = cast obj;
             var fDef = findFieldDef(inst.cls, field);
@@ -924,7 +1033,7 @@ class Interp {
                     }
                 }
                 if (fDef.type != null) {
-                    checkType(val, fDef.type, scope);
+                    checkType(val, fDef.type, scope, inst.genericBindings);
                 }
             }
             inst.fields.set(field, val);
@@ -992,7 +1101,12 @@ class Interp {
                 var pathRes = tryResolveExpressionPath(e, scope);
                 if (pathRes.success) return pathRes.value;
                 
-                if (name == "this") return currentThis;
+                if (name == "this") {
+                    if (inAbstractMethod && Std.isOfType(currentThis, HaxiomAbstractInstance)) {
+                        return (cast currentThis : HaxiomAbstractInstance).underlyingValue;
+                    }
+                    return currentThis;
+                }
                 if (scope.exists(name)) return scope.get(name);
                 
                 // Implicit this field/method resolution
@@ -1029,7 +1143,13 @@ class Interp {
                 var val = eval(expr, scope);
                 switch (target.def) {
                     case EIdent(name):
-                        if (name == "this") throw "Cannot assign to 'this'";
+                        if (name == "this") {
+                            if (inAbstractMethod && Std.isOfType(currentThis, HaxiomAbstractInstance)) {
+                                (cast currentThis : HaxiomAbstractInstance).underlyingValue = val;
+                                return val;
+                            }
+                            throw "Cannot assign to 'this'";
+                        }
                         if (scope.exists(name)) {
                             scope.checkAndSet(name, val, this);
                         } else if (currentThis != null) {
@@ -1047,9 +1167,16 @@ class Interp {
                                     }
                                 }
                                 if (fDef != null && fDef.type != null) {
-                                    checkType(val, fDef.type, scope);
+                                    checkType(val, fDef.type, scope, inst.genericBindings);
                                 }
                                 inst.fields.set(name, val);
+                            } else if (Std.isOfType(currentThis, HaxiomAbstractInstance)) {
+                                var inst:HaxiomAbstractInstance = cast currentThis;
+                                var fDef = inst.abstractType.fields.get(name);
+                                if (fDef != null && fDef.property != null && fDef.property.set == "set") {
+                                    var m = inst.abstractType.methods.get("set_" + name);
+                                    if (m != null) return Reflect.callMethod(null, bindMethod(currentThis, m), [val]);
+                                }
                             } else {
                                 Reflect.setField(currentThis, name, val);
                             }
@@ -1211,7 +1338,7 @@ class Interp {
                                 var constr = findMethod(parentCls, "new");
                                 if (constr != null) {
                                     var args = [for (a in argsExprs) eval(a, scope)];
-                                    var cScope = new Scope(scope);
+                                    var cScope = Scope.create(scope);
                                     cScope.declare("this", currentThis);
                                     for (i in 0...constr.args.length) {
                                         var arg = constr.args[i];
@@ -1224,11 +1351,16 @@ class Interp {
                                     currentConstructorInstance = inst;
                                     try {
                                         eval(constr.body, cScope);
+                                        Scope.recycle(cScope);
                                     } catch (flow:ControlFlow) {
+                                        Scope.recycle(cScope);
                                         switch (flow) {
                                             case Return(_):
                                             default: throw flow;
                                         }
+                                    } catch (err:Dynamic) {
+                                        Scope.recycle(cScope);
+                                        throw err;
                                     }
                                     currentConstructorInstance = oldConstrInst;
                                     currentThis = oldThis;
@@ -1773,7 +1905,7 @@ class Interp {
                     var constr = findMethod(cls, "new");
                     if (constr != null) {
                         checkMemberAccess(cls, constr.isPublic);
-                        var cScope = new Scope(scope);
+                        var cScope = Scope.create(scope);
                         cScope.declare("this", inst);
                         for (i in 0...constr.args.length) {
                             var arg = constr.args[i];
@@ -1789,14 +1921,17 @@ class Interp {
                         try {
                             eval(constr.body, cScope);
                             popFrame();
+                            Scope.recycle(cScope);
                         } catch (e:ControlFlow) {
                             popFrame();
+                            Scope.recycle(cScope);
                             switch (e) {
                                 case Return(_): // constructors return instance implicitly
                                 default: throw e;
                             }
                         } catch (err:Dynamic) {
                             popFrame();
+                            Scope.recycle(cScope);
                             throw err;
                         }
                         currentConstructorInstance = oldConstrInst;
@@ -1906,6 +2041,7 @@ class Interp {
                         if (Std.isOfType(callee, HaxiomClass)) {
                             var cls:HaxiomClass = cast callee;
                             var inst = new HaxiomInstance(cls);
+                            populateGenericBindings(inst, cls, params, null, null, scope);
                             
                             var curr = cls;
                             while (curr != null) {
@@ -1920,7 +2056,7 @@ class Interp {
                             var constr = findMethod(cls, "new");
                             if (constr != null) {
                                 checkMemberAccess(cls, constr.isPublic);
-                                var cScope = new Scope(scope);
+                                var cScope = Scope.create(scope);
                                 cScope.declare("this", inst);
                                 for (i in 0...constr.args.length) {
                                     var arg = constr.args[i];
@@ -1936,17 +2072,60 @@ class Interp {
                                 try {
                                     eval(constr.body, cScope);
                                     popFrame();
+                                    Scope.recycle(cScope);
                                 } catch (e:ControlFlow) {
                                     popFrame();
+                                    Scope.recycle(cScope);
                                     switch (e) {
                                         case Return(_):
                                         default: throw e;
                                     }
                                 } catch (err:Dynamic) {
                                     popFrame();
+                                    Scope.recycle(cScope);
                                     throw err;
                                 }
                                 currentConstructorInstance = oldConstrInst;
+                                currentThis = oldThis;
+                            }
+                            return inst;
+                        }
+                        
+                        if (Std.isOfType(callee, HaxiomAbstract)) {
+                            var abs:HaxiomAbstract = cast callee;
+                            var inst = new HaxiomAbstractInstance(abs, null);
+                            var constr = abs.methods.get("new");
+                            if (constr != null) {
+                                var cScope = Scope.create(scope);
+                                cScope.declare("this", inst);
+                                for (i in 0...constr.args.length) {
+                                    var arg = constr.args[i];
+                                    var val = i < args.length ? args[i] : null;
+                                    checkType(val, arg.type, cScope);
+                                    cScope.declare(arg.name, val, arg.type);
+                                }
+                                var oldThis = currentThis;
+                                currentThis = inst;
+                                var oldAbstract = inAbstractMethod;
+                                inAbstractMethod = true;
+                                pushFrame(abs.name + ".new", constr.body.pos);
+                                try {
+                                    eval(constr.body, cScope);
+                                    popFrame();
+                                    Scope.recycle(cScope);
+                                } catch (e:ControlFlow) {
+                                    popFrame();
+                                    Scope.recycle(cScope);
+                                    switch (e) {
+                                        case Return(_):
+                                        default: throw e;
+                                    }
+                                } catch (err:Dynamic) {
+                                    popFrame();
+                                    Scope.recycle(cScope);
+                                    throw err;
+                                }
+                                inAbstractMethod = oldAbstract;
                                 currentThis = oldThis;
                             }
                             return inst;
@@ -2005,11 +2184,25 @@ class Interp {
                 }
                 return map;
 
-            case EClass(name, fields, methods, parentName, interfaceNames):
-                var parentCls = parentName != null ? scope.get(parentName) : null;
+            case EClass(name, fields, methods, parentType, interfaceTypes, params):
+                var parentCls:HaxiomClass = null;
+                if (parentType != null) {
+                    switch (parentType) {
+                        case TPath(path, _):
+                            var parentName = path.join(".");
+                            var parentVal = scope.get(parentName);
+                            if (parentVal != null && Std.isOfType(parentVal, HaxiomClass)) {
+                                parentCls = cast parentVal;
+                            }
+                        default:
+                    }
+                }
                 var fqName = currentPackage.length > 0 ? currentPackage.join(".") + "." + name : name;
                 var cls = new HaxiomClass(name, parentCls);
                 cls.name = fqName;
+                cls.parentType = parentType;
+                cls.params = params != null ? params : [];
+                cls.interfaces = interfaceTypes != null ? interfaceTypes : [];
                 for (f in fields) {
                     cls.fields.set(f.name, f);
                     if (f.isStatic && f.expr != null) {
@@ -2020,69 +2213,103 @@ class Interp {
                     cls.methods.set(m.name, m);
                 }
                 
-                var implementedInterfaces = interfaceNames != null ? interfaceNames : [];
+                var implementedInterfaces = interfaceTypes != null ? interfaceTypes : [];
                 if (implementedInterfaces.length > 0) {
-                    for (itfName in implementedInterfaces) {
-                        var itfVal = scope.get(itfName);
-                        if (itfVal == null || !Std.isOfType(itfVal, HaxiomInterface)) {
-                            throw 'Interface $itfName not found at ${pos.line}:${pos.col}';
-                        }
-                        var itf:HaxiomInterface = cast itfVal;
-                        cls.interfaces.push(itf.name);
-                        
-                        var allItfMethods = new Map();
-                        var visitedItf = new Map();
-                        function collectMethods(currItf:HaxiomInterface) {
-                            if (visitedItf.exists(currItf.name)) return;
-                            visitedItf.set(currItf.name, true);
-                            for (mKey in currItf.methods.keys()) {
-                                if (!allItfMethods.exists(mKey)) {
-                                    allItfMethods.set(mKey, currItf.methods.get(mKey));
+                    for (itfDecl in implementedInterfaces) {
+                        switch (itfDecl) {
+                            case TPath(itfPath, itfConcreteParams):
+                                var itfName = itfPath.join(".");
+                                var itfVal = scope.get(itfName);
+                                if (itfVal == null || !Std.isOfType(itfVal, HaxiomInterface)) {
+                                    throw 'Interface $itfName not found at ${pos.line}:${pos.col}';
                                 }
-                            }
-                            for (pName in currItf.parents) {
-                                var pItfVal = scope.get(pName);
-                                if (pItfVal != null && Std.isOfType(pItfVal, HaxiomInterface)) {
-                                    collectMethods(cast pItfVal);
-                                }
-                            }
-                        }
-                        collectMethods(itf);
-
-                        for (itfMethod in allItfMethods) {
-                            var classMethod = findMethod(cls, itfMethod.name);
-                            if (classMethod == null) {
-                                if (itfMethod.body != null) {
-                                    classMethod = {
-                                        name: itfMethod.name,
-                                        args: itfMethod.args,
-                                        retType: itfMethod.retType,
-                                        body: itfMethod.body,
-                                        isStatic: false,
-                                        isPublic: true
-                                    };
-                                    cls.methods.set(itfMethod.name, classMethod);
-                                } else {
-                                    throw 'Class ${cls.name} does not implement method ${itfMethod.name} required by interface ${itf.name} at ${pos.line}:${pos.col}';
-                                }
-                            }
-                            if (classMethod.args.length != itfMethod.args.length) {
-                                throw 'Method ${cls.name}.${itfMethod.name} has argument count mismatch: expected ${itfMethod.args.length} but got ${classMethod.args.length} at ${pos.line}:${pos.col}';
-                            }
-                            for (i in 0...itfMethod.args.length) {
-                                var itfArg = itfMethod.args[i];
-                                var clsArg = classMethod.args[i];
-                                if (itfArg.type != null && clsArg.type != null) {
-                                    if (Std.string(itfArg.type) != Std.string(clsArg.type)) {
-                                        throw 'Method ${cls.name}.${itfMethod.name} argument ${clsArg.name} type mismatch: expected ${itfArg.type} but got ${clsArg.type} at ${pos.line}:${pos.col}';
+                                var itf:HaxiomInterface = cast itfVal;
+                                
+                                var itfBindings = new Map<String, TypeDecl>();
+                                if (itf.params != null) {
+                                    for (i in 0...itf.params.length) {
+                                        var paramName = itf.params[i];
+                                        var boundType = (itfConcreteParams != null && i < itfConcreteParams.length) ? itfConcreteParams[i] : TPath(["Dynamic"], []);
+                                        itfBindings.set(itf.name + "." + paramName, boundType);
                                     }
                                 }
-                            }
-                            if (itfMethod.retType != null && classMethod.retType != null) {
-                                if (Std.string(itfMethod.retType) != Std.string(classMethod.retType)) {
-                                    throw 'Method ${cls.name}.${itfMethod.name} return type mismatch: expected ${itfMethod.retType} but got ${classMethod.retType} at ${pos.line}:${pos.col}';
+                                
+                                var allItfMethods = new Map<String, {method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>}, bindings:Map<String, TypeDecl>}>();
+                                var visitedItf = new Map();
+                                function collectMethods(currItf:HaxiomInterface, currentItfBindings:Map<String, TypeDecl>) {
+                                    if (visitedItf.exists(currItf.name)) return;
+                                    visitedItf.set(currItf.name, true);
+                                    for (mKey in currItf.methods.keys()) {
+                                        if (!allItfMethods.exists(mKey)) {
+                                            allItfMethods.set(mKey, { method: currItf.methods.get(mKey), bindings: currentItfBindings });
+                                        }
+                                    }
+                                    for (p in currItf.parents) {
+                                        switch (p) {
+                                            case TPath(pPath, pConcreteParams):
+                                                var pName = pPath.join(".");
+                                                var pItfVal = scope.get(pName);
+                                                if (pItfVal != null && Std.isOfType(pItfVal, HaxiomInterface)) {
+                                                    var pItf:HaxiomInterface = cast pItfVal;
+                                                    var pBindings = new Map<String, TypeDecl>();
+                                                    if (pItf.params != null) {
+                                                        for (i in 0...pItf.params.length) {
+                                                            var paramName = pItf.params[i];
+                                                            var boundType = (pConcreteParams != null && i < pConcreteParams.length) ? pConcreteParams[i] : TPath(["Dynamic"], []);
+                                                            boundType = resolveGenericType(boundType, currentItfBindings, scope);
+                                                            pBindings.set(pItf.name + "." + paramName, boundType);
+                                                        }
+                                                    }
+                                                    collectMethods(pItf, pBindings);
+                                                }
+                                            default:
+                                        }
+                                    }
                                 }
-                            }
+                                collectMethods(itf, itfBindings);
+
+                                for (itfKey in allItfMethods.keys()) {
+                                    var itfData = allItfMethods.get(itfKey);
+                                    var itfMethod = itfData.method;
+                                    var activeBindings = itfData.bindings;
+                                    var classMethod = findMethod(cls, itfMethod.name);
+                                    if (classMethod == null) {
+                                        if (itfMethod.body != null) {
+                                            classMethod = {
+                                                name: itfMethod.name,
+                                                args: itfMethod.args,
+                                                retType: itfMethod.retType,
+                                                body: itfMethod.body,
+                                                isStatic: false,
+                                                isPublic: true
+                                            };
+                                            cls.methods.set(itfMethod.name, classMethod);
+                                        } else {
+                                            throw 'Class ${cls.name} does not implement method ${itfMethod.name} required by interface ${itf.name} at ${pos.line}:${pos.col}';
+                                        }
+                                    }
+                                    if (classMethod.args.length != itfMethod.args.length) {
+                                        throw 'Method ${cls.name}.${itfMethod.name} has argument count mismatch: expected ${itfMethod.args.length} but got ${classMethod.args.length} at ${pos.line}:${pos.col}';
+                                    }
+                                    for (i in 0...itfMethod.args.length) {
+                                        var itfArg = itfMethod.args[i];
+                                        var clsArg = classMethod.args[i];
+                                        if (itfArg.type != null && clsArg.type != null) {
+                                            var resolvedItfArgType = resolveGenericType(itfArg.type, activeBindings, scope);
+                                            if (Std.string(resolvedItfArgType) != Std.string(clsArg.type)) {
+                                                throw 'Method ${cls.name}.${itfMethod.name} argument ${clsArg.name} type mismatch: expected ${resolvedItfArgType} but got ${clsArg.type} at ${pos.line}:${pos.col}';
+                                            }
+                                        }
+                                    }
+                                    if (itfMethod.retType != null && classMethod.retType != null) {
+                                        var resolvedItfRetType = resolveGenericType(itfMethod.retType, activeBindings, scope);
+                                        if (Std.string(resolvedItfRetType) != Std.string(classMethod.retType)) {
+                                            throw 'Method ${cls.name}.${itfMethod.name} return type mismatch: expected ${resolvedItfRetType} but got ${classMethod.retType} at ${pos.line}:${pos.col}';
+                                        }
+                                    }
+                                }
+                            default:
+                                throw 'Invalid interface type declaration in implements list at ${pos.line}:${pos.col}';
                         }
                     }
                 }
@@ -2096,10 +2323,11 @@ class Interp {
                 }
                 return cls;
 
-            case EInterface(name, itfMethods, parents):
+            case EInterface(name, itfMethods, parents, params):
                 var fqName = currentPackage.length > 0 ? currentPackage.join(".") + "." + name : name;
                 var itf = new HaxiomInterface(name, parents);
                 itf.name = fqName;
+                itf.params = params != null ? params : [];
                 for (m in itfMethods) {
                     itf.methods.set(m.name, m);
                 }
@@ -2111,6 +2339,29 @@ class Interp {
                     registerFullyQualified(fqName, itf, globals);
                 }
                 return itf;
+
+            case EAbstract(name, underlyingType, fields, methods, params):
+                var fqName = currentPackage.length > 0 ? currentPackage.join(".") + "." + name : name;
+                var abs = new HaxiomAbstract(name, underlyingType);
+                abs.name = fqName;
+                abs.params = params != null ? params : [];
+                for (f in fields) {
+                    abs.fields.set(f.name, f);
+                    if (f.isStatic && f.expr != null) {
+                        abs.staticFields.set(f.name, eval(f.expr, scope));
+                    }
+                }
+                for (m in methods) {
+                    abs.methods.set(m.name, m);
+                }
+                scope.declare(name, abs);
+                if (globals != scope) {
+                    globals.declare(name, abs);
+                }
+                if (currentPackage.length > 0) {
+                    registerFullyQualified(fqName, abs, globals);
+                }
+                return abs;
 
             case EEnum(name, constructors):
                 var fqName = currentPackage.length > 0 ? currentPackage.join(".") + "." + name : name;
@@ -2176,6 +2427,14 @@ class Interp {
                 }
                 
                 if (isImportWhitelisted(fqName)) {
+                    if (haxiom.FFI.exposedAbstracts.exists(fqName)) {
+                        var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
+                        var implCls = resolveAbstractImpl(fqName, absInfo.implClass);
+                        if (implCls != null) {
+                            scope.declare(shortName, implCls);
+                            return null;
+                        }
+                    }
                     var nativeClass = Type.resolveClass(fqName);
                     if (nativeClass != null) {
                         scope.declare(shortName, nativeClass);
@@ -2276,19 +2535,36 @@ class Interp {
                         callStack.pop();
                     }
                     for (c in catches) {
-                        if (c.type == null) {
-                            var cScope = new Scope(scope);
-                            cScope.declare(c.name, errVal);
-                            return eval(c.body, cScope);
-                        }
+                        var caseScope = Scope.create(scope);
+                        var matched = false;
                         try {
-                            checkType(errVal, c.type, scope);
-                            var cScope = new Scope(scope);
-                            cScope.declare(c.name, errVal, c.type);
-                            return eval(c.body, cScope);
-                        } catch (_:Dynamic) {
-                            // Mismatch, try next catch block
+                            if (matchPattern(errVal, c.pattern, scope, caseScope)) {
+                                var typeMatched = true;
+                                if (c.type != null) {
+                                    try {
+                                        checkType(errVal, c.type, scope);
+                                    } catch (_:Dynamic) {
+                                        typeMatched = false;
+                                    }
+                                }
+                                if (typeMatched) {
+                                    var guardMatched = true;
+                                    if (c.guard != null) {
+                                        guardMatched = eval(c.guard, caseScope) == true;
+                                    }
+                                    if (guardMatched) {
+                                        matched = true;
+                                        var result = eval(c.body, caseScope);
+                                        Scope.recycle(caseScope);
+                                        return result;
+                                    }
+                                }
+                            }
+                        } catch (ex:Dynamic) {
+                            Scope.recycle(caseScope);
+                            throw ex;
                         }
+                        Scope.recycle(caseScope);
                     }
                     throw errVal;
                 }
@@ -2305,17 +2581,28 @@ class Interp {
                 return val;
 
             case EBlock(exprs):
-                var bScope = (scope == globals) ? globals : new Scope(scope);
+                var bScope = (scope == globals) ? globals : Scope.create(scope);
                 var lastVal:Dynamic = null;
-                for (expr in exprs) {
-                    lastVal = eval(expr, bScope);
+                try {
+                    for (expr in exprs) {
+                        lastVal = eval(expr, bScope);
+                    }
+                    if (bScope != globals) {
+                        Scope.recycle(bScope);
+                    }
+                } catch (ex:Dynamic) {
+                    if (bScope != globals) {
+                        Scope.recycle(bScope);
+                    }
+                    throw ex;
                 }
                 return lastVal;
 
             case EFunction(name, args, retType, body):
-                var closure = new Scope(scope);
+                var closure = Scope.create(scope);
+                closure.markCaptured();
                 var func = (callArgs:Array<Dynamic>) -> {
-                    var fScope = new Scope(closure);
+                    var fScope = Scope.create(closure);
                     for (i in 0...args.length) {
                         var arg = args[i];
                         var val = i < callArgs.length ? callArgs[i] : null;
@@ -2326,17 +2613,30 @@ class Interp {
                     pushFrame(funcName, body.pos);
                     try {
                         var res = eval(body, fScope);
-                        checkType(res, retType, fScope);
+                        if (retType != null && typeToString(retType) == "Void") {
+                            res = null;
+                        } else {
+                            checkType(res, retType, fScope);
+                        }
                         popFrame();
+                        Scope.recycle(fScope);
                         return res;
                     } catch (flow:ControlFlow) {
                         popFrame();
+                        Scope.recycle(fScope);
                         switch (flow) {
                             case Return(val):
+                                if (retType != null && typeToString(retType) == "Void") {
+                                    return null;
+                                }
                                 checkType(val, retType, fScope);
                                 return val;
                             default: throw flow;
                         }
+                    } catch (err:Dynamic) {
+                        popFrame();
+                        Scope.recycle(fScope);
+                        throw err;
                     }
                 };
                 var haxeFunc:Dynamic = switch (args.length) {
@@ -2419,31 +2719,41 @@ class Interp {
                             var it:IntIterator = cast iterator;
                             while (it.hasNext()) {
                                 var item = it.next();
-                                var fScope = new Scope(scope);
+                                var fScope = Scope.create(scope);
                                 fScope.declare(vName, item);
                                 try {
                                     lastVal = eval(body, fScope);
+                                    Scope.recycle(fScope);
                                 } catch (flow:ControlFlow) {
+                                    Scope.recycle(fScope);
                                     switch (flow) {
                                         case Break: break;
                                         case Continue: continue;
                                         case Return(val): throw Return(val);
                                     }
+                                } catch (err:Dynamic) {
+                                    Scope.recycle(fScope);
+                                    throw err;
                                 }
                             }
                         } else if (Reflect.field(iterator, "hasNext") != null && Reflect.field(iterator, "next") != null) {
                             while (Reflect.callMethod(iterator, Reflect.field(iterator, "hasNext"), [])) {
                                 var item = Reflect.callMethod(iterator, Reflect.field(iterator, "next"), []);
-                                var fScope = new Scope(scope);
+                                var fScope = Scope.create(scope);
                                 fScope.declare(vName, item);
                                 try {
                                     lastVal = eval(body, fScope);
+                                    Scope.recycle(fScope);
                                 } catch (flow:ControlFlow) {
+                                    Scope.recycle(fScope);
                                     switch (flow) {
                                         case Break: break;
                                         case Continue: continue;
                                         case Return(val): throw Return(val);
                                     }
+                                } catch (err:Dynamic) {
+                                    Scope.recycle(fScope);
+                                    throw err;
                                 }
                             }
                         }
@@ -2457,20 +2767,27 @@ class Interp {
                 var result:Dynamic = null;
                 for (c in cases) {
                     for (vExpr in c.values) {
-                        var caseScope = new Scope(scope);
-                        if (matchPattern(val, vExpr, scope, caseScope)) {
-                            var guardOk = true;
-                            if (c.guard != null) {
-                                var guardVal = eval(c.guard, caseScope);
-                                if (guardVal != true) {
-                                    guardOk = false;
+                        var caseScope = Scope.create(scope);
+                        try {
+                            if (matchPattern(val, vExpr, scope, caseScope)) {
+                                var guardOk = true;
+                                if (c.guard != null) {
+                                    var guardVal = eval(c.guard, caseScope);
+                                    if (guardVal != true) {
+                                        guardOk = false;
+                                    }
+                                }
+                                if (guardOk) {
+                                    matched = true;
+                                    result = eval(c.expr, caseScope);
+                                    Scope.recycle(caseScope);
+                                    break;
                                 }
                             }
-                            if (guardOk) {
-                                matched = true;
-                                result = eval(c.expr, caseScope);
-                                break;
-                            }
+                            Scope.recycle(caseScope);
+                        } catch (ex:Dynamic) {
+                            Scope.recycle(caseScope);
+                            throw ex;
                         }
                     }
                     if (matched) break;
@@ -2514,7 +2831,7 @@ class Interp {
                         }
                     }
                     if (fDef != null && fDef.type != null) {
-                        checkType(val, fDef.type, scope);
+                        checkType(val, fDef.type, scope, inst.genericBindings);
                     }
                     inst.fields.set(name, val);
                 } else {
@@ -2548,7 +2865,7 @@ class Interp {
                         }
                     }
                     if (fDef != null && fDef.type != null) {
-                        checkType(val, fDef.type, scope);
+                        checkType(val, fDef.type, scope, inst.genericBindings);
                     }
                     inst.fields.set(field, val);
                 } else {
@@ -2673,6 +2990,29 @@ class Interp {
                 }
                 return false;
                 
+            case EArrayDecl(values):
+                if (val == null) return false;
+                if (!Std.isOfType(val, Array)) return false;
+                var arr:Array<Dynamic> = cast val;
+                if (arr.length != values.length) return false;
+                for (i in 0...values.length) {
+                    if (!matchPattern(arr[i], values[i], scope, outBindings)) {
+                        return false;
+                    }
+                }
+                return true;
+
+            case EObjectDecl(fields):
+                if (val == null) return false;
+                for (f in fields) {
+                    var res = hasAndGetField(val, f.name);
+                    if (!res.exists) return false;
+                    if (!matchPattern(res.val, f.expr, scope, outBindings)) {
+                        return false;
+                    }
+                }
+                return true;
+                
             default:
                 var patVal = eval(pattern, scope);
                 if (Std.isOfType(val, HaxiomEnumInstance) && Std.isOfType(patVal, HaxiomEnumInstance)) {
@@ -2716,33 +3056,62 @@ class Interp {
 
     function bindMethod(obj:Dynamic, method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}):Dynamic {
         var func = (callArgs:Array<Dynamic>) -> {
-            var fScope = new Scope(globals);
+            var fScope = Scope.create(globals);
             fScope.declare("this", obj);
+            var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
             for (i in 0...method.args.length) {
                 var arg = method.args[i];
                 var val = i < callArgs.length ? callArgs[i] : null;
-                checkType(val, arg.type, fScope);
+                checkType(val, arg.type, fScope, bindings);
                 fScope.declare(arg.name, val, arg.type);
             }
             var oldThis = currentThis;
             currentThis = obj;
-            var className = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast(obj, HaxiomInstance).cls.name) : "toplevel";
+            var oldAbstract = inAbstractMethod;
+            if (Std.isOfType(obj, HaxiomAbstractInstance)) {
+                inAbstractMethod = true;
+            }
+            var className = "toplevel";
+            if (obj != null) {
+                if (Std.isOfType(obj, HaxiomInstance)) {
+                    className = (cast obj : HaxiomInstance).cls.name;
+                } else if (Std.isOfType(obj, HaxiomAbstractInstance)) {
+                    className = (cast obj : HaxiomAbstractInstance).abstractType.name;
+                }
+            }
             pushFrame(className + "." + method.name, method.body.pos);
             try {
                 var res = eval(method.body, fScope);
-                checkType(res, method.retType, fScope);
+                if (method.retType != null && typeToString(method.retType) == "Void") {
+                    res = null;
+                } else {
+                    checkType(res, method.retType, fScope, bindings);
+                }
+                inAbstractMethod = oldAbstract;
                 currentThis = oldThis;
                 popFrame();
+                Scope.recycle(fScope);
                 return res;
             } catch (flow:ControlFlow) {
+                inAbstractMethod = oldAbstract;
                 currentThis = oldThis;
                 popFrame();
+                Scope.recycle(fScope);
                 switch (flow) {
                     case Return(val):
-                        checkType(val, method.retType, fScope);
+                        if (method.retType != null && typeToString(method.retType) == "Void") {
+                            return null;
+                        }
+                        checkType(val, method.retType, fScope, bindings);
                         return val;
                     default: throw flow;
                 }
+            } catch (e:Dynamic) {
+                inAbstractMethod = oldAbstract;
+                currentThis = oldThis;
+                popFrame();
+                Scope.recycle(fScope);
+                throw e;
             }
         };
         var boundFunc:Dynamic = switch (method.args.length) {
@@ -2758,12 +3127,13 @@ class Interp {
 
     function bindStaticExtensionMethod(obj:Dynamic, method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}):Dynamic {
         var func = (callArgs:Array<Dynamic>) -> {
-            var fScope = new Scope(globals);
+            var fScope = Scope.create(globals);
             var fullArgs = [obj].concat(callArgs);
+            var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
             for (i in 0...method.args.length) {
                 var arg = method.args[i];
                 var val = i < fullArgs.length ? fullArgs[i] : null;
-                checkType(val, arg.type, fScope);
+                checkType(val, arg.type, fScope, bindings);
                 fScope.declare(arg.name, val, arg.type);
             }
             var oldThis = currentThis;
@@ -2772,19 +3142,33 @@ class Interp {
             pushFrame(className + "." + method.name, method.body.pos);
             try {
                 var res = eval(method.body, fScope);
-                checkType(res, method.retType, fScope);
+                if (method.retType != null && typeToString(method.retType) == "Void") {
+                    res = null;
+                } else {
+                    checkType(res, method.retType, fScope, bindings);
+                }
                 currentThis = oldThis;
                 popFrame();
+                Scope.recycle(fScope);
                 return res;
             } catch (flow:ControlFlow) {
                 currentThis = oldThis;
                 popFrame();
+                Scope.recycle(fScope);
                 switch (flow) {
                     case Return(val):
-                        checkType(val, method.retType, fScope);
+                        if (method.retType != null && typeToString(method.retType) == "Void") {
+                            return null;
+                        }
+                        checkType(val, method.retType, fScope, bindings);
                         return val;
                     default: throw flow;
                 }
+            } catch (e:Dynamic) {
+                currentThis = oldThis;
+                popFrame();
+                Scope.recycle(fScope);
+                throw e;
             }
         };
         var arity = method.args.length - 1;
@@ -2826,21 +3210,175 @@ class Interp {
         return null;
     }
 
+    public function typesEqual(t1:TypeDecl, t2:TypeDecl):Bool {
+        if (t1 == null && t2 == null) return true;
+        if (t1 == null || t2 == null) return false;
+        switch ([t1, t2]) {
+            case [TPath(p1, params1), TPath(p2, params2)]:
+                if (p1.join(".") != p2.join(".")) return false;
+                if (params1.length != params2.length) return false;
+                for (i in 0...params1.length) {
+                    if (!typesEqual(params1[i], params2[i])) return false;
+                }
+                return true;
+            case [TFun(args1, ret1), TFun(args2, ret2)]:
+                if (args1.length != args2.length) return false;
+                for (i in 0...args1.length) {
+                    if (!typesEqual(args1[i], args2[i])) return false;
+                }
+                return typesEqual(ret1, ret2);
+            case [TAnonymous(fields1), TAnonymous(fields2)]:
+                if (fields1.length != fields2.length) return false;
+                var map1 = [for (f in fields1) f.name => f.type];
+                for (f in fields2) {
+                    if (!map1.exists(f.name)) return false;
+                    if (!typesEqual(map1.get(f.name), f.type)) return false;
+                }
+                return true;
+            default:
+                return false;
+        }
+    }
+
+    public function lookupBinding(paramName:String, bindings:Map<String, TypeDecl>, inst:HaxiomInstance):TypeDecl {
+        if (inst != null) {
+            var curr = inst.cls;
+            while (curr != null) {
+                var key = curr.name + "." + paramName;
+                if (bindings.exists(key)) {
+                    return bindings.get(key);
+                }
+                curr = curr.parent;
+            }
+        }
+        var suffix = "." + paramName;
+        for (k in bindings.keys()) {
+            if (StringTools.endsWith(k, suffix) || k == paramName) {
+                return bindings.get(k);
+            }
+        }
+        return null;
+    }
+
+    public function resolveGenericType(type:TypeDecl, genericBindings:Map<String, TypeDecl>, scope:Scope):TypeDecl {
+        if (type == null) return null;
+        
+        var bindings = genericBindings;
+        var inst:HaxiomInstance = null;
+        if (scope != null && scope.exists("this")) {
+            var thisVal = scope.get("this");
+            if (thisVal != null && Std.isOfType(thisVal, HaxiomInstance)) {
+                inst = cast thisVal;
+                if (bindings == null) {
+                    bindings = inst.genericBindings;
+                }
+            }
+        }
+
+        switch (type) {
+            case TPath(path, params):
+                if (path.length == 1 && bindings != null) {
+                    var paramName = path[0];
+                    var resolved = lookupBinding(paramName, bindings, inst);
+                    if (resolved != null) return resolved;
+                }
+                var resolvedParams = [];
+                for (p in params) {
+                    resolvedParams.push(resolveGenericType(p, bindings, scope));
+                }
+                return TPath(path, resolvedParams);
+            case TFun(args, ret):
+                var resolvedArgs = [];
+                for (arg in args) {
+                    resolvedArgs.push(resolveGenericType(arg, bindings, scope));
+                }
+                return TFun(resolvedArgs, resolveGenericType(ret, bindings, scope));
+            case TAnonymous(fields):
+                var resolvedFields = [];
+                for (f in fields) {
+                    resolvedFields.push({ name: f.name, type: resolveGenericType(f.type, bindings, scope) });
+                }
+                return TAnonymous(resolvedFields);
+        }
+    }
+
+    public function resolveGenericTypeInBindings(type:TypeDecl, declaringClassName:String, bindings:Map<String, TypeDecl>):TypeDecl {
+        if (type == null) return null;
+        switch (type) {
+            case TPath(path, params):
+                if (path.length == 1 && bindings != null) {
+                    var paramName = path[0];
+                    var key = declaringClassName + "." + paramName;
+                    if (bindings.exists(key)) {
+                        return bindings.get(key);
+                    }
+                }
+                var resolvedParams = [];
+                for (p in params) {
+                    resolvedParams.push(resolveGenericTypeInBindings(p, declaringClassName, bindings));
+                }
+                return TPath(path, resolvedParams);
+            case TFun(args, ret):
+                var resolvedArgs = [];
+                for (arg in args) {
+                    resolvedArgs.push(resolveGenericTypeInBindings(arg, declaringClassName, bindings));
+                }
+                return TFun(resolvedArgs, resolveGenericTypeInBindings(ret, declaringClassName, bindings));
+            case TAnonymous(fields):
+                var resolvedFields = [];
+                for (f in fields) {
+                    resolvedFields.push({ name: f.name, type: resolveGenericTypeInBindings(f.type, declaringClassName, bindings) });
+                }
+                return TAnonymous(resolvedFields);
+        }
+    }
+
+    public function populateGenericBindings(inst:HaxiomInstance, cls:HaxiomClass, concreteParams:Array<TypeDecl>, childClassName:String = null, childBindings:Map<String, TypeDecl> = null, scope:Scope = null) {
+        if (cls.params != null) {
+            for (i in 0...cls.params.length) {
+                var paramName = cls.params[i];
+                var boundType = (concreteParams != null && i < concreteParams.length) ? concreteParams[i] : TPath(["Dynamic"], []);
+                if (childClassName != null && childBindings != null) {
+                    boundType = resolveGenericTypeInBindings(boundType, childClassName, childBindings);
+                }
+                inst.genericBindings.set(cls.name + "." + paramName, boundType);
+            }
+        }
+        if (cls.parentType != null) {
+            switch (cls.parentType) {
+                case TPath(path, parentParams):
+                    var parentBaseName = path.join(".");
+                    var parentClsVal = scope.get(parentBaseName);
+                    if (parentClsVal != null && Std.isOfType(parentClsVal, HaxiomClass)) {
+                        var parentCls:HaxiomClass = cast parentClsVal;
+                        populateGenericBindings(inst, parentCls, parentParams, cls.name, inst.genericBindings, scope);
+                    }
+                default:
+            }
+        }
+    }
+
     function isInterfaceCompatible(implName:String, targetItfName:String, scope:Scope):Bool {
         if (implName == targetItfName) return true;
         var itfVal = scope.get(implName);
         if (itfVal != null && Std.isOfType(itfVal, HaxiomInterface)) {
             var itf:HaxiomInterface = cast itfVal;
-            for (pName in itf.parents) {
-                if (isInterfaceCompatible(pName, targetItfName, scope)) return true;
+            for (p in itf.parents) {
+                switch (p) {
+                    case TPath(pPath, _):
+                        var pName = pPath.join(".");
+                        if (isInterfaceCompatible(pName, targetItfName, scope)) return true;
+                    default:
+                }
             }
         }
         return false;
     }
 
-    public function checkType(val:Dynamic, type:TypeDecl, scope:Scope):Void {
+    public function checkType(val:Dynamic, type:TypeDecl, scope:Scope, ?genericBindings:Map<String, TypeDecl>):Void {
         if (type == null) return;
-        switch (type) {
+        var resolvedType = resolveGenericType(type, genericBindings, scope);
+        switch (resolvedType) {
             case TPath(path, params):
                 var typeName = path.join(".");
                 switch (typeName) {
@@ -2858,12 +3396,31 @@ class Interp {
                     case "Array":
                         if (val == null) return;
                         if (!Std.isOfType(val, Array)) throw 'Type mismatch: expected Array but got ${val == null ? "null" : Std.string(val)}';
+                        if (params != null && params.length > 0) {
+                            var arr:Array<Dynamic> = cast val;
+                            for (item in arr) {
+                                checkType(item, params[0], scope, genericBindings);
+                            }
+                        }
                     case "List" | "haxe.ds.List":
                         if (val == null) return;
                         if (!Std.isOfType(val, haxe.ds.List)) throw 'Type mismatch: expected List but got ${val == null ? "null" : Std.string(val)}';
+                        if (params != null && params.length > 0) {
+                            var list:haxe.ds.List<Dynamic> = cast val;
+                            for (item in list) {
+                                checkType(item, params[0], scope, genericBindings);
+                            }
+                        }
                     case "Map" | "haxe.ds.Map":
                         if (val == null) return;
                         if (!Std.isOfType(val, haxe.Constraints.IMap)) throw 'Type mismatch: expected Map but got ${val == null ? "null" : Std.string(val)}';
+                        if (params != null && params.length > 1) {
+                            var map:haxe.Constraints.IMap<Dynamic, Dynamic> = cast val;
+                            for (key in map.keys()) {
+                                checkType(key, params[0], scope, genericBindings);
+                                checkType(map.get(key), params[1], scope, genericBindings);
+                            }
+                        }
                     default:
                         // Subclass type checking for Haxiom classes
                         if (scope.exists(typeName)) {
@@ -2873,11 +3430,25 @@ class Interp {
                                 if (!Std.isOfType(val, HaxiomInstance)) throw 'Type mismatch: expected $typeName but got ${val == null ? "null" : Std.string(val)}';
                                 var inst:HaxiomInstance = cast val;
                                 var curr = inst.cls;
+                                var isSub = false;
                                 while (curr != null) {
-                                    if (curr == cls) return;
+                                    if (curr == cls) {
+                                        isSub = true;
+                                        break;
+                                    }
                                     curr = curr.parent;
                                 }
-                                throw 'Type mismatch: expected $typeName but got ${inst.cls.name}';
+                                if (!isSub) throw 'Type mismatch: expected $typeName but got ${inst.cls.name}';
+                                if (params != null && params.length > 0 && cls.params != null) {
+                                    for (i in 0...Std.int(Math.min(params.length, cls.params.length))) {
+                                        var expectedParam = params[i];
+                                        var actualParam = inst.genericBindings.get(cls.name + "." + cls.params[i]);
+                                        if (actualParam != null && !typesEqual(actualParam, expectedParam)) {
+                                            throw 'Type mismatch: expected type parameter ${cls.params[i]} to be ${typeToString(expectedParam)} but got ${typeToString(actualParam)}';
+                                        }
+                                    }
+                                }
+                                return;
                             }
                             if (Std.isOfType(cls, HaxiomInterface)) {
                                 if (val == null) return;
@@ -2885,13 +3456,35 @@ class Interp {
                                 var inst:HaxiomInstance = cast val;
                                 var itf:HaxiomInterface = cast cls;
                                 var curr = inst.cls;
+                                var matchedItf:TypeDecl = null;
                                 while (curr != null) {
-                                    for (itfName in curr.interfaces) {
-                                        if (isInterfaceCompatible(itfName, itf.name, scope)) return;
+                                    for (itfDecl in curr.interfaces) {
+                                        switch (itfDecl) {
+                                            case TPath(itfPath, _):
+                                                var itfName = itfPath.join(".");
+                                                if (isInterfaceCompatible(itfName, itf.name, scope)) {
+                                                    matchedItf = itfDecl;
+                                                    break;
+                                                }
+                                            default:
+                                        }
                                     }
+                                    if (matchedItf != null) break;
                                     curr = curr.parent;
                                 }
-                                throw 'Type mismatch: expected interface $typeName but got ${inst.cls.name}';
+                                if (matchedItf == null) {
+                                    throw 'Type mismatch: expected interface $typeName but got ${inst.cls.name}';
+                                }
+                                if (params != null && params.length > 0 && itf.params != null) {
+                                    for (i in 0...Std.int(Math.min(params.length, itf.params.length))) {
+                                        var expectedParam = params[i];
+                                        var actualParam = inst.genericBindings.get(itf.name + "." + itf.params[i]);
+                                        if (actualParam != null && !typesEqual(actualParam, expectedParam)) {
+                                            throw 'Type mismatch: expected interface type parameter ${itf.params[i]} to be ${typeToString(expectedParam)} but got ${typeToString(actualParam)}';
+                                        }
+                                    }
+                                }
+                                return;
                             }
                             if (Std.isOfType(cls, HaxiomEnum)) {
                                 if (val == null) return;
@@ -2901,8 +3494,39 @@ class Interp {
                                 if (inst.enumType == enumCls) return;
                                 throw 'Type mismatch: expected enum $typeName but got ${inst.enumType.name}';
                             }
+                            if (Std.isOfType(cls, HaxiomAbstract)) {
+                                if (val == null) return;
+                                if (!Std.isOfType(val, HaxiomAbstractInstance)) throw 'Type mismatch: expected $typeName but got ${val == null ? "null" : Std.string(val)}';
+                                var inst:HaxiomAbstractInstance = cast val;
+                                var abs:HaxiomAbstract = cast cls;
+                                if (inst.abstractType == abs) return;
+                                throw 'Type mismatch: expected abstract $typeName but got ${inst.abstractType.name}';
+                            }
                         }
                         // Native check
+                        var resolvedTypePathVal = resolveTypePath(path, scope);
+                        var fqAbstractName:String = null;
+                        if (haxiom.FFI.exposedAbstracts.exists(typeName)) {
+                            fqAbstractName = typeName;
+                        } else if (resolvedTypePathVal != null) {
+                            var resolvedClassName = Type.getClassName(cast resolvedTypePathVal);
+                            if (resolvedClassName != null) {
+                                for (k in haxiom.FFI.exposedAbstracts.keys()) {
+                                    if (haxiom.FFI.exposedAbstracts.get(k).implClass == resolvedClassName) {
+                                        fqAbstractName = k;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        
+                        if (fqAbstractName != null) {
+                            var absInfo = haxiom.FFI.exposedAbstracts.get(fqAbstractName);
+                            var underlyingTypeDecl = TPath(absInfo.underlying.split("."), []);
+                            checkType(val, underlyingTypeDecl, scope, genericBindings);
+                            return;
+                        }
+
                         var nativeClass = Type.resolveClass(typeName);
                         if (nativeClass != null) {
                             if (val == null) return;
@@ -3050,13 +3674,18 @@ class Interp {
             var fqName = prefix.join(".");
             
             var resolvedType:Dynamic = null;
-            var cls = Type.resolveClass(fqName);
-            if (cls != null) {
-                resolvedType = cls;
+            if (haxiom.FFI.exposedAbstracts.exists(fqName)) {
+                var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
+                resolvedType = resolveAbstractImpl(fqName, absInfo.implClass);
             } else {
-                var enm = Type.resolveEnum(fqName);
-                if (enm != null) {
-                    resolvedType = enm;
+                var cls = Type.resolveClass(fqName);
+                if (cls != null) {
+                    resolvedType = cls;
+                } else {
+                    var enm = Type.resolveEnum(fqName);
+                    if (enm != null) {
+                        resolvedType = enm;
+                    }
                 }
             }
             
@@ -3114,6 +3743,12 @@ class Interp {
         if (val != null) return val;
         
         var fqName = path.join(".");
+        
+        if (haxiom.FFI.exposedAbstracts.exists(fqName)) {
+            var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
+            return resolveAbstractImpl(fqName, absInfo.implClass);
+        }
+        
         var cls = Type.resolveClass(fqName);
         if (cls != null) return cls;
         var enm = Type.resolveEnum(fqName);

@@ -51,6 +51,7 @@ enum TokenDef {
     TImplements;
     TEnum;
     TUsing;
+    TAbstract;
     
     // Operators
     TPlus;
@@ -136,8 +137,9 @@ enum ExprDef {
     EClass(name:String, 
            fields:Array<{name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}}>, 
            methods:Array<{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}>, 
-           ?parent:String,
-           ?interfaces:Array<String>);
+           ?parent:TypeDecl,
+           ?interfaces:Array<TypeDecl>,
+           ?params:Array<String>);
 
     EBlock(exprs:Array<Expr>);
     EFunction(?name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr);
@@ -155,12 +157,13 @@ enum ExprDef {
     EImport(path:Array<String>, ?alias:String);
     EUsing(path:Array<String>);
     EThrow(expr:Expr);
-    ETry(tryExpr:Expr, catches:Array<{name:String, type:Null<TypeDecl>, body:Expr}>);
+    ETry(tryExpr:Expr, catches:Array<{pattern:Expr, ?type:TypeDecl, ?guard:Expr, body:Expr}>);
     ECast(expr:Expr, ?type:TypeDecl);
-    EInterface(name:String, methods:Array<{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>}>, ?parents:Array<String>);
+    EInterface(name:String, methods:Array<{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>}>, ?parents:Array<TypeDecl>, ?params:Array<String>);
     EEnum(name:String, constructors:Array<{name:String, args:Null<Array<{name:String, type:Null<TypeDecl>}>>}>);
     ESafeField(e:Expr, field:String);
     ENew(type:TypeDecl, args:Array<Expr>);
+    EAbstract(name:String, underlyingType:TypeDecl, fields:Array<{name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}}>, methods:Array<{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}>, ?params:Array<String>);
 }
 
 typedef Expr = {

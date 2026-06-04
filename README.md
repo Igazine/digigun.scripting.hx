@@ -302,6 +302,12 @@ haxe -cp src -cp test -main haxiom.TestHaxiom -js bin/test_haxiom.js && node bin
 
 ---
 
+## Future Plans
+
+* **Bytecode Compiler & VM**: Deferring to a later phase a custom bytecode compiler and stack-based virtual machine (VM) for Haxiom to optimize execution speed and representation footprint.
+
+---
+
 ## License
 
 Part of the **Digigun** ecosystem. Licensed under the MIT License.

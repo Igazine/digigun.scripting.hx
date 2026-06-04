@@ -32,7 +32,8 @@ class Haxiom implements common.IScriptEngine {
             }
         }
         var parser = new Parser(tokens);
-        return parser.parse();
+        var ast = parser.parse();
+        return Optimizer.foldConstants(ast);
     }
 
     public function execute<T>(ast:haxiom.AST.Expr):T {

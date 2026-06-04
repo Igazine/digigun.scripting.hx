@@ -82,11 +82,26 @@ class Parser {
                 var catches = [];
                 while (match(TCatch)) {
                     expect(TParenOpen);
-                    var errName = expectIdent();
-                    var errType = parseOptType();
+                    var pattern = null;
+                    var typeDecl = null;
+                    if (isIdent(peek()) && Type.enumIndex(peek(1).def) == Type.enumIndex(TColon)) {
+                        var idPos = peek().pos;
+                        var name = expectIdent();
+                        pattern = mk(EIdent(name), idPos);
+                        expect(TColon);
+                        typeDecl = parseType();
+                    } else {
+                        pattern = parseExpr();
+                    }
+                    var guard = null;
+                    if (match(TIf)) {
+                        expect(TParenOpen);
+                        guard = parseExpr();
+                        expect(TParenClose);
+                    }
                     expect(TParenClose);
                     var catchBody = parseStatement();
-                    catches.push({ name: errName, type: errType, body: catchBody });
+                    catches.push({ pattern: pattern, type: typeDecl, guard: guard, body: catchBody });
                 }
                 return mk(ETry(tryBody, catches), t.pos);
             case TFinal:
@@ -102,6 +117,8 @@ class Parser {
                 return mk(EVar(name, vType, expr, true), t.pos);
             case TClass:
                 return parseClass();
+            case TAbstract:
+                return parseAbstract();
             case TInterface:
                 return parseInterface();
             case TEnum:
@@ -156,16 +173,44 @@ class Parser {
         return mk(EBlock(exprs), t.pos);
     }
 
+    function checkAndSplitShiftRight() {
+        var t = peek();
+        switch (t.def) {
+            case TShiftRight:
+                t.def = TGreater;
+                tokens.insert(pos + 1, { def: TGreater, pos: t.pos });
+            case TUnsignedShiftRight:
+                t.def = TGreater;
+                tokens.insert(pos + 1, { def: TGreater, pos: t.pos });
+                tokens.insert(pos + 2, { def: TGreater, pos: t.pos });
+            default:
+        }
+    }
+
+    function parseOptParams():Array<String> {
+        var params = [];
+        if (match(TLess)) {
+            params.push(expectIdent());
+            while (match(TComma)) {
+                params.push(expectIdent());
+            }
+            checkAndSplitShiftRight();
+            expect(TGreater);
+        }
+        return params;
+    }
+
     function parseClass():Expr {
         var t = expect(TClass);
         var name = expectIdent();
+        var params = parseOptParams();
         var parent = null;
         if (match(TExtends)) {
-            parent = expectIdent();
+            parent = parseType(false);
         }
         var interfaces = [];
         while (match(TImplements)) {
-            interfaces.push(expectIdent());
+            interfaces.push(parseType(false));
         }
         expect(TBraceOpen);
         skipNewlines();
@@ -232,7 +277,83 @@ class Parser {
             skipNewlines();
         }
         expect(TBraceClose);
-        return mk(EClass(name, fields, methods, parent, interfaces), t.pos);
+        return mk(EClass(name, fields, methods, parent, interfaces, params), t.pos);
+    }
+
+    function parseAbstract():Expr {
+        var t = expect(TAbstract);
+        var name = expectIdent();
+        var params = parseOptParams();
+        expect(TParenOpen);
+        var underlyingType = parseType();
+        expect(TParenClose);
+        
+        expect(TBraceOpen);
+        skipNewlines();
+        
+        var fields = [];
+        var methods = [];
+        
+        while (!is(TBraceClose) && !is(TEof)) {
+            var isStatic = false;
+            var isPublic = true; // Abstracts default visibility to public in Haxe
+            var isFinal = false;
+            
+            while (true) {
+                if (match(TStatic)) {
+                    isStatic = true;
+                } else if (match(TPublic)) {
+                    isPublic = true;
+                } else if (match(TPrivate)) {
+                    isPublic = false;
+                } else if (match(TFinal)) {
+                    isFinal = true;
+                } else {
+                    break;
+                }
+            }
+            
+            skipNewlines();
+            var memberT = peek();
+            if (memberT.def == TVar || isFinal) {
+                if (memberT.def == TVar) {
+                    next();
+                }
+                var fName = expectIdent();
+                var prop = null;
+                if (match(TParenOpen)) {
+                    var getM = expectIdent();
+                    expect(TComma);
+                    var setM = expectIdent();
+                    expect(TParenClose);
+                    prop = { get: getM, set: setM };
+                }
+                var fType = parseOptType();
+                var fExpr = null;
+                if (match(TAssign)) {
+                    fExpr = parseExpr();
+                }
+                match(TSemicolon);
+                fields.push({ name: fName, type: fType, expr: fExpr, isStatic: isStatic, isPublic: isPublic, isFinal: isFinal, property: prop });
+            } else if (memberT.def == TFunction) {
+                next();
+                var mName = "";
+                if (match(TNew)) {
+                    mName = "new";
+                } else {
+                    mName = expectIdent();
+                }
+                var mArgs = parseArgs();
+                var mRetType = parseOptType();
+                var mBody = parseBlock();
+                methods.push({ name: mName, args: mArgs, retType: mRetType, body: mBody, isStatic: isStatic, isPublic: isPublic });
+            } else {
+                throw 'Unexpected token inside abstract ${memberT.def} at ${memberT.pos.line}:${memberT.pos.col}';
+            }
+            skipNewlines();
+        }
+        expect(TBraceClose);
+        return mk(EAbstract(name, underlyingType, fields, methods, params), t.pos);
     }
 
     function parseVar():Expr {
@@ -436,7 +557,7 @@ class Parser {
         var e = parseRelation();
         var t = peek();
         while (is(TEqual) || is(TNotEqual)) {
-            var op = match(TEqual) ? "==" : "!=";
+            var op = match(TEqual) ? "==" : (match(TNotEqual) ? "!=" : throw "Expected !=");
             var e2 = parseRelation();
             e = mk(EBinop(op, e, e2), t.pos);
             t = peek();
@@ -838,6 +959,7 @@ class Parser {
             while (match(TComma)) {
                 params.push(parseType(allowArrow));
             }
+            checkAndSplitShiftRight();
             expect(TGreater);
         }
         
@@ -912,11 +1034,12 @@ class Parser {
     function parseInterface():Expr {
         var t = expect(TInterface);
         var name = expectIdent();
+        var params = parseOptParams();
         var parents = [];
         if (match(TExtends)) {
-            parents.push(expectIdent());
+            parents.push(parseType(false));
             while (match(TComma)) {
-                parents.push(expectIdent());
+                parents.push(parseType(false));
             }
         }
         expect(TBraceOpen);
@@ -938,7 +1061,7 @@ class Parser {
             skipNewlines();
         }
         expect(TBraceClose);
-        return mk(EInterface(name, methods, parents), t.pos);
+        return mk(EInterface(name, methods, parents, params), t.pos);
     }
 
     function parseEnum():Expr {
@@ -1009,7 +1132,7 @@ class Parser {
                 return mk(ESwitch(switchExpr, newCases, newDefExpr), pos);
             case ETry(tryExpr, catches):
                 var newTryExpr = transformComprehension(tryExpr, arrName);
-                var newCatches = [for (c in catches) { name: c.name, type: c.type, body: transformComprehension(c.body, arrName) }];
+                var newCatches = [for (c in catches) { pattern: c.pattern, type: c.type, guard: c.guard, body: transformComprehension(c.body, arrName) }];
                 return mk(ETry(newTryExpr, newCatches), pos);
             case EBreak, EContinue, EReturn(_), EThrow(_):
                 return expr;
