@@ -159,7 +159,13 @@ Any syntax or runtime error automatically collects and generates a highly-detail
 
 **Haxiom** is a lightweight, embeddable, sandboxed Haxe-in-Haxe dialect. It preserves standard Haxe syntax 100% while executing dynamically and safely in a fully sandboxed environment.
 
-Haxiom is designed for Haxe developers who want an integrated scripting engine without having to learn a new language or deal with different syntax structures.
+Haxiom is a **100% pure, target-independent Haxe-in-Haxe interpreter**. It compiles and runs identically on HashLink, C++, JavaScript, Eval, or any other Haxe target, offering identical cross-platform scripting execution.
+
+> [!IMPORTANT]
+> #### Performance & Interpretation Model
+> Like the Wren implementation, Haxiom runs on a high-level **AST-based Interpreter** model rather than compiling to bytecode or JIT.
+> - **Execution Speed**: While Haxiom runs highly optimized AST-traversal code, it operates at interpreter speeds (not native compiler-level speed). It is extremely fast for scripting, UI layout orchestration, AI behavior trees, and hot-loaded configuration scripts, but not intended for performance-critical tight math loops.
+> - **Memory Overhead**: Operations allocate temporary scope frames and expression objects. Ensure computationally heavy tasks remain in native Haxe, leaving orchestrative logic to Haxiom.
 
 ### Dynamic Type vs Strict Type Annotations
 
@@ -206,14 +212,27 @@ class Main {
 }
 ```
 
-### Haxiom Features Supported:
-- [x] Full Class & Inheritance model (`extends`, constructor `super` delegation)
-- [x] Implicit `this` resolution
-- [x] Property Getters & Setters (`var x(get, set)`)
-- [x] Map Literals (`[key => value]`) dynamically instantiated into specialized `StringMap` / `IntMap` collections
-- [x] Standard `Std` library bindings (`Std.string`, `Std.parseInt`, `Std.parseFloat`, and subclass-aware `Std.isOfType`)
-- [x] Strict Runtime Type Enforcement on typed variables, class fields, method arguments, and return types
-- [x] Closures, lambdas, and arrow functions (`(x, y):Int -> x * y`)
+### Key Haxiom Features Highlighted:
+- [x] **Full Class & Inheritance**: supports standard class declarations with `extends`, constructor `super` delegation, and `this` resolution.
+- [x] **Property Getters & Setters**: supports standard Haxe `(get, set)` syntax.
+- [x] **Interface Compliance Checking**: checks classes at definition-time to ensure they implement all methods required by implemented interfaces (including recursively inherited parent interfaces).
+- [x] **Structural/Anonymous Types**: runtime verification of structural annotations (e.g. `{ name: String, age: Int }`).
+- [x] **Static Extensions (`using`)**: call static methods of resolved types/classes as if they were member methods.
+- [x] **Array/Generator Comprehensions**: supports standard Haxe-style syntax (e.g., `[for (x in items) if (x % 2 == 0) x]`).
+- [x] **Switch-Case Pattern Guards**: advanced pattern matching with `case Pattern if (condition):`.
+- [x] **Precise Error Diagnostics**: attaches exact line, column, and file coordinates to runtime errors.
+
+### Handling FFI, Abstracts, & Generics (DCE Safety)
+
+Because Haxiom connects scripts directly to native Haxe code via the Foreign Function Interface (FFI), we must account for Haxe's compiler-time optimization passes like **Dead Code Elimination (DCE)**:
+
+* **Dead Code Elimination (DCE)**: Native classes, generic variations, and abstract methods that are only referenced inside Haxiom scripts will be stripped by the Haxe compiler as "unused".
+* **Exposing Types**: You must explicitly reference native types in your main Haxe application or use the `@:keep` metadata to prevent the compiler from stripping them.
+* **Auto-Exposure and Macros**: 
+  - Annotate native Haxe classes with `@:haxiom.expose`.
+  - Initialize `FFI.registerExposedClasses(haxiom)` to automatically bind all exposed classes to the script environment.
+  - Haxiom's compiler macro (`haxiom.macro.FFIMacro`) resolves and keeps exposed classes automatically.
+* **Abstracts & Generics Handling**: Native generic variants (e.g., `GenericPair<String>`) and abstracts (e.g., `WrappedInt`) must be explicitly instantiated once in your Haxe code (e.g., `var color = new WrappedInt(10);`) to ensure the Haxe compiler generates their native prototype and methods for Haxiom to access.
 
 ---
 
