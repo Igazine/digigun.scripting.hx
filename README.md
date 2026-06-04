@@ -234,6 +234,44 @@ Because Haxiom connects scripts directly to native Haxe code via the Foreign Fun
   - Haxiom's compiler macro (`haxiom.macro.FFIMacro`) resolves and keeps exposed classes automatically.
 * **Abstracts & Generics Handling**: Native generic variants (e.g., `GenericPair<String>`) and abstracts (e.g., `WrappedInt`) must be explicitly instantiated once in your Haxe code (e.g., `var color = new WrappedInt(10);`) to ensure the Haxe compiler generates their native prototype and methods for Haxiom to access.
 
+#### Example: Binding OpenFL and Preventing DCE
+
+To use third-party libraries (like `openfl`) inside Haxiom scripts, you must ensure their classes are included in the compilation and registered with Haxiom's FFI.
+
+1. **Compilation Command**: To prevent `openfl` classes from being excluded during Dead Code Elimination, force include the `openfl` packages in your build command using Haxe's `--macro include`:
+   ```bash
+   haxe -lib openfl -lib digigun.scripting.hx --macro "include('openfl.display')" --macro "include('openfl.events')" -main Main --interp
+   ```
+
+2. **FFI Registration (Native Haxe Setup)**:
+   Register the native OpenFL types with the interpreter so Haxiom knows how to construct and reference them:
+   ```haxe
+   import haxiom.Haxiom;
+   import haxiom.FFI;
+
+   var haxiom = new Haxiom();
+
+   // Register the necessary OpenFL classes manually
+   FFI.registerClass(haxiom, "openfl.display.Sprite", openfl.display.Sprite);
+   FFI.registerClass(haxiom, "openfl.events.MouseEvent", openfl.events.MouseEvent);
+   ```
+
+3. **Haxiom Script**:
+   ```haxe
+   import openfl.display.Sprite;
+   import openfl.events.MouseEvent;
+
+   var spr = new Sprite();
+   spr.buttonMode = true;
+   spr.useHandCursor = true;
+
+   function onClick(e:MouseEvent) {
+       trace("Sprite clicked!");
+   }
+
+   spr.addEventListener(MouseEvent.CLICK, onClick);
+   ```
+
 ---
 
 ## Testing
