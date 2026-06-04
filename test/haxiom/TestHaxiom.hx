@@ -1528,6 +1528,34 @@ class TestHaxiom {
         ";
         haxiom.interpret(script55_closure);
         trace("SUCCESS: Closure capture scope pooling check passed.");
+
+        // 56. Native Standard Library Auto-Exposure Verification
+        var script56 = "
+            import haxe.Timer;
+            import haxe.Json;
+            
+            // Test Date global binding
+            var d = Date.now();
+            var year = d.getFullYear();
+            trace('Date global check year: ' + year);
+            if (year < 2020) throw 'Invalid year from Date: ' + year;
+
+            // Test haxe.Json usage
+            var jsonStr = '{\"value\": 42}';
+            var parsed = Json.parse(jsonStr);
+            trace('Json parse value: ' + parsed.value);
+            if (parsed.value != 42) throw 'Json parse failed';
+
+            var stringified = Json.stringify(parsed);
+            trace('Json stringify output: ' + stringified);
+
+            // Test haxe.Timer usage
+            var start = Timer.stamp();
+            var end = Timer.stamp();
+            trace('Timer stamp diff: ' + (end - start));
+        ";
+        haxiom.interpret(script56);
+        trace("SUCCESS: Native standard library auto-exposure check passed.");
     }
 }
 

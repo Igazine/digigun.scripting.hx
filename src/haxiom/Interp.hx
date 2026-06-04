@@ -285,6 +285,10 @@ class Interp {
         globals.declare("List", haxe.ds.List);
         globals.declare("Map", mapPlaceholder);
         globals.declare("StringTools", StringTools);
+        globals.declare("Date", Date);
+        globals.declare("Xml", Xml);
+        globals.declare("Reflect", Reflect);
+        globals.declare("Type", Type);
         
         var lambdaObj = {
             array: (it:Dynamic) -> Lambda.array(it),
@@ -762,6 +766,23 @@ class Interp {
                 default:
             }
         }
+        if (obj == Date) {
+            switch (field) {
+                case "now":
+                    return () -> Date.now();
+                case "fromTime":
+                    return (t:Dynamic) -> {
+                        checkNum(t, "Date.fromTime");
+                        return Date.fromTime(t);
+                    };
+                case "fromString":
+                    return (s:Dynamic) -> {
+                        checkString(s, "Date.fromString", "s");
+                        return Date.fromString(s);
+                    };
+                default:
+            }
+        }
         if (obj == Math) {
             if (field == "PI") return Math.PI;
             if (field == "NaN") return Math.NaN;
@@ -958,6 +979,9 @@ class Interp {
 
         // Native Haxe reflection
         var f = Reflect.getProperty(obj, field);
+        if (f == null) {
+            f = Reflect.field(obj, field);
+        }
             // Check if this is an abstract method or property redirection closure/getter
             for (absName in haxiom.FFI.exposedAbstracts.keys()) {
                 var absInfo = haxiom.FFI.exposedAbstracts.get(absName);
@@ -973,7 +997,7 @@ class Interp {
                         case "String": matchesType = Std.isOfType(obj, String);
                         case "Bool": matchesType = Std.isOfType(obj, Bool);
                         default:
-                            var cls = Type.resolveClass(absInfo.underlying);
+                            var cls = resolveNativeClass(absInfo.underlying);
                             if (cls != null) matchesType = Std.isOfType(obj, cls);
                     }
                     
@@ -994,7 +1018,17 @@ class Interp {
                     }
                 }
             }
-        if (Reflect.isFunction(f)) return f;
+        if (Reflect.isFunction(f)) {
+            #if js
+            // On JS target, prototype methods returned by Reflect.getProperty are unbound.
+            // Wrap them to bind `this` to the receiver object.
+            return Reflect.makeVarArgs(function(args) {
+                return Reflect.callMethod(obj, f, args);
+            });
+            #else
+            return f;
+            #end
+        }
         if (f != null) return f;
         
         var usingRes = resolveUsing(obj, field);
@@ -1065,7 +1099,7 @@ class Interp {
                             case "String": matchesType = Std.isOfType(obj, String);
                             case "Bool": matchesType = Std.isOfType(obj, Bool);
                             default:
-                                var cls = Type.resolveClass(absInfo.underlying);
+                                var cls = resolveNativeClass(absInfo.underlying);
                                 if (cls != null) matchesType = Std.isOfType(obj, cls);
                         }
                         
@@ -1806,6 +1840,23 @@ class Interp {
                                 default:
                             }
                         }
+                        if (obj == Date) {
+                            var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
+                            switch (field) {
+                                case "now":
+                                    checkArgCount(args, 0, 0, "Date.now");
+                                    return Date.now();
+                                case "fromTime":
+                                    checkArgCount(args, 1, 1, "Date.fromTime");
+                                    checkNum(args[0], "Date.fromTime");
+                                    return Date.fromTime(args[0]);
+                                case "fromString":
+                                    checkArgCount(args, 1, 1, "Date.fromString");
+                                    checkString(args[0], "Date.fromString", "s");
+                                    return Date.fromString(args[0]);
+                                default:
+                            }
+                        }
                         if (Std.isOfType(obj, haxe.Constraints.IMap)) {
                             var map:haxe.Constraints.IMap<Dynamic, Dynamic> = cast obj;
                             var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
@@ -1843,6 +1894,9 @@ class Interp {
                             }
                         }
                         var method = Reflect.field(obj, field);
+                        if (method == null) {
+                            method = Reflect.getProperty(obj, field);
+                        }
                         if (method != null && Reflect.isFunction(method)) {
                             var args = [for (a in argsExprs) eval(a, scope)];
                             return Reflect.callMethod(obj, method, args);
@@ -1859,7 +1913,7 @@ class Interp {
                                     case "String": matchesType = Std.isOfType(obj, String);
                                     case "Bool": matchesType = Std.isOfType(obj, Bool);
                                     default:
-                                        var cls = Type.resolveClass(absInfo.underlying);
+                                        var cls = resolveNativeClass(absInfo.underlying);
                                         if (cls != null) matchesType = Std.isOfType(obj, cls);
                                 }
                                 
@@ -1997,7 +2051,7 @@ class Interp {
                             var genericSig = fqName + "<" + paramNames.join(",") + ">";
                             var mappedGenClass = haxiom.FFI.exposedGenerics.get(genericSig);
                             if (mappedGenClass != null) {
-                                var cls = Type.resolveClass(mappedGenClass);
+                                var cls = resolveNativeClass(mappedGenClass);
                                 if (cls != null) callee = cls;
                             }
                         }
@@ -2435,7 +2489,7 @@ class Interp {
                             return null;
                         }
                     }
-                    var nativeClass = Type.resolveClass(fqName);
+                    var nativeClass = resolveNativeClass(fqName);
                     if (nativeClass != null) {
                         scope.declare(shortName, nativeClass);
                         return null;
@@ -2452,7 +2506,7 @@ class Interp {
                         for (typeFq in types) {
                             var subParts = typeFq.split(".");
                             var subShortName = subParts[subParts.length - 1];
-                            var nc = Type.resolveClass(typeFq);
+                            var nc = resolveNativeClass(typeFq);
                             if (nc != null) {
                                 scope.declare(subShortName, nc);
                             } else {
@@ -2473,7 +2527,7 @@ class Interp {
                             var parentPkg = lastDot != -1 ? modKey.substring(0, lastDot) : "";
                             var runtimeFq = parentPkg != "" ? parentPkg + "." + subName : subName;
                             
-                            var nc = Type.resolveClass(runtimeFq);
+                            var nc = resolveNativeClass(runtimeFq);
                             if (nc != null) {
                                 scope.declare(shortName, nc);
                                 return null;
@@ -3527,7 +3581,7 @@ class Interp {
                             return;
                         }
 
-                        var nativeClass = Type.resolveClass(typeName);
+                        var nativeClass = resolveNativeClass(typeName);
                         if (nativeClass != null) {
                             if (val == null) return;
                             if (!Std.isOfType(val, nativeClass)) throw 'Type mismatch: expected $typeName but got ${val == null ? "null" : Std.string(val)}';
@@ -3678,7 +3732,7 @@ class Interp {
                 var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
                 resolvedType = resolveAbstractImpl(fqName, absInfo.implClass);
             } else {
-                var cls = Type.resolveClass(fqName);
+                var cls = resolveNativeClass(fqName);
                 if (cls != null) {
                     resolvedType = cls;
                 } else {
@@ -3697,7 +3751,7 @@ class Interp {
                         var parentPkg = lastDot != -1 ? modKey.substring(0, lastDot) : "";
                         var runtimeFq = parentPkg != "" ? parentPkg + "." + subName : subName;
                         
-                        var c = Type.resolveClass(runtimeFq);
+                        var c = resolveNativeClass(runtimeFq);
                         if (c != null) {
                             resolvedType = c;
                             break;
@@ -3749,7 +3803,7 @@ class Interp {
             return resolveAbstractImpl(fqName, absInfo.implClass);
         }
         
-        var cls = Type.resolveClass(fqName);
+        var cls = resolveNativeClass(fqName);
         if (cls != null) return cls;
         var enm = Type.resolveEnum(fqName);
         if (enm != null) return enm;
@@ -3762,7 +3816,7 @@ class Interp {
                 var parentPkg = lastDot != -1 ? modKey.substring(0, lastDot) : "";
                 var runtimeFq = parentPkg != "" ? parentPkg + "." + subName : subName;
                 
-                var c = Type.resolveClass(runtimeFq);
+                var c = resolveNativeClass(runtimeFq);
                 if (c != null) return c;
                 var e = Type.resolveEnum(runtimeFq);
                 if (e != null) return e;
@@ -3815,10 +3869,21 @@ class Interp {
         return false;
     }
 
+    function resolveNativeClass(fqName:String):Class<Dynamic> {
+        var registryCls = Type.resolveClass("haxiom.macro.StdlibRegistry");
+        if (registryCls != null) {
+            var classes:Map<String, Dynamic> = Reflect.field(registryCls, "classes");
+            if (classes != null && classes.exists(fqName)) {
+                return classes.get(fqName);
+            }
+        }
+        return Type.resolveClass(fqName);
+    }
+
     function resolveAbstractImpl(absName:String, implClassName:String):Dynamic {
         var implCls = haxiom.FFI.abstractImpls.get(absName);
         if (implCls == null) {
-            implCls = Type.resolveClass(implClassName);
+            implCls = resolveNativeClass(implClassName);
         }
         return implCls;
     }
