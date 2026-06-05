@@ -234,6 +234,16 @@ Because Haxiom connects scripts directly to native Haxe code via the Foreign Fun
   - Haxiom's compiler macro (`haxiom.macro.FFIMacro`) resolves and keeps exposed classes automatically.
 * **Abstracts & Generics Handling**: Native generic variants (e.g., `GenericPair<String>`) and abstracts (e.g., `WrappedInt`) must be explicitly instantiated once in your Haxe code (e.g., `var color = new WrappedInt(10);`) to ensure the Haxe compiler generates their native prototype and methods for Haxiom to access.
 
+### Sandbox & Security Hardening
+
+To safely execute untrusted or user-supplied scripts, Haxiom enforces a strict sandbox boundary with the following mechanisms:
+
+* **Native Import Whitelisting**: By default, resolving or importing native Haxe classes is restricted to a copy of a curated safe subset (`Interp.defaultWhitelist`) which includes utility structures like `Math`, `Date`, `StringBuf`, `Xml`, `haxe.Json`, `haxe.io.Bytes`, `haxe.ds.List`, `haxe.ds.StringMap`, etc.
+* **Core API Sandboxing**: Raw global access to system-level classes (like `Sys` and `sys.*` packages) and reflection APIs (`Type` and `Reflect`) is completely blocked.
+* **Safe Reflect & Type Proxies**: If `Type` and `Reflect` are explicitly whitelisted and imported, Haxiom intercepts all calls using restricted runtime proxies that validate all targets/classes against the active `importWhitelist`.
+* **DCE Macro Exclude Protection**: Haxiom's auto-exposure compile macro (`FFIMacro`) is restricted to only list classes/abstracts that are explicitly annotated with `@:haxiom.expose`, preventing unintended exposure of internal application types.
+* **Bypass Option**: For trusted environments where sandboxing is not required, setting `haxiom.interp.importWhitelist = null` completely disables the sandbox boundary and permits unrestricted native imports.
+
 #### Example: Binding OpenFL and Preventing DCE
 
 To use third-party libraries (like `openfl`) inside Haxiom scripts, you must ensure their classes are included in the compilation and registered with Haxiom's FFI.
