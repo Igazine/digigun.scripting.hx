@@ -2,6 +2,30 @@
 
 A high-performance, modular scripting foundation for Haxe. This library is designed to provide a robust environment for embedding scripting languages into Haxe applications, enabling dynamic behavior, sandboxed execution, and highly extensible architectures.
 
+## Table of Contents
+- [Use Cases](#use-cases)
+- [Installation](#installation)
+- [Core Concepts](#core-concepts)
+- [Implementation: Wren](#implementation-wren)
+  - [Usage Example](#usage-example)
+  - [Advanced & Premium Features](#advanced--premium-features)
+    - [Traits & Interfaces](#1-scripting-style-traits--interfaces)
+    - [Precise Error Diagnostics](#2-precise-error-diagnostics--stack-traces)
+    - [Expanded Standard Library](#3-expanded-standard-library)
+    - [Wren Features Supported](#wren-features-supported)
+- [Implementation: Haxiom](#implementation-haxiom)
+  - [Dynamic Type vs Strict Type Annotations](#dynamic-type-vs-strict-type-annotations)
+  - [Usage Example](#usage-example-1)
+  - [Key Haxiom Features Highlighted](#key-haxiom-features-highlighted)
+  - [Handling FFI, Abstracts, & Generics](#handling-ffi-abstracts--generics-dce-safety)
+  - [Sandbox & Security Hardening](#sandbox--security-hardening)
+  - [Example: Binding OpenFL and Preventing DCE](#example-binding-openfl-and-preventing-dce)
+- [Testing](#testing)
+  - [Running Wren Tests](#running-wren-tests)
+  - [Running Haxiom Tests](#running-haxiom-tests)
+- [Future Plans](#future-plans)
+- [License](#license)
+
 This project delivers a **fully compliant, self-contained, and highly robust implementation of the Wren programming language** in 100% pure Haxe with **zero external dependencies**.
 
 ## Use Cases
