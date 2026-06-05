@@ -58,6 +58,7 @@ class FFIMacro {
                 var pack:Array<String> = [];
                 var name:String = "";
                 var moduleName:String = "";
+                var isExposed = false;
                 
                 switch (module) {
                     case TClassDecl(classRef):
@@ -68,6 +69,7 @@ class FFIMacro {
                         
                         var fqName = cls.pack.concat([cls.name]).join(".");
                         if (cls.meta.has(":haxiom.expose")) {
+                            isExposed = true;
                             if (exposedClasses.indexOf(fqName) == -1) {
                                 exposedClasses.push(fqName);
                             }
@@ -101,6 +103,7 @@ class FFIMacro {
                         moduleName = abs.module;
                         
                         if (abs.meta.has(":haxiom.expose")) {
+                            isExposed = true;
                             var fqName = abs.pack.concat([abs.name]).join(".");
                             if (abs.impl != null) {
                                 var implClass = abs.impl.get();
@@ -131,7 +134,7 @@ class FFIMacro {
                         }
                 }
                 
-                if (moduleName != null && moduleName != "") {
+                if (isExposed && moduleName != null && moduleName != "") {
                     var runtimePath = pack.concat([name]).join(".");
                     var list = exposedModules.get(moduleName);
                     if (list == null) {

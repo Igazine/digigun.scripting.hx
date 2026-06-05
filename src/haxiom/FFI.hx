@@ -12,6 +12,9 @@ class FFI {
      */
     public static function registerClass(haxiom:Haxiom, fqName:String, cls:Class<Dynamic>):Void {
         haxiom.interp.registerFullyQualified(fqName, cls, haxiom.interp.globals);
+        if (haxiom.interp.importWhitelist != null && haxiom.interp.importWhitelist.indexOf(fqName) == -1) {
+            haxiom.interp.importWhitelist.push(fqName);
+        }
         var parts = fqName.split(".");
         var shortName = parts[parts.length - 1];
         if (!haxiom.interp.globals.exists(shortName)) {
@@ -25,6 +28,9 @@ class FFI {
     public static function registerGenericInstantiation(haxiom:Haxiom, signature:String, cls:Class<Dynamic>):Void {
         exposedGenerics.set(signature, Type.getClassName(cls));
         haxiom.interp.registerFullyQualified(signature, cls, haxiom.interp.globals);
+        if (haxiom.interp.importWhitelist != null && haxiom.interp.importWhitelist.indexOf(signature) == -1) {
+            haxiom.interp.importWhitelist.push(signature);
+        }
     }
 
     /**
@@ -32,6 +38,9 @@ class FFI {
      */
     public static function registerEnum(haxiom:Haxiom, fqName:String, enm:Enum<Dynamic>):Void {
         haxiom.interp.registerFullyQualified(fqName, enm, haxiom.interp.globals);
+        if (haxiom.interp.importWhitelist != null && haxiom.interp.importWhitelist.indexOf(fqName) == -1) {
+            haxiom.interp.importWhitelist.push(fqName);
+        }
         var parts = fqName.split(".");
         var shortName = parts[parts.length - 1];
         if (!haxiom.interp.globals.exists(shortName)) {
@@ -44,6 +53,9 @@ class FFI {
      */
     public static function registerValue(haxiom:Haxiom, fqName:String, value:Dynamic):Void {
         haxiom.interp.registerFullyQualified(fqName, value, haxiom.interp.globals);
+        if (haxiom.interp.importWhitelist != null && haxiom.interp.importWhitelist.indexOf(fqName) == -1) {
+            haxiom.interp.importWhitelist.push(fqName);
+        }
         var parts = fqName.split(".");
         var shortName = parts[parts.length - 1];
         if (!haxiom.interp.globals.exists(shortName)) {

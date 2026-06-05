@@ -201,12 +201,19 @@ class HaxiomAnchor {
 }
 
 class Interp {
+    public static var defaultWhitelist:Array<String> = [
+        "Date", "DateTools", "StringBuf", "Xml", "haxe.Timer", "haxe.Json",
+        "haxe.io.Bytes", "haxe.io.BytesBuffer", "haxe.io.Path", "haxe.ds.List",
+        "haxe.ds.StringMap", "haxe.ds.IntMap", "haxe.ds.ObjectMap", "StringTools",
+        "Lambda", "Std", "Math", "haxe.crypto.Md5", "haxe.crypto.Sha1", "haxe.crypto.Adler32"
+    ];
+
     public var globals:Scope = new Scope();
     var currentThis:Dynamic = null;
     
     public var currentPackage:Array<String> = [];
     public var moduleResolver:String->String = null;
-    public var importWhitelist:Array<String> = null;
+    public var importWhitelist:Array<String> = defaultWhitelist.copy();
     public var importedModules:Map<String, Scope> = new Map();
     var currentConstructorInstance:Dynamic = null;
     var inAbstractMethod:Bool = false;
@@ -288,8 +295,6 @@ class Interp {
         globals.declare("StringTools", StringTools);
         globals.declare("Date", Date);
         globals.declare("Xml", Xml);
-        globals.declare("Reflect", Reflect);
-        globals.declare("Type", Type);
         
         var lambdaObj = {
             array: (it:Dynamic) -> Lambda.array(it),
@@ -2473,6 +2478,11 @@ class Interp {
                 var fqName = path.join(".");
                 var shortName = alias != null ? alias : path[path.length - 1];
                 var targetName = path[path.length - 1];
+                haxe.Log.trace("DEBUG EImport fqName: " + fqName, null);
+                haxe.Log.trace("DEBUG importWhitelist: " + importWhitelist, null);
+                haxe.Log.trace("DEBUG Type.resolveClass: " + Type.resolveClass(fqName), null);
+                haxe.Log.trace("DEBUG isImportWhitelisted: " + isImportWhitelisted(fqName), null);
+                haxe.Log.trace("DEBUG resolveNativeClass: " + resolveNativeClass(fqName), null);
                 
                 if (shortName == "*") {
                     var parentPath = path.slice(0, path.length - 1).join(".");
@@ -3864,19 +3874,213 @@ class Interp {
         Reflect.setField(current, parts[parts.length - 1], value);
     }
 
-    function isImportWhitelisted(fqName:String):Bool {
-        if (importWhitelist == null) return true;
-        for (pattern in importWhitelist) {
-            if (pattern == fqName) return true;
-            if (StringTools.endsWith(pattern, "*")) {
-                var prefix = pattern.substring(0, pattern.length - 1);
-                if (StringTools.startsWith(fqName, prefix)) return true;
+    static var autoWhitelistedTypes:Map<String, Bool> = null;
+
+    function isAutoWhitelisted(fqName:String):Bool {
+        if (autoWhitelistedTypes == null) {
+            autoWhitelistedTypes = new Map();
+            #if !macro
+            // 1. Classes
+            var res = haxe.Resource.getString("haxiom_exposed_classes");
+            if (res != null) {
+                try {
+                    var list:Array<String> = haxe.Json.parse(res);
+                    for (x in list) autoWhitelistedTypes.set(x, true);
+                } catch (e:Dynamic) {}
             }
+            // 2. Abstracts
+            var absRes = haxe.Resource.getString("haxiom_exposed_abstracts");
+            if (absRes != null) {
+                try {
+                    var obj:Dynamic = haxe.Json.parse(absRes);
+                    for (k in Reflect.fields(obj)) {
+                        autoWhitelistedTypes.set(k, true);
+                        var absInfo = Reflect.field(obj, k);
+                        if (absInfo != null && absInfo.implClass != null) {
+                            autoWhitelistedTypes.set(absInfo.implClass, true);
+                        }
+                    }
+                } catch (e:Dynamic) {}
+            }
+            // 3. Generics
+            var genRes = haxe.Resource.getString("haxiom_exposed_generics");
+            if (genRes != null) {
+                try {
+                    var obj:Dynamic = haxe.Json.parse(genRes);
+                    for (k in Reflect.fields(obj)) {
+                        var clsName = Reflect.field(obj, k);
+                        if (clsName != null) autoWhitelistedTypes.set(clsName, true);
+                    }
+                } catch (e:Dynamic) {}
+            }
+            // 4. Modules
+            var modRes = haxe.Resource.getString("haxiom_exposed_modules");
+            if (modRes != null) {
+                try {
+                    var obj:Dynamic = haxe.Json.parse(modRes);
+                    for (k in Reflect.fields(obj)) {
+                        autoWhitelistedTypes.set(k, true);
+                        var types:Array<String> = Reflect.field(obj, k);
+                        for (t in types) autoWhitelistedTypes.set(t, true);
+                    }
+                } catch (e:Dynamic) {}
+            }
+            haxe.Log.trace("DEBUG autoWhitelistedKeys: " + [for (k in autoWhitelistedTypes.keys()) k], null);
+            #end
         }
-        return false;
+        return autoWhitelistedTypes.exists(fqName);
     }
 
-    function resolveNativeClass(fqName:String):Class<Dynamic> {
+    function isImportWhitelisted(fqName:String):Bool {
+        var auto = isAutoWhitelisted(fqName);
+        haxe.Log.trace("isImportWhitelisted check for " + fqName + ": auto=" + auto, null);
+        if (auto) return true;
+        
+        var isNative = (Type.resolveClass(fqName) != null) || (Type.resolveEnum(fqName) != null);
+        haxe.Log.trace("isImportWhitelisted check for " + fqName + ": isNative=" + isNative, null);
+        if (isNative) {
+            haxe.Log.trace("isImportWhitelisted check for " + fqName + ": importWhitelist=" + importWhitelist, null);
+            if (importWhitelist == null) return true;
+            for (pattern in importWhitelist) {
+                if (pattern == fqName) return true;
+                if (StringTools.endsWith(pattern, "*")) {
+                    var prefix = pattern.substring(0, pattern.length - 1);
+                    if (StringTools.startsWith(fqName, prefix)) return true;
+                }
+            }
+            return false;
+        }
+        
+        return true;
+    }
+
+    function getClassNameOf(o:Dynamic):String {
+        if (o == null) return null;
+        if (Std.isOfType(o, String)) return o;
+        if (Reflect.isObject(o)) {
+            var cl = Type.getClass(o);
+            if (cl != null) {
+                return Type.getClassName(cl);
+            }
+            try {
+                var name = Type.getClassName(cast o);
+                if (name != null) return name;
+            } catch (e:Dynamic) {}
+        }
+        return null;
+    }
+
+    function getSafeTypeProxy():Dynamic {
+        return {
+            resolveClass: function(name:String) {
+                if (importWhitelist != null && !isImportWhitelisted(name)) return null;
+                return resolveNativeClass(name);
+            },
+            resolveEnum: function(name:String) {
+                if (importWhitelist != null && !isImportWhitelisted(name)) return null;
+                return Type.resolveEnum(name);
+            },
+            createInstance: function(cl:Dynamic, args:Array<Dynamic>) {
+                if (cl != null && importWhitelist != null) {
+                    var className = getClassNameOf(cl);
+                    if (className != null && !isImportWhitelisted(className)) {
+                        throw "Security Error: Type.createInstance is not allowed for class " + className;
+                    }
+                }
+                return Type.createInstance(cl, args);
+            },
+            createEmptyInstance: function(cl:Dynamic) {
+                if (cl != null && importWhitelist != null) {
+                    var className = getClassNameOf(cl);
+                    if (className != null && !isImportWhitelisted(className)) {
+                        throw "Security Error: Type.createEmptyInstance is not allowed for class " + className;
+                    }
+                }
+                return Type.createEmptyInstance(cl);
+            },
+            getClass: Type.getClass,
+            getSuperClass: Type.getSuperClass,
+            getClassName: Type.getClassName,
+            getClassFields: Type.getClassFields,
+            getInstanceFields: Type.getInstanceFields,
+            typeof: Type.typeof,
+            enumEq: Type.enumEq,
+            getEnumName: Type.getEnumName,
+            getEnumConstructs: Type.getEnumConstructs,
+            allEnums: Type.allEnums
+        };
+    }
+
+    function getSafeReflectProxy():Dynamic {
+        return {
+            field: function(o:Dynamic, field:String) {
+                if (o != null && importWhitelist != null) {
+                    var name = getClassNameOf(o);
+                    if (name != null && !isImportWhitelisted(name)) {
+                        throw "Security Error: Reflect.field is not allowed for class " + name;
+                    }
+                }
+                return Reflect.field(o, field);
+            },
+            setField: function(o:Dynamic, field:String, value:Dynamic) {
+                if (o != null && importWhitelist != null) {
+                    var name = getClassNameOf(o);
+                    if (name != null && !isImportWhitelisted(name)) {
+                        throw "Security Error: Reflect.setField is not allowed for class " + name;
+                    }
+                }
+                Reflect.setField(o, field, value);
+            },
+            getProperty: function(o:Dynamic, field:String) {
+                if (o != null && importWhitelist != null) {
+                    var name = getClassNameOf(o);
+                    if (name != null && !isImportWhitelisted(name)) {
+                        throw "Security Error: Reflect.getProperty is not allowed for class " + name;
+                    }
+                }
+                return Reflect.getProperty(o, field);
+            },
+            setProperty: function(o:Dynamic, field:String, value:Dynamic) {
+                if (o != null && importWhitelist != null) {
+                    var name = getClassNameOf(o);
+                    if (name != null && !isImportWhitelisted(name)) {
+                        throw "Security Error: Reflect.setProperty is not allowed for class " + name;
+                    }
+                }
+                Reflect.setProperty(o, field, value);
+            },
+            callMethod: function(o:Dynamic, func:Dynamic, args:Array<Dynamic>) {
+                if (o != null && importWhitelist != null) {
+                    var name = getClassNameOf(o);
+                    if (name != null && !isImportWhitelisted(name)) {
+                        throw "Security Error: Reflect.callMethod is not allowed for class " + name;
+                    }
+                }
+                return Reflect.callMethod(o, func, args);
+            },
+            hasField: Reflect.hasField,
+            fields: Reflect.fields,
+            isFunction: Reflect.isFunction,
+            compare: Reflect.compare,
+            compareMethods: Reflect.compareMethods,
+            isObject: Reflect.isObject,
+            isEnumValue: Reflect.isEnumValue,
+            deleteField: Reflect.deleteField,
+            copy: Reflect.copy,
+            makeVarArgs: Reflect.makeVarArgs
+        };
+    }
+
+    function resolveNativeClass(fqName:String):Dynamic {
+        if (!isImportWhitelisted(fqName)) {
+            return null;
+        }
+        if (fqName == "Type") {
+            return getSafeTypeProxy();
+        }
+        if (fqName == "Reflect") {
+            return getSafeReflectProxy();
+        }
         var registryCls = Type.resolveClass("haxiom.macro.StdlibRegistry");
         if (registryCls != null) {
             var classes:Map<String, Dynamic> = Reflect.field(registryCls, "classes");

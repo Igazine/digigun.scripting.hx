@@ -1627,6 +1627,135 @@ class TestHaxiom {
         if (!runtimeCodeFrameThrown) throw "FAIL: Runtime type mismatch did not throw";
 
         trace("SUCCESS: Improved error reporting checks passed.");
+
+        // 58. Sandbox and API Exposure Security Verification
+        #if sys
+        // Force compile sys classes by referencing them in the host code (this test)
+        var forceSysFile = sys.io.File;
+        var forceSysFS = sys.FileSystem;
+        #end
+        
+        var testHaxiom = new haxiom.Haxiom();
+        
+        // A. Verify Sys is not importable by default
+        var sysImportThrown = false;
+        try {
+            trace("testHaxiom.errorHandler == null: " + (testHaxiom.errorHandler == null));
+            trace("testHaxiom.interp.errorHandler == null: " + (testHaxiom.interp.errorHandler == null));
+            var ast = testHaxiom.compile("import Sys;");
+            trace("Compile AST: " + (ast == null ? "null" : Std.string(ast.def)));
+            var res = testHaxiom.execute(ast);
+            trace("Sys import execute returned: " + res);
+            sysImportThrown = false;
+        } catch (e:Dynamic) {
+            sysImportThrown = true;
+            trace("SUCCESS: Caught expected Sys import blocking: " + e);
+            if (Reflect.hasField(e, "message")) {
+                trace("Error message: " + Reflect.field(e, "message"));
+            }
+        }
+        if (!sysImportThrown) throw "FAIL: Sys import was not blocked by default whitelist";
+
+        // B. Verify fully qualified Sys or sys.io.File access fails by default
+        var fqSysAccessThrown = false;
+        try {
+            testHaxiom.interpret("
+                Sys.println('should fail');
+            ");
+        } catch (e:haxiom.ScriptException) {
+            fqSysAccessThrown = true;
+            trace("SUCCESS: Caught expected fully-qualified Sys access blocking: " + e.message);
+        }
+        if (!fqSysAccessThrown) throw "FAIL: Fully-qualified Sys access was not blocked";
+
+        var fqFileAccessThrown = false;
+        try {
+            testHaxiom.interpret("
+                var exists = sys.FileSystem.exists('README.md');
+            ");
+        } catch (e:haxiom.ScriptException) {
+            fqFileAccessThrown = true;
+            trace("SUCCESS: Caught expected fully-qualified sys.FileSystem blocking: " + e.message);
+        }
+        if (!fqFileAccessThrown) throw "FAIL: Fully-qualified sys.FileSystem access was not blocked";
+
+        // C. Verify Type and Reflect are not available as globals by default
+        var typeGlobalThrown = false;
+        try {
+            testHaxiom.interpret("
+                var t = Type.resolveClass('Sys');
+            ");
+        } catch (e:haxiom.ScriptException) {
+            typeGlobalThrown = true;
+            trace("SUCCESS: Caught expected global Type reference blocking: " + e.message);
+        }
+        if (!typeGlobalThrown) throw "FAIL: Global Type reference was not blocked by default";
+
+        var reflectGlobalThrown = false;
+        try {
+            testHaxiom.interpret("
+                var f = Reflect.field({}, 'foo');
+            ");
+        } catch (e:haxiom.ScriptException) {
+            reflectGlobalThrown = true;
+            trace("SUCCESS: Caught expected global Reflect reference blocking: " + e.message);
+        }
+        if (!reflectGlobalThrown) throw "FAIL: Global Reflect reference was not blocked by default";
+
+        // D. Verify Type / Reflect proxies (when whitelisted/imported) enforce whitelisting
+        testHaxiom.importWhitelist.push("Type");
+        testHaxiom.importWhitelist.push("Reflect");
+        
+        // Dynamic resolution check through Type proxy
+        try {
+            testHaxiom.interpret("
+                import Type;
+                var resolved = Type.resolveClass('Sys');
+                if (resolved != null) {
+                    throw 'Resolved Sys Class even though it was not whitelisted';
+                }
+            ");
+            trace("SUCCESS: Type proxy returned null for non-whitelisted resolveClass");
+        } catch (e:Dynamic) {
+            throw "FAIL: Type proxy resolveClass did not handle whitelist checks safely: " + e;
+        }
+
+        // Reflection call check through Reflect proxy
+        var reflectProxyCallBlocked = false;
+        try {
+            testHaxiom.interpret("
+                import Reflect;
+                import Type;
+                
+                // Get a Class that is in the default whitelist
+                var mathCls = Type.resolveClass('Math');
+                if (mathCls == null) throw 'Could not resolve whitelisted Math';
+                
+                // Retrieve a non-whitelisted class (should be null)
+                var sysCls = Type.resolveClass('Sys');
+                
+                // Attempt Reflect.callMethod on a non-whitelisted string classname or null reference
+                Reflect.callMethod(sysCls, Reflect.field(sysCls, 'println'), ['should fail']);
+            ");
+        } catch (e:haxiom.ScriptException) {
+            reflectProxyCallBlocked = true;
+            trace("SUCCESS: Caught expected Reflect proxy call blocking: " + e.message);
+        }
+        if (!reflectProxyCallBlocked) throw "FAIL: Reflect proxy call was not blocked";
+
+        // E. Verify that setting importWhitelist = null turns off sandboxing
+        testHaxiom.importWhitelist = null;
+        try {
+            testHaxiom.interpret("
+                import haxiom.FFIClassHelper;
+                // If it successfully compiles and interprets, we are good
+                trace('SUCCESS: Sandbox disabled successfully (importWhitelist = null)');
+            ");
+        } catch (e:Dynamic) {
+            throw "FAIL: Disabling sandbox with importWhitelist = null threw error: " + e;
+        }
+        
+        trace("SUCCESS: Sandbox and API exposure security checks passed.");
     }
 }
 
