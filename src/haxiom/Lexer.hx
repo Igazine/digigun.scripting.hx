@@ -7,9 +7,11 @@ class Lexer {
     var pos:Int = 0;
     var line:Int = 1;
     var col:Int = 1;
+    var file:String;
 
-    public function new(input:String) {
+    public function new(input:String, ?file:String) {
         this.input = input;
+        this.file = file != null ? file : "script";
     }
 
     public function tokenize():Array<Token> {
@@ -23,7 +25,7 @@ class Lexer {
             }
             
             if (char == "\n") {
-                tokens.push({ def: TNewline, pos: { line: line, col: col } });
+                tokens.push({ def: TNewline, pos: { line: line, col: col, file: file } });
                 pos++;
                 line++;
                 col = 1;
@@ -36,6 +38,8 @@ class Lexer {
             }
 
             if (char == "/" && peek(1) == "*") {
+                var startLine = line;
+                var startCol = col;
                 advance(); advance();
                 var depth = 1;
                 while (pos < input.length && depth > 0) {
@@ -52,6 +56,9 @@ class Lexer {
                         }
                         advance();
                     }
+                }
+                if (depth > 0) {
+                    throw new CompileException("Lexical Error: Unclosed block comment", startLine, startCol, file);
                 }
                 continue;
             }
@@ -103,7 +110,7 @@ class Lexer {
                     case "abstract": TAbstract;
                     default: TIdent(id);
                 };
-                tokens.push({ def: def, pos: { line: startLine, col: startCol } });
+                tokens.push({ def: def, pos: { line: startLine, col: startCol, file: file } });
                 continue;
             }
 
@@ -113,7 +120,7 @@ class Lexer {
                     advance(); advance();
                     while (pos < input.length && isHexDigit(peek())) advance();
                     var s = input.substring(start, pos);
-                    tokens.push({ def: TInt(Std.parseInt(s)), pos: { line: startLine, col: startCol } });
+                    tokens.push({ def: TInt(Std.parseInt(s)), pos: { line: startLine, col: startCol, file: file } });
                     continue;
                 }
                 if (char == "0" && (peek(1) == "b" || peek(1) == "B")) {
@@ -124,7 +131,7 @@ class Lexer {
                     for (i in 0...s.length) {
                         val = (val << 1) | (s.charAt(i) == "1" ? 1 : 0);
                     }
-                    tokens.push({ def: TInt(val), pos: { line: startLine, col: startCol } });
+                    tokens.push({ def: TInt(val), pos: { line: startLine, col: startCol, file: file } });
                     continue;
                 }
 
@@ -140,7 +147,7 @@ class Lexer {
                 }
                 var s = input.substring(start, pos);
                 var def = (s.indexOf(".") != -1 || s.toLowerCase().indexOf("e") != -1) ? TFloat(Std.parseFloat(s)) : TInt(Std.parseInt(s));
-                tokens.push({ def: def, pos: { line: startLine, col: startCol } });
+                tokens.push({ def: def, pos: { line: startLine, col: startCol, file: file } });
                 continue;
             }
 
@@ -169,11 +176,14 @@ class Lexer {
                         advance();
                     }
                 }
+                if (pos >= input.length) {
+                    throw new CompileException("Lexical Error: Unclosed string literal", startLine, startCol, file);
+                }
                 advance(); // Skip quote
                 if (quote == "'") {
                     interpolateString(s, startLine, startCol, tokens);
                 } else {
-                    tokens.push({ def: TString(s), pos: { line: startLine, col: startCol } });
+                    tokens.push({ def: TString(s), pos: { line: startLine, col: startCol, file: file } });
                 }
                 continue;
             }
@@ -243,10 +253,10 @@ class Lexer {
                 case "~": add(tokens, TBitNot);
                 
                 default:
-                    advance(); // Ignore unknown
+                    throw new CompileException("Lexical Error: Unrecognized character '" + char + "'", line, col, file);
             }
         }
-        tokens.push({ def: TEof, pos: { line: line, col: col } });
+        tokens.push({ def: TEof, pos: { line: line, col: col, file: file } });
         return tokens;
     }
 
@@ -261,7 +271,7 @@ class Lexer {
     }
 
     inline function add(tokens:Array<Token>, def:TokenDef, len:Int = 1) {
-        tokens.push({ def: def, pos: { line: line, col: col } });
+        tokens.push({ def: def, pos: { line: line, col: col, file: file } });
         for (i in 0...len) advance();
     }
 
@@ -290,7 +300,7 @@ class Lexer {
         var hasTokens = false;
 
         inline function addToken(def:TokenDef) {
-            tokens.push({ def: def, pos: { line: startLine, col: startCol } });
+            tokens.push({ def: def, pos: { line: startLine, col: startCol, file: file } });
             hasTokens = true;
         }
 
@@ -318,7 +328,7 @@ class Lexer {
                     var exprStr = s.substring(startIdx, j - 1);
                     i = j;
 
-                    var subLexer = new Lexer(exprStr);
+                    var subLexer = new Lexer(exprStr, file);
                     subLexer.line = startLine;
                     subLexer.col = startCol + startIdx;
                     var subTokens = subLexer.tokenize();

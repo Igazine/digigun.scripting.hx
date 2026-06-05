@@ -6,9 +6,11 @@ class Parser {
     var tokens:Array<Token>;
     var pos:Int = 0;
     var compCounter:Int = 0;
+    var file:String;
 
-    public function new(tokens:Array<Token>) {
+    public function new(tokens:Array<Token>, ?file:String) {
         this.tokens = tokens;
+        this.file = file != null ? file : "script";
     }
 
     public function parse():Expr {
@@ -272,7 +274,7 @@ class Parser {
                 var mBody = parseBlock();
                 methods.push({ name: mName, args: mArgs, retType: mRetType, body: mBody, isStatic: isStatic, isPublic: isPublic });
             } else {
-                throw 'Unexpected token inside class ${memberT.def} at ${memberT.pos.line}:${memberT.pos.col}';
+                throw new CompileException('Unexpected token inside class ${memberT.def}', memberT.pos.line, memberT.pos.col, file);
             }
             skipNewlines();
         }
@@ -348,7 +350,7 @@ class Parser {
                 var mBody = parseBlock();
                 methods.push({ name: mName, args: mArgs, retType: mRetType, body: mBody, isStatic: isStatic, isPublic: isPublic });
             } else {
-                throw 'Unexpected token inside abstract ${memberT.def} at ${memberT.pos.line}:${memberT.pos.col}';
+                throw new CompileException('Unexpected token inside abstract ${memberT.def}', memberT.pos.line, memberT.pos.col, file);
             }
             skipNewlines();
         }
@@ -455,7 +457,7 @@ class Parser {
                 }
                 defExpr = mk(EBlock(dExprs), caseT.pos);
             } else {
-                throw 'Unexpected token inside switch ${caseT.def}';
+                throw new CompileException('Unexpected token inside switch ${caseT.def}', caseT.pos.line, caseT.pos.col, file);
             }
             skipNewlines();
         }
@@ -557,7 +559,7 @@ class Parser {
         var e = parseRelation();
         var t = peek();
         while (is(TEqual) || is(TNotEqual)) {
-            var op = match(TEqual) ? "==" : (match(TNotEqual) ? "!=" : throw "Expected !=");
+            var op = match(TEqual) ? "==" : (match(TNotEqual) ? "!=" : throw new CompileException("Expected !=", t.pos.line, t.pos.col, file));
             var e2 = parseRelation();
             e = mk(EBinop(op, e, e2), t.pos);
             t = peek();
@@ -892,7 +894,7 @@ class Parser {
                     return mk(EBlock(exprs), t.pos);
                 }
             default:
-                throw 'Unexpected token ${t.def} at ${t.pos.line}:${t.pos.col}';
+                throw new CompileException('Unexpected token ${t.def}', t.pos.line, t.pos.col, file);
         }
     }
 
@@ -945,7 +947,7 @@ class Parser {
                 return TFun(args, ret);
             }
             if (args.length == 1) return args[0];
-            throw "Invalid type parenthesization";
+            throw new CompileException("Invalid type parenthesization", peek().pos.line, peek().pos.col, file);
         }
         
         var path = [expectIdent()];
@@ -1002,7 +1004,7 @@ class Parser {
             next();
             return t;
         }
-        throw 'Expected ${def} but got ${t.def} at ${t.pos.line}:${t.pos.col}';
+        throw new CompileException('Expected ${def} but got ${t.def}', t.pos.line, t.pos.col, file);
     }
 
     function isIdent(t:Token):Bool {
@@ -1019,7 +1021,7 @@ class Parser {
                 next();
                 v;
             default:
-                throw 'Expected identifier but got ${t.def} at ${t.pos.line}:${t.pos.col}';
+                throw new CompileException('Expected identifier but got ${t.def}', t.pos.line, t.pos.col, file);
         };
     }
 

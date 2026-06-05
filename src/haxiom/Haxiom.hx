@@ -24,16 +24,40 @@ class Haxiom implements common.IScriptEngine {
     }
 
     public function compile(source:String, ?filename:String):haxiom.AST.Expr {
-        var lexer = new Lexer(source);
-        var tokens = lexer.tokenize();
-        if (filename != null) {
-            for (t in tokens) {
-                t.pos.file = filename;
+        var fileInfo = filename != null ? filename : "script";
+        interp.lastSource = source;
+        try {
+            var lexer = new Lexer(source, fileInfo);
+            var tokens = lexer.tokenize();
+            var parser = new Parser(tokens, fileInfo);
+            var ast = parser.parse();
+            return Optimizer.foldConstants(ast);
+        } catch (e:ScriptException) {
+            if (errorHandler != null) {
+                errorHandler(e);
+                return null;
             }
+            throw e;
+        } catch (e:CompileException) {
+            var codeFrame = ScriptException.makeCodeFrame(source, e.line, e.col, e.file);
+            var formatted = "Compile Error: " + e.message + " at " + e.file + ":" + e.line + ":" + e.col;
+            if (codeFrame != "") {
+                formatted += "\n" + codeFrame;
+            }
+            var se = new ScriptException(e.message, [], formatted, e.line, e.col, e.file);
+            if (errorHandler != null) {
+                errorHandler(se);
+                return null;
+            }
+            throw se;
+        } catch (err:Dynamic) {
+            var se = new ScriptException(Std.string(err), [], "Compile Error: " + Std.string(err), 1, 1, fileInfo);
+            if (errorHandler != null) {
+                errorHandler(se);
+                return null;
+            }
+            throw se;
         }
-        var parser = new Parser(tokens);
-        var ast = parser.parse();
-        return Optimizer.foldConstants(ast);
     }
 
     public function execute<T>(ast:haxiom.AST.Expr):T {
@@ -43,6 +67,7 @@ class Haxiom implements common.IScriptEngine {
 
     public function interpret<T>(source:String, ?onDone:T->Void):T {
         var ast = compile(source);
+        if (ast == null) return null;
         var result:T = execute(ast);
         if (onDone != null) onDone(result);
         return result;

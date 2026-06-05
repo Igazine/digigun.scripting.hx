@@ -1556,6 +1556,77 @@ class TestHaxiom {
         ";
         haxiom.interpret(script56);
         trace("SUCCESS: Native standard library auto-exposure check passed.");
+
+        // 57. Improved Error Reporting Verification
+        // A. Lexer Unrecognized Character
+        var unrecognizedCharThrown = false;
+        try {
+            haxiom.interpret("var x = 10 @;");
+        } catch (e:haxiom.ScriptException) {
+            unrecognizedCharThrown = true;
+            if (e.line == 1 && e.col == 12) {
+                trace("SUCCESS: Caught lexer unrecognized character error at expected position (line 1, col 12)");
+            } else {
+                throw "FAIL: Expected lexer unrecognized character error at line 1, col 12, got " + e.line + ":" + e.col;
+            }
+        }
+        if (!unrecognizedCharThrown) throw "FAIL: Unrecognized character did not throw";
+
+        // B. Lexer Unclosed String Literal
+        var unclosedStringThrown = false;
+        try {
+            haxiom.interpret("var s = \"hello;");
+        } catch (e:haxiom.ScriptException) {
+            unclosedStringThrown = true;
+            if (e.line == 1 && e.col == 9) {
+                trace("SUCCESS: Caught lexer unclosed string error at expected position (line 1, col 9)");
+            } else {
+                throw "FAIL: Expected lexer unclosed string error at line 1, col 9, got " + e.line + ":" + e.col;
+            }
+        }
+        if (!unclosedStringThrown) throw "FAIL: Unclosed string did not throw";
+
+        // C. Parser Expected-Token with Code Frame Verification
+        var parserCodeFrameThrown = false;
+        try {
+            haxiom.interpret("
+                var a = 10;
+                var b = 10 + ;
+                var c = 20;
+            ");
+        } catch (e:haxiom.ScriptException) {
+            parserCodeFrameThrown = true;
+            if (e.line == 3 && e.col == 30) {
+                trace("SUCCESS: Caught parser syntax error at expected position (line 3, col 30)");
+                if (e.message.indexOf(">> ") != -1 && e.message.indexOf("^") != -1) {
+                    trace("SUCCESS: Parser ScriptException contains visual code frame pointer");
+                } else {
+                    throw "FAIL: Parser ScriptException code frame formatting missing pointer line or highlighting: " + e.message;
+                }
+            } else {
+                throw "FAIL: Expected parser syntax error at line 3, col 30, got " + e.line + ":" + e.col;
+            }
+        }
+        if (!parserCodeFrameThrown) throw "FAIL: Parser syntax error did not throw";
+
+        // D. Runtime Error Code Frame Verification
+        var runtimeCodeFrameThrown = false;
+        try {
+            haxiom.interpret("
+                var a:Int = 10;
+                a = 'not-an-int';
+            ");
+        } catch (e:haxiom.ScriptException) {
+            runtimeCodeFrameThrown = true;
+            if (e.message.indexOf(">> ") != -1 && e.message.indexOf("^") != -1) {
+                trace("SUCCESS: Runtime ScriptException contains visual code frame pointer");
+            } else {
+                throw "FAIL: Runtime ScriptException code frame formatting missing pointer line: " + e.message;
+            }
+        }
+        if (!runtimeCodeFrameThrown) throw "FAIL: Runtime type mismatch did not throw";
+
+        trace("SUCCESS: Improved error reporting checks passed.");
     }
 }
 

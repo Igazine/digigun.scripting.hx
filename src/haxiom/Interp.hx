@@ -215,6 +215,7 @@ class Interp {
     public var callStack:Array<{method:String, pos:Pos}> = [];
     public var errorHandler:Null<ScriptException->Void> = null;
     var lastEvalPos:Pos = null;
+    public var lastSource:Null<String> = null;
 
     public inline function pushFrame(methodName:String, pos:Pos) {
         callStack.push({ method: methodName, pos: pos });
@@ -355,7 +356,12 @@ class Interp {
                 var lineVal = errPos != null ? errPos.line : 1;
                 var colVal = errPos != null ? errPos.col : 1;
 
-                traceLines.push('Runtime Error: ' + Std.string(e) + ' at ' + fileInfo + ':' + lineVal + ':' + colVal);
+                var codeFrame = ScriptException.makeCodeFrame(lastSource, lineVal, colVal, fileInfo);
+                var locationStr = 'Runtime Error: ' + Std.string(e) + ' at ' + fileInfo + ':' + lineVal + ':' + colVal;
+                if (codeFrame != "") {
+                    locationStr += "\n" + codeFrame;
+                }
+                traceLines.push(locationStr);
                 var i = callStack.length - 1;
                 while (i >= 0) {
                     var frame = callStack[i];
@@ -1037,6 +1043,7 @@ class Interp {
     }
 
     function assignField(obj:Dynamic, field:String, val:Dynamic, scope:Scope):Dynamic {
+        if (obj == null) throw 'Cannot set field "$field" of null';
         if (Std.isOfType(obj, HaxiomAbstractInstance)) {
             var inst:HaxiomAbstractInstance = cast obj;
             var abs = inst.abstractType;

@@ -292,12 +292,12 @@ haxe -L digigun.scripting.hx -cp test/wren -main TestWren -js bin/test_wren.js &
 ### Running Haxiom Tests
 To execute tests on the **Haxe Eval** target:
 ```bash
-haxe -cp src -cp test -main haxiom.TestHaxiom --interp
+haxe -L digigun.scripting.hx -cp test -main haxiom.TestHaxiom --interp
 ```
 
 To execute tests on the **JavaScript / Node.js** target:
 ```bash
-haxe -cp src -cp test -main haxiom.TestHaxiom -js bin/test_haxiom.js && node bin/test_haxiom.js
+haxe -L digigun.scripting.hx -cp test -main haxiom.TestHaxiom -js bin/test_haxiom.js && node bin/test_haxiom.js
 ```
 
 ---

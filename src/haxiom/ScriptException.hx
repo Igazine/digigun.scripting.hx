@@ -19,4 +19,52 @@ class ScriptException extends haxe.Exception {
         this.col = col;
         this.file = file;
     }
+
+    public static function makeCodeFrame(source:Null<String>, line:Int, col:Int, file:String):String {
+        if (source == null || source == "") return "";
+        var lines = source.split("\n");
+        if (line < 1 || line > lines.length) return "";
+        
+        var frame = [];
+        var startIdx = line - 2 < 0 ? 0 : line - 2;
+        var endIdx = line >= lines.length ? lines.length - 1 : line;
+        
+        var maxNumWidth = Std.string(endIdx + 1).length;
+        
+        for (i in startIdx...endIdx + 1) {
+            var lineNum = i + 1;
+            var prefix = lineNum == line ? ">> " : "   ";
+            var lineText = lines[i];
+            
+            if (StringTools.endsWith(lineText, "\r")) {
+                lineText = lineText.substring(0, lineText.length - 1);
+            }
+            
+            var lineNumStr = StringTools.lpad(Std.string(lineNum), " ", maxNumWidth);
+            frame.push(prefix + lineNumStr + " | " + lineText);
+            
+            if (lineNum == line) {
+                var pointerSpaces = "";
+                var clampedCol = col;
+                if (clampedCol < 1) clampedCol = 1;
+                if (clampedCol > lineText.length + 1) clampedCol = lineText.length + 1;
+                
+                for (k in 0...clampedCol - 1) {
+                    if (k < lineText.length && lineText.charAt(k) == "\t") {
+                        pointerSpaces += "\t";
+                    } else {
+                        pointerSpaces += " ";
+                    }
+                }
+                
+                var pointerPrefix = "";
+                for (k in 0...maxNumWidth) {
+                    pointerPrefix += " ";
+                }
+                frame.push("   " + pointerPrefix + " | " + pointerSpaces + "^");
+            }
+        }
+        return frame.join("\n");
+    }
 }
+
