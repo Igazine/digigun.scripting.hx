@@ -78,6 +78,7 @@ enum abstract Opcode(Int) from Int to Int {
     var OP_NEW_MAP = 70;
     var OP_RANGE = 71;
     var OP_PUSH_CASE_SCOPE = 72;
+    var OP_CHECK_TYPE = 73;
 }
 
 @:keep
@@ -85,11 +86,13 @@ class BytecodeChunk {
     public var instructions:Array<Int>;
     public var constants:Array<Dynamic>;
     public var positions:Array<Pos>;
+    public var maxSlots:Int;
 
-    public function new(instructions:Array<Int>, constants:Array<Dynamic>, positions:Array<Pos>) {
+    public function new(instructions:Array<Int>, constants:Array<Dynamic>, positions:Array<Pos>, ?maxSlots:Int = 0) {
         this.instructions = instructions;
         this.constants = constants;
         this.positions = positions;
+        this.maxSlots = maxSlots;
     }
 }
 
@@ -99,21 +102,30 @@ class VMCallFrame {
     public var scope:Scope;
     public var methodName:String;
     public var tryStack:Array<{catchIp:Int, stackSize:Int, scope:Scope}> = [];
+    public var locals:Array<Dynamic> = [];
 
     public function new(chunk:BytecodeChunk, ip:Int, scope:Scope, ?methodName:String = "") {
         this.chunk = chunk;
         this.ip = ip;
         this.scope = scope;
         this.methodName = methodName;
+        this.locals = [for (i in 0...chunk.maxSlots) null];
     }
 }
 
 class VM {
-    public static function runChunk(interp:Interp, chunk:BytecodeChunk, scope:Scope, ?currentThis:Dynamic, ?methodName:String = "toplevel"):Dynamic {
+    public static function runChunk(interp:Interp, chunk:BytecodeChunk, scope:Scope, ?currentThis:Dynamic, ?methodName:String = "toplevel", ?args:Array<Dynamic>):Dynamic {
         var stack:Array<Dynamic> = [];
         var callFrames:Array<VMCallFrame> = [];
         
         var frame = new VMCallFrame(chunk, 0, scope, methodName);
+        if (args != null) {
+            for (i in 0...args.length) {
+                if (i < frame.locals.length) {
+                    frame.locals[i] = args[i];
+                }
+            }
+        }
         callFrames.push(frame);
         
         var ip = 0;
@@ -155,16 +167,13 @@ class VM {
                         stack.push(consts[idx]);
 
                     case OP_GET_LOCAL:
-                        // Slot-based local access can be mapped to scope variables in this VM
-                        var idx = inst[frame.ip++];
-                        var name = consts[idx];
-                        stack.push(frame.scope.get(name));
+                        var slot = inst[frame.ip++];
+                        stack.push(frame.locals[slot]);
 
                     case OP_SET_LOCAL:
-                        var idx = inst[frame.ip++];
-                        var name = consts[idx];
+                        var slot = inst[frame.ip++];
                         var val = stack[stack.length - 1];
-                        frame.scope.set(name, val);
+                        frame.locals[slot] = val;
 
                     case OP_GET_VAR:
                         var idx = inst[frame.ip++];
@@ -502,7 +511,7 @@ class VM {
                             
                             interp.pushFrame(proto.name != null ? proto.name : "anonymous", currentPos());
                             try {
-                                var res = VM.runChunk(interp, proto.bodyChunk, fScope, interp.currentThis, proto.name != null ? proto.name : "anonymous");
+                                var res = VM.runChunk(interp, proto.bodyChunk, fScope, interp.currentThis, proto.name != null ? proto.name : "anonymous", callArgs);
                                 if (proto.retType != null && interp.typeToString(proto.retType) == "Void") {
                                     res = null;
                                 } else {
@@ -903,6 +912,12 @@ class VM {
                         interp.checkInt(v2, "IntIterator end");
                         stack.push(new IntIterator(cast v1, cast v2));
 
+                    case OP_CHECK_TYPE:
+                        var typeIdx = inst[frame.ip++];
+                        var type:TypeDecl = consts[typeIdx];
+                        var val = stack[stack.length - 1];
+                        interp.checkType(val, type, frame.scope);
+
                     default:
                         throw 'Unsupported opcode $op';
                 }
@@ -976,9 +991,9 @@ class HaxiomSuperInstance {
                     if (interp.useVM) {
                         var cDyn:Dynamic = constr;
                         if (cDyn.bytecodeChunk == null) {
-                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body);
+                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false);
                         }
-                        VM.runChunk(interp, cDyn.bytecodeChunk, cScope, inst, parentCls.name + ".new");
+                        VM.runChunk(interp, cDyn.bytecodeChunk, cScope, inst, parentCls.name + ".new", args);
                     } else {
                         interp.eval(constr.body, cScope);
                     }

@@ -10,6 +10,13 @@ typedef LoopContext = {
     var scopeDepth:Int;
 }
 
+typedef LocalVar = {
+    var name:String;
+    var slot:Int;
+    var depth:Int;
+    var type:Null<TypeDecl>;
+}
+
 class BytecodeCompiler {
     var instructions:Array<Int> = [];
     var constants:Array<Dynamic> = [];
@@ -18,12 +25,175 @@ class BytecodeCompiler {
     var loopStack:Array<LoopContext> = [];
     var currentScopeDepth:Int = 0;
 
-    public function new() {}
+    var isTopLevel:Bool = true;
+    var locals:Array<LocalVar> = [];
+    var maxSlots:Int = 0;
+    var capturedVars:Map<String, Bool> = new Map();
 
-    public static function compile(expr:Expr):BytecodeChunk {
-        var compiler = new BytecodeCompiler();
+    public function new(?args:Array<{name:String, type:Null<TypeDecl>}>, ?isTopLevel:Bool = true) {
+        this.isTopLevel = isTopLevel;
+        if (args != null && !isTopLevel) {
+            for (arg in args) {
+                declareLocal(arg.name, arg.type);
+            }
+        }
+    }
+
+    public static function compile(expr:Expr, ?args:Array<{name:String, type:Null<TypeDecl>}>, ?isTopLevel:Bool = true):BytecodeChunk {
+        var compiler = new BytecodeCompiler(args, isTopLevel);
+        if (!isTopLevel) {
+            compiler.findCapturedVars(expr, new Map<String, Bool>(), compiler.capturedVars);
+        }
         compiler.compileExpr(expr);
-        return new BytecodeChunk(compiler.instructions, compiler.constants, compiler.positions);
+        return new BytecodeChunk(compiler.instructions, compiler.constants, compiler.positions, compiler.maxSlots);
+    }
+
+    function declareLocal(name:String, type:Null<TypeDecl>):LocalVar {
+        var slot = locals.length;
+        var loc:LocalVar = { name: name, slot: slot, depth: currentScopeDepth, type: type };
+        locals.push(loc);
+        if (slot + 1 > maxSlots) {
+            maxSlots = slot + 1;
+        }
+        return loc;
+    }
+
+    function resolveLocal(name:String):Null<LocalVar> {
+        var i = locals.length - 1;
+        while (i >= 0) {
+            if (locals[i].name == name) return locals[i];
+            i--;
+        }
+        return null;
+    }
+
+    function popScope() {
+        while (locals.length > 0 && locals[locals.length - 1].depth == currentScopeDepth) {
+            locals.pop();
+        }
+        currentScopeDepth--;
+    }
+
+    function iterExpr(e:Expr, cb:Expr->Void) {
+        if (e == null) return;
+        switch (e.def) {
+            case EValue(_), EIdent(_), EBreak, EContinue, EPackage(_), EImport(_, _), EUsing(_), EEnum(_, _), ETypedef(_, _, _):
+                // No sub-expressions
+            case EVar(_, _, expr, _, _), EUnop(_, expr), EField(expr, _), ESafeField(expr, _), EReturn(expr), EThrow(expr), ECast(expr, _), EMeta(_, expr):
+                if (expr != null) cb(expr);
+            case EAssign(e1, e2), EBinop(_, e1, e2), EWhile(e1, e2), EDoWhile(e1, e2), EFor(_, e1, e2):
+                cb(e1);
+                cb(e2);
+            case ECall(e1, args):
+                cb(e1);
+                for (a in args) cb(a);
+            case EArrayDecl(values):
+                for (v in values) cb(v);
+            case EObjectDecl(fields):
+                for (f in fields) cb(f.expr);
+            case EMapDecl(values):
+                for (kv in values) {
+                    cb(kv.key);
+                    cb(kv.value);
+                }
+            case EBlock(exprs):
+                for (ex in exprs) cb(ex);
+            case EFunction(_, args, _, body):
+                cb(body);
+            case EIf(cond, e1, e2):
+                cb(cond);
+                cb(e1);
+                if (e2 != null) cb(e2);
+            case ESwitch(expr, cases, defExpr):
+                cb(expr);
+                for (c in cases) {
+                    for (v in c.values) cb(v);
+                    if (c.guard != null) cb(c.guard);
+                    cb(c.expr);
+                }
+                if (defExpr != null) cb(defExpr);
+            case ETry(tryExpr, catches):
+                cb(tryExpr);
+                for (c in catches) {
+                    cb(c.pattern);
+                    if (c.guard != null) cb(c.guard);
+                    cb(c.body);
+                }
+            case ENew(_, args):
+                for (a in args) cb(a);
+            case EClass(_, fields, methods, _, _, _, _):
+                for (f in fields) if (f.expr != null) cb(f.expr);
+                for (m in methods) cb(m.body);
+            case EInterface(_, _, methods, _, _, _):
+                for (m in methods) if (m.body != null) cb(m.body);
+            case EAbstract(_, _, fields, methods, _, _):
+                for (f in fields) if (f.expr != null) cb(f.expr);
+                for (m in methods) cb(m.body);
+        }
+    }
+
+    function collectIdents(e:Expr, idents:Map<String, Bool>) {
+        if (e == null) return;
+        switch (e.def) {
+            case EIdent(name):
+                idents.set(name, true);
+            default:
+                iterExpr(e, child -> collectIdents(child, idents));
+        }
+    }
+
+    function findCapturedVars(e:Expr, declared:Map<String, Bool>, captured:Map<String, Bool>) {
+        if (e == null) return;
+        switch (e.def) {
+            case EVar(name, _, expr, _, _):
+                declared.set(name, true);
+                if (expr != null) findCapturedVars(expr, declared, captured);
+            case EFor(v, itExpr, body):
+                declared.set(v, true);
+                findCapturedVars(itExpr, declared, captured);
+                findCapturedVars(body, declared, captured);
+            case ETry(tryExpr, catches):
+                findCapturedVars(tryExpr, declared, captured);
+                for (c in catches) {
+                    var catchDeclared = copyMap(declared);
+                    declarePatternVars(c.pattern, catchDeclared);
+                    if (c.guard != null) findCapturedVars(c.guard, catchDeclared, captured);
+                    findCapturedVars(c.body, catchDeclared, captured);
+                }
+            case EFunction(name, args, _, body):
+                var funcDeclared = new Map<String, Bool>();
+                for (arg in args) funcDeclared.set(arg.name, true);
+                if (name != null) funcDeclared.set(name, true);
+                
+                var idents = new Map<String, Bool>();
+                collectIdents(body, idents);
+                for (id in idents.keys()) {
+                    if (!funcDeclared.exists(id) && declared.exists(id)) {
+                        captured.set(id, true);
+                    }
+                }
+                findCapturedVars(body, funcDeclared, captured);
+            default:
+                iterExpr(e, child -> findCapturedVars(child, declared, captured));
+        }
+    }
+
+    function copyMap(m:Map<String, Bool>):Map<String, Bool> {
+        var copy = new Map<String, Bool>();
+        for (k in m.keys()) copy.set(k, m.get(k));
+        return copy;
+    }
+
+    function declarePatternVars(pat:Expr, declared:Map<String, Bool>) {
+        if (pat == null) return;
+        switch (pat.def) {
+            case EIdent(name):
+                if (name != "null" && name != "true" && name != "false") {
+                    declared.set(name, true);
+                }
+            default:
+                iterExpr(pat, child -> declarePatternVars(child, declared));
+        }
     }
 
     inline function emit(op:Opcode, pos:Pos) {
@@ -59,8 +229,14 @@ class BytecodeCompiler {
                 emitInt(addConst(v), e.pos);
 
             case EIdent(name):
-                emit(OP_GET_VAR, e.pos);
-                emitInt(addConst(name), e.pos);
+                var loc = !isTopLevel ? resolveLocal(name) : null;
+                if (loc != null && !capturedVars.exists(name)) {
+                    emit(OP_GET_LOCAL, e.pos);
+                    emitInt(loc.slot, e.pos);
+                } else {
+                    emit(OP_GET_VAR, e.pos);
+                    emitInt(addConst(name), e.pos);
+                }
 
             case EVar(name, type, expr, isFinal, meta):
                 if (expr != null) {
@@ -69,19 +245,41 @@ class BytecodeCompiler {
                     emit(OP_LOAD_CONST, e.pos);
                     emitInt(addConst(null), e.pos);
                 }
-                var nameIdx = addConst(name);
-                var typeIdx = type != null ? addConst(type) : -1;
-                emit(OP_DECLARE_VAR, e.pos);
-                emitInt(nameIdx, e.pos);
-                emitInt(typeIdx, e.pos);
-                emitInt(isFinal ? 1 : 0, e.pos);
+                var isSlot = !isTopLevel && !capturedVars.exists(name);
+                if (isSlot) {
+                    if (type != null) {
+                        emit(OP_CHECK_TYPE, e.pos);
+                        emitInt(addConst(type), e.pos);
+                    }
+                    var loc = declareLocal(name, type);
+                    emit(OP_SET_LOCAL, e.pos);
+                    emitInt(loc.slot, e.pos);
+                } else {
+                    var nameIdx = addConst(name);
+                    var typeIdx = type != null ? addConst(type) : -1;
+                    emit(OP_DECLARE_VAR, e.pos);
+                    emitInt(nameIdx, e.pos);
+                    emitInt(typeIdx, e.pos);
+                    emitInt(isFinal ? 1 : 0, e.pos);
+                }
 
             case EAssign(target, expr):
                 switch (target.def) {
                     case EIdent(name):
-                        compileExpr(expr);
-                        emit(OP_SET_VAR, e.pos);
-                        emitInt(addConst(name), e.pos);
+                        var loc = !isTopLevel ? resolveLocal(name) : null;
+                        if (loc != null && !capturedVars.exists(name)) {
+                            compileExpr(expr);
+                            if (loc.type != null) {
+                                emit(OP_CHECK_TYPE, e.pos);
+                                emitInt(addConst(loc.type), e.pos);
+                            }
+                            emit(OP_SET_LOCAL, e.pos);
+                            emitInt(loc.slot, e.pos);
+                        } else {
+                            compileExpr(expr);
+                            emit(OP_SET_VAR, e.pos);
+                            emitInt(addConst(name), e.pos);
+                        }
                     case EField(obj, field):
                         compileExpr(obj);
                         compileExpr(expr);
@@ -246,6 +444,11 @@ class BytecodeCompiler {
                 emitInt(values.length, e.pos);
 
             case EBlock(exprs):
+                var hasScope = !isTopLevel;
+                if (hasScope) {
+                    emit(OP_PUSH_SCOPE, e.pos);
+                    currentScopeDepth++;
+                }
                 if (exprs.length == 0) {
                     emit(OP_LOAD_CONST, e.pos);
                     emitInt(addConst(null), e.pos);
@@ -257,9 +460,13 @@ class BytecodeCompiler {
                         }
                     }
                 }
+                if (hasScope) {
+                    emit(OP_POP_SCOPE, e.pos);
+                    popScope();
+                }
 
             case EFunction(name, args, retType, body):
-                var bodyChunk = BytecodeCompiler.compile(body);
+                var bodyChunk = BytecodeCompiler.compile(body, args, false);
                 // Clean the body Chunk's positions so it knows its location
                 var proto = {
                     name: name,
@@ -368,10 +575,18 @@ class BytecodeCompiler {
                 currentScopeDepth++;
                 
                 emit(OP_ITERATOR_NEXT, e.pos);
-                emit(OP_DECLARE_VAR, e.pos);
-                emitInt(addConst(v), e.pos);
-                emitInt(-1, e.pos); // no type
-                emitInt(0, e.pos); // not final
+                var isSlot = !isTopLevel && !capturedVars.exists(v);
+                if (isSlot) {
+                    var loc = declareLocal(v, null);
+                    emit(OP_SET_LOCAL, e.pos);
+                    emitInt(loc.slot, e.pos);
+                    emit(OP_POP, e.pos);
+                } else {
+                    emit(OP_DECLARE_VAR, e.pos);
+                    emitInt(addConst(v), e.pos);
+                    emitInt(-1, e.pos); // no type
+                    emitInt(0, e.pos); // not final
+                }
                 
                 loopStack.push({ startLabel: startLabel, endLabel: -1, scopeDepth: currentScopeDepth });
                 var loopIdx = loopStack.length - 1;
@@ -380,7 +595,7 @@ class BytecodeCompiler {
                 emit(OP_POP, e.pos);
                 
                 emit(OP_POP_SCOPE, e.pos);
-                currentScopeDepth--;
+                popScope();
                 
                 emit(OP_JUMP, e.pos);
                 emitInt(startLabel, e.pos);
@@ -467,7 +682,7 @@ class BytecodeCompiler {
                     compileExpr(c.body);
                     
                     emit(OP_POP_SCOPE, e.pos);
-                    currentScopeDepth--;
+                    popScope();
                     
                     emit(OP_JUMP, e.pos);
                     var exitTryJumpIdx = instructions.length;
@@ -533,7 +748,7 @@ class BytecodeCompiler {
                     compileExpr(c.expr);
                     
                     emit(OP_POP_SCOPE, e.pos);
-                    currentScopeDepth--;
+                    popScope();
                     
                     emit(OP_JUMP, e.pos);
                     endSwitchJumpIndices.push(instructions.length);

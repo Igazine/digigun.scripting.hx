@@ -2532,6 +2532,97 @@ class TestHaxiom {
         }
         if (!errOccurred73) throw "Expected VM class method runtime error, but none occurred";
         trace("SUCCESS: VM Class, Constructor, Method, and Property Parity verified.");
+
+        // Test 74: VM compile-time slot resolution, slot reuse, shadowing, closures, and variable type validation.
+        var vmEngine74 = new haxiom.Haxiom();
+        vmEngine74.useVM = true;
+
+        // 1. Slot Reuse Verification
+        var script74_1 = "
+            class SlotTester {
+                public function new() {}
+                public function run():Int {
+                    {
+                        var a:Int = 10;
+                    }
+                    {
+                        var b:Int = 20;
+                        return b;
+                    }
+                }
+            }
+            new SlotTester().run();
+        ";
+        var result74_1 = vmEngine74.interpret(script74_1);
+        if (result74_1 != 20) throw "SlotTester run failed: " + result74_1;
+
+        var slotTesterClass:haxiom.Interp.HaxiomClass = cast vmEngine74.interp.globals.get("SlotTester");
+        var runMethod:Dynamic = slotTesterClass.methods.get("run");
+        var chunk:haxiom.VM.BytecodeChunk = runMethod.bytecodeChunk;
+        // With slot reuse, both local variables a and b reuse slot 0, so maxSlots is 1.
+        if (chunk.maxSlots != 1) {
+            throw "Slot reuse failed: expected maxSlots == 1, but got " + chunk.maxSlots;
+        }
+
+        // 2. Shadowing Verification
+        var script74_2 = "
+            class ShadowTester {
+                public function new() {}
+                public function run():Int {
+                    var x = 10;
+                    {
+                        var x = 20;
+                        if (x != 20) return 99;
+                    }
+                    return x;
+                }
+            }
+            new ShadowTester().run();
+        ";
+        var result74_2 = vmEngine74.interpret(script74_2);
+        if (result74_2 != 10) throw "Shadowing failed: expected 10, got " + result74_2;
+
+        // 3. Closure Variable Fallback Verification
+        var script74_3 = "
+            class ClosureTester {
+                public function new() {}
+                public function run():Int {
+                    var x = 10;
+                    var f = function():Int {
+                        return x;
+                    };
+                    x = 20;
+                    return f();
+                }
+            }
+            new ClosureTester().run();
+        ";
+        var result74_3 = vmEngine74.interpret(script74_3);
+        if (result74_3 != 20) throw "Closure variable fallback failed: expected 20, got " + result74_3;
+
+        // 4. Type Checking Validation
+        var script74_4 = "
+            class TypeTester {
+                public function new() {}
+                public function run():Int {
+                    var x:Int = 10;
+                    x = 'hello';
+                    return x;
+                }
+            }
+            new TypeTester().run();
+        ";
+        var errEngine74 = new haxiom.Haxiom();
+        errEngine74.useVM = true;
+        var typeErrorOccurred = false;
+        try {
+            errEngine74.interpret(script74_4);
+        } catch (e:Dynamic) {
+            typeErrorOccurred = true;
+        }
+        if (!typeErrorOccurred) throw "Expected type check error, but none occurred";
+
+        trace("SUCCESS: VM compile-time slot resolution, slot reuse, shadowing, closures, and variable type validation verified.");
     }
 }
 

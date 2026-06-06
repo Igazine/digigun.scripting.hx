@@ -1742,9 +1742,9 @@ class Interp {
                                         if (useVM) {
                                             var cDyn:Dynamic = constr;
                                             if (cDyn.bytecodeChunk == null) {
-                                                cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body);
+                                                cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false);
                                             }
-                                            haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, currentThis, parentCls.name + ".new");
+                                            haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, currentThis, parentCls.name + ".new", args);
                                         } else {
                                             eval(constr.body, cScope);
                                         }
@@ -2339,9 +2339,9 @@ class Interp {
                             if (useVM) {
                                 var cDyn:Dynamic = constr;
                                 if (cDyn.bytecodeChunk == null) {
-                                    cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body);
+                                    cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false);
                                 }
-                                haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, cls.name + ".new");
+                                haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, cls.name + ".new", args);
                             } else {
                                 eval(constr.body, cScope);
                             }
@@ -2502,9 +2502,9 @@ class Interp {
                                     if (useVM) {
                                         var cDyn:Dynamic = constr;
                                         if (cDyn.bytecodeChunk == null) {
-                                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body);
+                                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false);
                                         }
-                                        haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, cls.name + ".new");
+                                        haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, cls.name + ".new", args);
                                     } else {
                                         eval(constr.body, cScope);
                                     }
@@ -2550,9 +2550,9 @@ class Interp {
                                     if (useVM) {
                                         var cDyn:Dynamic = constr;
                                         if (cDyn.bytecodeChunk == null) {
-                                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body);
+                                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false);
                                         }
-                                        haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, abs.name + ".new");
+                                        haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, abs.name + ".new", args);
                                     } else {
                                         eval(constr.body, cScope);
                                     }
@@ -3750,9 +3750,9 @@ class Interp {
                 if (useVM) {
                     var mDyn:Dynamic = method;
                     if (mDyn.bytecodeChunk == null) {
-                        mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body);
+                        mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false);
                     }
-                    res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, obj, className + "." + method.name);
+                    res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, obj, className + "." + method.name, callArgs);
                 } else {
                     res = eval(method.body, fScope);
                 }
