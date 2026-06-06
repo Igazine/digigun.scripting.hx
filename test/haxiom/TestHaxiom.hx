@@ -1561,7 +1561,7 @@ class TestHaxiom {
         // A. Lexer Unrecognized Character
         var unrecognizedCharThrown = false;
         try {
-            haxiom.interpret("var x = 10 @;");
+            haxiom.interpret("var x = 10 `;");
         } catch (e:haxiom.ScriptException) {
             unrecognizedCharThrown = true;
             if (e.line == 1 && e.col == 12) {
@@ -2003,6 +2003,139 @@ class TestHaxiom {
             trace("SUCCESS: Caught expected null setter write blocking: " + e);
         }
         if (!nullSetterBlocked) throw "FAIL: Null setter write was not blocked from outside the class";
+
+        // 64. Properties on Interfaces
+        var script64_success = "
+            interface IWithProp {
+                var val(get, set):Int;
+                var normalVar:String;
+            }
+            class ImplClass implements IWithProp {
+                public var val(get, set):Int;
+                var _val:Int = 0;
+                public function get_val():Int { return _val; }
+                public function set_val(v:Int):Int { _val = v; return _val; }
+                
+                public var normalVar:String;
+                public function new() {}
+            }
+            var obj:IWithProp = new ImplClass();
+            obj.val = 123;
+            if (obj.val != 123) throw 'Interface property set/get failed';
+        ";
+        haxiom.interpret(script64_success);
+        trace("SUCCESS: Implementing interface with property and variables succeeded.");
+
+        var interfacePropMismatch = false;
+        try {
+            haxiom.interpret("
+                interface IWithProp {
+                    var val(get, set):Int;
+                }
+                class ImplMismatch implements IWithProp {
+                    public var val:Int;
+                    public function new() {}
+                }
+            ");
+        } catch (e:Dynamic) {
+            interfacePropMismatch = true;
+            trace("SUCCESS: Interface property mismatch caught: " + e);
+        }
+        if (!interfacePropMismatch) throw "FAIL: Mismatch in property vs variable implementing interface was not caught";
+
+        // 65. Metadata Parsing & Reflection
+        var script65 = "
+            import haxe.rtti.Meta;
+
+            @:myMeta(42, 'hello')
+            class AnnotatedClass {
+                @:fieldMeta('field')
+                public var myField:Int;
+
+                @:methodMeta('method')
+                public function myMethod() {}
+
+                @:staticMeta('static')
+                public static var staticField:Int;
+            }
+
+            var typeMeta = Meta.getType(AnnotatedClass);
+            if (typeMeta.myMeta == null || typeMeta.myMeta[0] != 42 || typeMeta.myMeta[1] != 'hello') {
+                throw 'Class metadata lookup failed';
+            }
+
+            var fieldsMeta = Meta.getFields(AnnotatedClass);
+            if (fieldsMeta.myField.fieldMeta[0] != 'field' || fieldsMeta.myMethod.methodMeta[0] != 'method') {
+                throw 'Fields/methods metadata lookup failed';
+            }
+
+            var staticsMeta = Meta.getStatics(AnnotatedClass);
+            if (staticsMeta.staticField.staticMeta[0] != 'static') {
+                throw 'Statics metadata lookup failed';
+            }
+        ";
+        haxiom.interpret(script65);
+        trace("SUCCESS: Metadata parsing & reflection (Meta API) passed.");
+
+        // 66. Safe Cast & Unsafe Cast
+        var script66 = "
+            class Animal { public function new() {} }
+            class Dog extends Animal { public function new() { super(); } }
+            class Cat extends Animal { public function new() { super(); } }
+
+            var d:Animal = new Dog();
+            var dog:Dog = cast(d, Dog);
+
+            var isCastError = false;
+            try {
+                var cat:Cat = cast(d, Cat);
+            } catch (e:Dynamic) {
+                isCastError = true;
+            }
+            if (!isCastError) throw 'Expected cast error for invalid cast';
+
+            var dogRaw:Dynamic = cast d;
+        ";
+        haxiom.interpret(script66);
+        trace("SUCCESS: Safe and unsafe casts verified.");
+
+        // 67. Cross-Platform Stdlib & Explicit Imports
+        var script67_success = "
+            import haxe.crypto.Md5;
+            import haxe.ds.Vector;
+            import haxe.Exception;
+
+            var md5 = Md5.encode('haxiom');
+            if (md5 != '6eb6d8292170904ff8479e7def6b2a0d') throw 'Md5 encode mismatch';
+
+            var vec = new Vector<Int>(5);
+            vec[0] = 99;
+            if (vec[0] != 99) throw 'Vector value mismatch';
+
+            var ex = new Exception('test exception');
+            if (ex.message != 'test exception') throw 'Exception message mismatch';
+        ";
+        haxiom.interpret(script67_success);
+
+        var script67_wildcard = "
+            import haxe.crypto.*;
+            var sha1 = Sha1.encode('haxiom');
+            if (sha1 != '71595298aa823686677b3b0d3278b353f2d89d6c') throw 'Sha1 wildcard encode mismatch';
+        ";
+        haxiom.interpret(script67_wildcard);
+
+        var accessNoImportFailed = false;
+        try {
+            var freshHaxiom = new haxiom.Haxiom();
+            freshHaxiom.interpret("
+                var md5 = haxe.crypto.Md5.encode('test');
+            ");
+        } catch (e:Dynamic) {
+            accessNoImportFailed = true;
+            trace("SUCCESS: Blocked access to haxe.crypto.Md5 without explicit import: " + e);
+        }
+        if (!accessNoImportFailed) throw "FAIL: Accessing native class without import was not blocked";
+        trace("SUCCESS: Cross-platform stdlib packages with explicit/wildcard imports work correctly.");
     }
 }
 

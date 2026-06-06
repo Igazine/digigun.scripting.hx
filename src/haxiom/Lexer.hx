@@ -206,6 +206,7 @@ class Lexer {
                     else if (peek(1) == "?") add(tokens, TDoubleQuestion, 2);
                     else add(tokens, TQuestion);
                 case ":": add(tokens, TColon);
+                case "@": add(tokens, TAt);
                 
                 case "+":
                     if (peek(1) == "+") add(tokens, TIncrement, 2);

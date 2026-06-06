@@ -18,10 +18,19 @@ class FFIMacro {
         
         var coreClasses = [
             "Date", "DateTools", "StringBuf", "Xml", "haxe.Timer", "haxe.Json",
-            "haxe.io.Bytes", "haxe.io.BytesBuffer", "haxe.io.Path", "haxe.ds.List",
-            "haxe.ds.StringMap", "haxe.ds.IntMap", "haxe.ds.ObjectMap", "StringTools",
-            "Lambda", "Std", "Math", "Reflect", "Type", "haxe.crypto.Md5",
-            "haxe.crypto.Sha1", "haxe.crypto.Adler32"
+            "haxe.io.Bytes", "haxe.io.BytesBuffer", "haxe.io.BytesInput", "haxe.io.BytesOutput",
+            "haxe.io.Path", "haxe.io.Input", "haxe.io.Output", "haxe.io.Eof", "haxe.io.Error", "haxe.io.StringInput",
+            "haxe.ds.List", "haxe.ds.StringMap", "haxe.ds.IntMap", "haxe.ds.ObjectMap", "haxe.ds.WeakMap",
+            "haxe.ds.HashMap", "haxe.ds.Vector", "haxe.ds.ArraySort", "haxe.ds.BalancedTree",
+            "haxe.ds.GenericStack", "haxe.ds.EnumValueMap", "haxe.ds.Option", "haxe.ds.ReadOnlyArray",
+            "StringTools", "Lambda", "Std", "Math", "Reflect", "Type",
+            "haxe.crypto.Md5", "haxe.crypto.Sha1", "haxe.crypto.Sha224", "haxe.crypto.Sha256",
+            "haxe.crypto.Adler32", "haxe.crypto.Crc32", "haxe.crypto.Hmac", "haxe.crypto.BaseCode",
+            "haxe.iterators.ArrayIterator", "haxe.iterators.ArrayKeyValueIterator", "haxe.iterators.MapKeyValueIterator",
+            "haxe.iterators.StringIterator", "haxe.iterators.StringKeyValueIterator",
+            "haxe.rtti.Meta", "haxe.rtti.Rtti",
+            "haxe.xml.Access", "haxe.xml.Parser", "haxe.xml.Printer",
+            "haxe.Exception", "haxe.ValueException", "haxe.IMap"
         ];
         
         // Dynamically define a class that references all core classes to force compiling them
@@ -29,17 +38,28 @@ class FFIMacro {
         var pos = Context.currentPos();
         var i = 0;
         for (cls in coreClasses) {
-            Compiler.keep(cls);
             try {
-                Context.getType(cls);
-                var clsExpr = Context.parseInlineString(cls, pos);
-                fields.push({
-                    name: "ref" + i,
-                    pos: pos,
-                    kind: FieldType.FVar(macro:Dynamic, clsExpr),
-                    access: [APublic, AStatic]
-                });
-                i++;
+                Compiler.keep(cls);
+                var t = Context.getType(cls);
+                var isClass = false;
+                switch (t) {
+                    case TInst(classRef, _):
+                        var c = classRef.get();
+                        if (!c.isInterface) {
+                            isClass = true;
+                        }
+                    default:
+                }
+                if (isClass) {
+                    var clsExpr = Context.parseInlineString(cls, pos);
+                    fields.push({
+                        name: "ref" + i,
+                        pos: pos,
+                        kind: FieldType.FVar(macro:Dynamic, clsExpr),
+                        access: [APublic, AStatic]
+                    });
+                    i++;
+                }
             } catch (e:Dynamic) {}
         }
         
@@ -289,18 +309,38 @@ class FFIMacro {
         #if macro
         var coreClasses = [
             "Date", "DateTools", "StringBuf", "Xml", "haxe.Timer", "haxe.Json",
-            "haxe.io.Bytes", "haxe.io.BytesBuffer", "haxe.io.Path", "haxe.ds.List",
-            "haxe.ds.StringMap", "haxe.ds.IntMap", "haxe.ds.ObjectMap", "StringTools",
-            "Lambda", "Std", "Math", "Reflect", "Type", "haxe.crypto.Md5",
-            "haxe.crypto.Sha1", "haxe.crypto.Adler32"
+            "haxe.io.Bytes", "haxe.io.BytesBuffer", "haxe.io.BytesInput", "haxe.io.BytesOutput",
+            "haxe.io.Path", "haxe.io.Input", "haxe.io.Output", "haxe.io.Eof", "haxe.io.Error", "haxe.io.StringInput",
+            "haxe.ds.List", "haxe.ds.StringMap", "haxe.ds.IntMap", "haxe.ds.ObjectMap", "haxe.ds.WeakMap",
+            "haxe.ds.HashMap", "haxe.ds.Vector", "haxe.ds.ArraySort", "haxe.ds.BalancedTree",
+            "haxe.ds.GenericStack", "haxe.ds.EnumValueMap", "haxe.ds.Option", "haxe.ds.ReadOnlyArray",
+            "StringTools", "Lambda", "Std", "Math", "Reflect", "Type",
+            "haxe.crypto.Md5", "haxe.crypto.Sha1", "haxe.crypto.Sha224", "haxe.crypto.Sha256",
+            "haxe.crypto.Adler32", "haxe.crypto.Crc32", "haxe.crypto.Hmac", "haxe.crypto.BaseCode",
+            "haxe.iterators.ArrayIterator", "haxe.iterators.ArrayKeyValueIterator", "haxe.iterators.MapKeyValueIterator",
+            "haxe.iterators.StringIterator", "haxe.iterators.StringKeyValueIterator",
+            "haxe.rtti.Meta", "haxe.rtti.Rtti",
+            "haxe.xml.Access", "haxe.xml.Parser", "haxe.xml.Printer",
+            "haxe.Exception", "haxe.ValueException", "haxe.IMap"
         ];
         var exprs = [];
         var pos = haxe.macro.Context.currentPos();
         for (cls in coreClasses) {
             try {
-                haxe.macro.Context.getType(cls);
-                var clsExpr = haxe.macro.Context.parseInlineString(cls, pos);
-                exprs.push(macro $v{cls} => $clsExpr);
+                var t = haxe.macro.Context.getType(cls);
+                var isClass = false;
+                switch (t) {
+                    case TInst(classRef, _):
+                        var c = classRef.get();
+                        if (!c.isInterface) {
+                            isClass = true;
+                        }
+                    default:
+                }
+                if (isClass) {
+                    var clsExpr = haxe.macro.Context.parseInlineString(cls, pos);
+                    exprs.push(macro $v{cls} => $clsExpr);
+                }
             } catch (e:Dynamic) {}
         }
         return macro [ $a{exprs} ];

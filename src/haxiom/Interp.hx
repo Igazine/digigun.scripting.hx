@@ -103,10 +103,11 @@ class HaxiomClass {
     public var params:Array<String> = [];
     public var parentType:TypeDecl;
     public var parent:HaxiomClass;
-    public var fields:Map<String, {name:String, expr:Expr, isStatic:Bool, isPublic:Bool, ?property:{get:String, set:String}}> = new Map();
-    public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}> = new Map();
+    public var fields:Map<String, {name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
+    public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
     public var staticFields:Map<String, Dynamic> = new Map();
     public var interfaces:Array<TypeDecl> = [];
+    public var meta:Array<{name:String, params:Array<Dynamic>}> = [];
 
     public function new(name:String, ?parent:HaxiomClass) {
         this.name = name;
@@ -117,8 +118,10 @@ class HaxiomClass {
 class HaxiomInterface {
     public var name:String;
     public var params:Array<String> = [];
-    public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>}> = new Map();
+    public var fields:Map<String, {name:String, type:Null<TypeDecl>, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
+    public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
     public var parents:Array<TypeDecl> = [];
+    public var meta:Array<{name:String, params:Array<Dynamic>}> = [];
 
     public function new(name:String, ?parents:Array<TypeDecl>) {
         this.name = name;
@@ -166,9 +169,10 @@ class HaxiomAbstract {
     public var name:String;
     public var params:Array<String> = [];
     public var underlyingType:TypeDecl;
-    public var fields:Map<String, {name:String, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}}> = new Map();
-    public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}> = new Map();
+    public var fields:Map<String, {name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
+    public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
     public var staticFields:Map<String, Dynamic> = new Map();
+    public var meta:Array<{name:String, params:Array<Dynamic>}> = [];
 
     public function new(name:String, underlyingType:TypeDecl) {
         this.name = name;
@@ -187,6 +191,200 @@ class HaxiomAbstractInstance {
 
     public function toString():String {
         return Std.string(underlyingValue);
+    }
+}
+
+class HaxiomMeta {
+    static function cleanName(name:String):String {
+        if (name != null && StringTools.startsWith(name, ":")) {
+            return name.substring(1);
+        }
+        return name;
+    }
+
+    public static function getType(t:Dynamic):Dynamic {
+        if (t == null) return null;
+        if (Std.isOfType(t, HaxiomClass)) {
+            var cls:HaxiomClass = cast t;
+            var obj = {};
+            if (cls.meta != null) {
+                for (m in cls.meta) {
+                    Reflect.setField(obj, cleanName(m.name), m.params);
+                }
+            }
+            return obj;
+        }
+        if (Std.isOfType(t, HaxiomInterface)) {
+            var itf:HaxiomInterface = cast t;
+            var obj = {};
+            if (itf.meta != null) {
+                for (m in itf.meta) {
+                    Reflect.setField(obj, cleanName(m.name), m.params);
+                }
+            }
+            return obj;
+        }
+        if (Std.isOfType(t, HaxiomAbstract)) {
+            var abs:HaxiomAbstract = cast t;
+            var obj = {};
+            if (abs.meta != null) {
+                for (m in abs.meta) {
+                    Reflect.setField(obj, cleanName(m.name), m.params);
+                }
+            }
+            return obj;
+        }
+        return haxe.rtti.Meta.getType(t);
+    }
+
+    public static function getFields(t:Dynamic):Dynamic {
+        if (t == null) return null;
+        if (Std.isOfType(t, HaxiomClass)) {
+            var cls:HaxiomClass = cast t;
+            var fieldsObj = {};
+            var hasAny = false;
+            for (fName in cls.fields.keys()) {
+                var f = cls.fields.get(fName);
+                if (!f.isStatic && f.meta != null && f.meta.length > 0) {
+                    var fObj = {};
+                    for (m in f.meta) {
+                        Reflect.setField(fObj, cleanName(m.name), m.params);
+                    }
+                    Reflect.setField(fieldsObj, fName, fObj);
+                    hasAny = true;
+                }
+            }
+            for (mName in cls.methods.keys()) {
+                var m = cls.methods.get(mName);
+                if (!m.isStatic && m.meta != null && m.meta.length > 0) {
+                    var mObj = {};
+                    for (metaItem in m.meta) {
+                        Reflect.setField(mObj, cleanName(metaItem.name), metaItem.params);
+                    }
+                    Reflect.setField(fieldsObj, mName, mObj);
+                    hasAny = true;
+                }
+            }
+            return hasAny ? fieldsObj : {};
+        }
+        if (Std.isOfType(t, HaxiomInterface)) {
+            var itf:HaxiomInterface = cast t;
+            var fieldsObj = {};
+            var hasAny = false;
+            for (fName in itf.fields.keys()) {
+                var f = itf.fields.get(fName);
+                if (f.meta != null && f.meta.length > 0) {
+                    var fObj = {};
+                    for (m in f.meta) {
+                        Reflect.setField(fObj, cleanName(m.name), m.params);
+                    }
+                    Reflect.setField(fieldsObj, fName, fObj);
+                    hasAny = true;
+                }
+            }
+            for (mName in itf.methods.keys()) {
+                var m = itf.methods.get(mName);
+                if (m.meta != null && m.meta.length > 0) {
+                    var mObj = {};
+                    for (metaItem in m.meta) {
+                        Reflect.setField(mObj, cleanName(metaItem.name), metaItem.params);
+                    }
+                    Reflect.setField(fieldsObj, mName, mObj);
+                    hasAny = true;
+                }
+            }
+            return hasAny ? fieldsObj : {};
+        }
+        if (Std.isOfType(t, HaxiomAbstract)) {
+            var abs:HaxiomAbstract = cast t;
+            var fieldsObj = {};
+            var hasAny = false;
+            for (fName in abs.fields.keys()) {
+                var f = abs.fields.get(fName);
+                if (!f.isStatic && f.meta != null && f.meta.length > 0) {
+                    var fObj = {};
+                    for (m in f.meta) {
+                        Reflect.setField(fObj, cleanName(m.name), m.params);
+                    }
+                    Reflect.setField(fieldsObj, fName, fObj);
+                    hasAny = true;
+                }
+            }
+            for (mName in abs.methods.keys()) {
+                var m = abs.methods.get(mName);
+                if (!m.isStatic && m.meta != null && m.meta.length > 0) {
+                    var mObj = {};
+                    for (metaItem in m.meta) {
+                        Reflect.setField(mObj, cleanName(metaItem.name), metaItem.params);
+                    }
+                    Reflect.setField(fieldsObj, mName, mObj);
+                    hasAny = true;
+                }
+            }
+            return hasAny ? fieldsObj : {};
+        }
+        return haxe.rtti.Meta.getFields(t);
+    }
+
+    public static function getStatics(t:Dynamic):Dynamic {
+        if (t == null) return null;
+        if (Std.isOfType(t, HaxiomClass)) {
+            var cls:HaxiomClass = cast t;
+            var fieldsObj = {};
+            var hasAny = false;
+            for (fName in cls.fields.keys()) {
+                var f = cls.fields.get(fName);
+                if (f.isStatic && f.meta != null && f.meta.length > 0) {
+                    var fObj = {};
+                    for (m in f.meta) {
+                        Reflect.setField(fObj, cleanName(m.name), m.params);
+                    }
+                    Reflect.setField(fieldsObj, fName, fObj);
+                    hasAny = true;
+                }
+            }
+            for (mName in cls.methods.keys()) {
+                var m = cls.methods.get(mName);
+                if (m.isStatic && m.meta != null && m.meta.length > 0) {
+                    var mObj = {};
+                    for (metaItem in m.meta) {
+                        Reflect.setField(mObj, cleanName(metaItem.name), metaItem.params);
+                    }
+                    Reflect.setField(fieldsObj, mName, mObj);
+                    hasAny = true;
+                }
+            }
+            return hasAny ? fieldsObj : {};
+        }
+        if (Std.isOfType(t, HaxiomAbstract)) {
+            var abs:HaxiomAbstract = cast t;
+            var fieldsObj = {};
+            var hasAny = false;
+            for (fName in abs.fields.keys()) {
+                var f = abs.fields.get(fName);
+                if (f.isStatic && f.meta != null && f.meta.length > 0) {
+                    var fObj = {};
+                    for (m in f.meta) {
+                        Reflect.setField(fObj, cleanName(m.name), m.params);
+                    }
+                    Reflect.setField(fieldsObj, fName, fObj);
+                    hasAny = true;
+                }
+            }
+            for (mName in abs.methods.keys()) {
+                var m = abs.methods.get(mName);
+                if (m.isStatic && m.meta != null && m.meta.length > 0) {
+                    var mObj = {};
+                    for (metaItem in m.meta) {
+                        Reflect.setField(mObj, cleanName(metaItem.name), metaItem.params);
+                    }
+                    Reflect.setField(fieldsObj, mName, mObj);
+                    hasAny = true;
+                }
+            }
+            return hasAny ? fieldsObj : {};
+        }
+        return haxe.rtti.Meta.getStatics(t);
     }
 }
 
@@ -217,7 +415,9 @@ class Interp {
         "Date", "DateTools", "StringBuf", "Xml", "haxe.Timer", "haxe.Json",
         "haxe.io.Bytes", "haxe.io.BytesBuffer", "haxe.io.Path", "haxe.ds.List",
         "haxe.ds.StringMap", "haxe.ds.IntMap", "haxe.ds.ObjectMap", "StringTools",
-        "Lambda", "Std", "Math", "haxe.crypto.Md5", "haxe.crypto.Sha1", "haxe.crypto.Adler32"
+        "Lambda", "Std", "Math", "haxe.crypto.Md5", "haxe.crypto.Sha1", "haxe.crypto.Adler32",
+        "haxe.crypto.*", "haxe.ds.*", "haxe.io.*", "haxe.iterators.*", "haxe.rtti.*", "haxe.xml.*",
+        "haxe.Timer", "haxe.Constructible", "haxe.Exception", "haxe.ValueException", "haxe.IMap", "haxe.DynamicAccess"
     ];
 
     public var globals:Scope = new Scope();
@@ -243,6 +443,14 @@ class Interp {
 
     public inline function popFrame() {
         callStack.pop();
+    }
+
+    function evaluateMetadata(metaList:Array<{name:String, params:Array<Expr>}>, scope:Scope):Array<{name:String, params:Array<Dynamic>}> {
+        if (metaList == null) return [];
+        return [for (m in metaList) {
+            name: m.name,
+            params: [for (p in m.params) eval(p, scope)]
+        }];
     }
 
     public function new() {
@@ -1220,7 +1428,7 @@ class Interp {
                 
                 throw 'Identifier "$name" not found at ${pos.line}:${pos.col}';
 
-            case EVar(name, type, expr, isFinal):
+            case EVar(name, type, expr, isFinal, meta):
                 var val = expr != null ? eval(expr, scope) : null;
                 checkType(val, type, scope);
                 scope.declare(name, val, type, isFinal);
@@ -2128,6 +2336,10 @@ class Interp {
                             return new haxe.ds.StringMap<Dynamic>();
                         }
                         
+                        if (fqName == "Vector" || fqName == "haxe.ds.Vector") {
+                            return new haxe.ds.Vector(args[0]);
+                        }
+                        
                         // 3. Check Exposed Abstracts constructor redirection
                         var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
                         if (absInfo != null) {
@@ -2291,7 +2503,7 @@ class Interp {
                 }
                 return map;
 
-            case EClass(name, fields, methods, parentType, interfaceTypes, params):
+            case EClass(name, fields, methods, parentType, interfaceTypes, params, meta):
                 var parentCls:HaxiomClass = null;
                 if (parentType != null) {
                     switch (parentType) {
@@ -2310,14 +2522,32 @@ class Interp {
                 cls.parentType = parentType;
                 cls.params = params != null ? params : [];
                 cls.interfaces = interfaceTypes != null ? interfaceTypes : [];
+                cls.meta = evaluateMetadata(meta, scope);
                 for (f in fields) {
-                    cls.fields.set(f.name, f);
+                    cls.fields.set(f.name, {
+                        name: f.name,
+                        type: f.type,
+                        expr: f.expr,
+                        isStatic: f.isStatic,
+                        isPublic: f.isPublic,
+                        isFinal: f.isFinal,
+                        property: f.property,
+                        meta: evaluateMetadata(f.meta, scope)
+                    });
                     if (f.isStatic && f.expr != null) {
                         cls.staticFields.set(f.name, eval(f.expr, scope));
                     }
                 }
                 for (m in methods) {
-                    cls.methods.set(m.name, m);
+                    cls.methods.set(m.name, {
+                        name: m.name,
+                        args: m.args,
+                        retType: m.retType,
+                        body: m.body,
+                        isStatic: m.isStatic,
+                        isPublic: m.isPublic,
+                        meta: evaluateMetadata(m.meta, scope)
+                    });
                 }
                 
                 var implementedInterfaces = interfaceTypes != null ? interfaceTypes : [];
@@ -2341,14 +2571,20 @@ class Interp {
                                     }
                                 }
                                 
-                                var allItfMethods = new Map<String, {method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>}, bindings:Map<String, TypeDecl>}>();
+                                var allItfMethods = new Map<String, {method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>, ?meta:Array<{name:String, params:Array<Dynamic>}>}, bindings:Map<String, TypeDecl>}>();
+                                var allItfFields = new Map<String, {field:{name:String, type:Null<TypeDecl>, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Dynamic>}>}, bindings:Map<String, TypeDecl>}>();
                                 var visitedItf = new Map();
-                                function collectMethods(currItf:HaxiomInterface, currentItfBindings:Map<String, TypeDecl>) {
+                                function collectMethodsAndFields(currItf:HaxiomInterface, currentItfBindings:Map<String, TypeDecl>) {
                                     if (visitedItf.exists(currItf.name)) return;
                                     visitedItf.set(currItf.name, true);
                                     for (mKey in currItf.methods.keys()) {
                                         if (!allItfMethods.exists(mKey)) {
                                             allItfMethods.set(mKey, { method: currItf.methods.get(mKey), bindings: currentItfBindings });
+                                        }
+                                    }
+                                    for (fKey in currItf.fields.keys()) {
+                                        if (!allItfFields.exists(fKey)) {
+                                            allItfFields.set(fKey, { field: currItf.fields.get(fKey), bindings: currentItfBindings });
                                         }
                                     }
                                     for (p in currItf.parents) {
@@ -2367,13 +2603,41 @@ class Interp {
                                                             pBindings.set(pItf.name + "." + paramName, boundType);
                                                         }
                                                     }
-                                                    collectMethods(pItf, pBindings);
+                                                    collectMethodsAndFields(pItf, pBindings);
                                                 }
                                             default:
                                         }
                                     }
                                 }
-                                collectMethods(itf, itfBindings);
+                                collectMethodsAndFields(itf, itfBindings);
+
+                                for (itfKey in allItfFields.keys()) {
+                                    var itfData = allItfFields.get(itfKey);
+                                    var itfField = itfData.field;
+                                    var activeBindings = itfData.bindings;
+                                    var classField = findFieldDef(cls, itfField.name);
+                                    if (classField == null) {
+                                        throw 'Class ${cls.name} does not implement field ${itfField.name} required by interface ${itf.name} at ${pos.line}:${pos.col}';
+                                    }
+                                    if (itfField.property != null) {
+                                        if (classField.property == null) {
+                                            throw 'Field ${cls.name}.${itfField.name} must be a property to implement interface ${itf.name} at ${pos.line}:${pos.col}';
+                                        }
+                                        if (classField.property.get != itfField.property.get || classField.property.set != itfField.property.set) {
+                                            throw 'Property accessors mismatch for field ${cls.name}.${itfField.name}: expected (${itfField.property.get}, ${itfField.property.set}) but got (${classField.property.get}, ${classField.property.set}) at ${pos.line}:${pos.col}';
+                                        }
+                                    } else {
+                                        if (classField.property != null) {
+                                            throw 'Field ${cls.name}.${itfField.name} cannot be a property because it is a normal variable in interface ${itf.name} at ${pos.line}:${pos.col}';
+                                        }
+                                    }
+                                    if (itfField.type != null && classField.type != null) {
+                                        var resolvedItfFieldType = resolveGenericType(itfField.type, activeBindings, scope);
+                                        if (Std.string(resolvedItfFieldType) != Std.string(classField.type)) {
+                                            throw 'Field ${cls.name}.${itfField.name} type mismatch: expected ${resolvedItfFieldType} but got ${classField.type} at ${pos.line}:${pos.col}';
+                                        }
+                                    }
+                                }
 
                                 for (itfKey in allItfMethods.keys()) {
                                     var itfData = allItfMethods.get(itfKey);
@@ -2388,7 +2652,8 @@ class Interp {
                                                 retType: itfMethod.retType,
                                                 body: itfMethod.body,
                                                 isStatic: false,
-                                                isPublic: true
+                                                isPublic: true,
+                                                meta: itfMethod.meta
                                             };
                                             cls.methods.set(itfMethod.name, classMethod);
                                         } else {
@@ -2430,13 +2695,28 @@ class Interp {
                 }
                 return cls;
 
-            case EInterface(name, itfMethods, parents, params):
+            case EInterface(name, fields, methods, parents, params, meta):
                 var fqName = currentPackage.length > 0 ? currentPackage.join(".") + "." + name : name;
                 var itf = new HaxiomInterface(name, parents);
                 itf.name = fqName;
                 itf.params = params != null ? params : [];
-                for (m in itfMethods) {
-                    itf.methods.set(m.name, m);
+                itf.meta = evaluateMetadata(meta, scope);
+                for (f in fields) {
+                    itf.fields.set(f.name, {
+                        name: f.name,
+                        type: f.type,
+                        property: f.property,
+                        meta: evaluateMetadata(f.meta, scope)
+                    });
+                }
+                for (m in methods) {
+                    itf.methods.set(m.name, {
+                        name: m.name,
+                        args: m.args,
+                        retType: m.retType,
+                        body: m.body,
+                        meta: evaluateMetadata(m.meta, scope)
+                    });
                 }
                 scope.declare(name, itf);
                 if (globals != scope) {
@@ -2447,19 +2727,37 @@ class Interp {
                 }
                 return itf;
 
-            case EAbstract(name, underlyingType, fields, methods, params):
+            case EAbstract(name, underlyingType, fields, methods, params, meta):
                 var fqName = currentPackage.length > 0 ? currentPackage.join(".") + "." + name : name;
                 var abs = new HaxiomAbstract(name, underlyingType);
                 abs.name = fqName;
                 abs.params = params != null ? params : [];
+                abs.meta = evaluateMetadata(meta, scope);
                 for (f in fields) {
-                    abs.fields.set(f.name, f);
+                    abs.fields.set(f.name, {
+                        name: f.name,
+                        type: f.type,
+                        expr: f.expr,
+                        isStatic: f.isStatic,
+                        isPublic: f.isPublic,
+                        isFinal: f.isFinal,
+                        property: f.property,
+                        meta: evaluateMetadata(f.meta, scope)
+                    });
                     if (f.isStatic && f.expr != null) {
                         abs.staticFields.set(f.name, eval(f.expr, scope));
                     }
                 }
                 for (m in methods) {
-                    abs.methods.set(m.name, m);
+                    abs.methods.set(m.name, {
+                        name: m.name,
+                        args: m.args,
+                        retType: m.retType,
+                        body: m.body,
+                        isStatic: m.isStatic,
+                        isPublic: m.isPublic,
+                        meta: evaluateMetadata(m.meta, scope)
+                    });
                 }
                 scope.declare(name, abs);
                 if (globals != scope) {
@@ -2539,6 +2837,20 @@ class Interp {
                 
                 if (shortName == "*") {
                     var parentPath = path.slice(0, path.length - 1).join(".");
+                    var registryCls = Type.resolveClass("haxiom.macro.StdlibRegistry");
+                    if (registryCls != null) {
+                        var classes:Map<String, Dynamic> = Reflect.field(registryCls, "classes");
+                        if (classes != null) {
+                            var prefix = parentPath + ".";
+                            for (fq in classes.keys()) {
+                                if (StringTools.startsWith(fq, prefix)) {
+                                    var parts = fq.split(".");
+                                    var clsShort = parts[parts.length - 1];
+                                    scope.declare(clsShort, classes.get(fq));
+                                }
+                            }
+                        }
+                    }
                     if (moduleResolver != null) {
                         var moduleScope = getOrLoadModule(parentPath);
                         if (moduleScope != null) {
@@ -2692,6 +3004,9 @@ class Interp {
                     }
                     throw errVal;
                 }
+
+            case EMeta(meta, expr):
+                return eval(expr, scope);
 
             case ECast(expr, type):
                 var val = eval(expr, scope);
@@ -3866,6 +4181,12 @@ class Interp {
             return (cast obj : haxe.Constraints.IMap<Dynamic, Dynamic>).get(key);
         } else if (Std.isOfType(obj, HaxiomInstance)) {
             return (cast obj : HaxiomInstance).fields.get(key);
+        } else {
+            var cls = Type.getClass(obj);
+            var clsName = cls != null ? Type.getClassName(cls) : null;
+            if (clsName == "haxe.ds.Vector" || clsName == "eval.Vector") {
+                return (cast obj : haxe.ds.Vector<Dynamic>).get(cast key);
+            }
         }
         throw "Target object does not support subscript access";
     }
@@ -3878,7 +4199,13 @@ class Interp {
         } else if (Std.isOfType(obj, HaxiomInstance)) {
             (cast obj : HaxiomInstance).fields.set(key, val);
         } else {
-            throw "Target object does not support subscript assignment";
+            var cls = Type.getClass(obj);
+            var clsName = cls != null ? Type.getClassName(cls) : null;
+            if (clsName == "haxe.ds.Vector" || clsName == "eval.Vector") {
+                (cast obj : haxe.ds.Vector<Dynamic>).set(cast key, val);
+            } else {
+                throw "Target object does not support subscript assignment";
+            }
         }
     }
 
@@ -3986,7 +4313,7 @@ class Interp {
             }
             
             if (resolvedType != null) {
-                if (fqName == "haxe.Json" || fqName == "haxe.Timer" || fqName == "StringBuf" || fqName == "haxe.io.Bytes" || fqName == "haxe.io.Path") {
+                if (isManualImportRequired(fqName)) {
                     if (!isClassInScope(resolvedType, scope)) {
                         len--;
                         continue;
@@ -4022,7 +4349,7 @@ class Interp {
         
         if (val != null) {
             var fq = path.join(".");
-            if (fq == "haxe.Json" || fq == "haxe.Timer" || fq == "StringBuf" || fq == "haxe.io.Bytes" || fq == "haxe.io.Path") {
+            if (isManualImportRequired(fq)) {
                 if (!isClassInScope(val, scope)) return null;
             }
             return val;
@@ -4033,7 +4360,7 @@ class Interp {
         if (haxiom.FFI.exposedAbstracts.exists(fqName)) {
             var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
             var impl = resolveAbstractImpl(fqName, absInfo.implClass);
-            if (impl != null && (fqName == "haxe.Json" || fqName == "haxe.Timer" || fqName == "StringBuf" || fqName == "haxe.io.Bytes" || fqName == "haxe.io.Path")) {
+            if (impl != null && isManualImportRequired(fqName)) {
                 if (!isClassInScope(impl, scope)) return null;
             }
             return impl;
@@ -4041,7 +4368,7 @@ class Interp {
         
         var cls = resolveNativeClass(fqName);
         if (cls != null) {
-            if (fqName == "haxe.Json" || fqName == "haxe.Timer" || fqName == "StringBuf" || fqName == "haxe.io.Bytes" || fqName == "haxe.io.Path") {
+            if (isManualImportRequired(fqName)) {
                 if (!isClassInScope(cls, scope)) return null;
             }
             return cls;
@@ -4060,7 +4387,7 @@ class Interp {
                 
                 var c = resolveNativeClass(runtimeFq);
                 if (c != null) {
-                    if (runtimeFq == "haxe.Json" || runtimeFq == "haxe.Timer" || runtimeFq == "StringBuf" || runtimeFq == "haxe.io.Bytes" || runtimeFq == "haxe.io.Path") {
+                    if (isManualImportRequired(runtimeFq)) {
                         if (!isClassInScope(c, scope)) return null;
                     }
                     return c;
@@ -4159,6 +4486,23 @@ class Interp {
             #end
         }
         return autoWhitelistedTypes.exists(fqName);
+    }
+
+    function isManualImportRequired(fqName:String):Bool {
+        if (fqName == "Math" || fqName == "Std" || fqName == "Reflect" || fqName == "Type" || fqName == "Lambda") {
+            return false;
+        }
+        var isGlobalPrimitive = (fqName == "String" || fqName == "Array" || fqName == "Int" || fqName == "Float" || fqName == "Bool" || fqName == "Dynamic" || fqName == "Class" || fqName == "Enum");
+        if (isGlobalPrimitive) {
+            return false;
+        }
+        if (fqName == "Date" || fqName == "DateTools" || fqName == "StringBuf" || fqName == "Xml" || fqName == "StringTools") {
+            return true;
+        }
+        if (StringTools.startsWith(fqName, "haxe.")) {
+            return true;
+        }
+        return false;
     }
 
     function isImportWhitelisted(fqName:String):Bool {
@@ -4310,6 +4654,14 @@ class Interp {
         }
         if (fqName == "Reflect") {
             return getSafeReflectProxy();
+        }
+        if (fqName == "haxe.rtti.Meta") {
+            return HaxiomMeta;
+        }
+        if (fqName == "haxe.ds.Vector") {
+            var c = Type.resolveClass("haxe.ds.Vector");
+            if (c != null) return c;
+            return { __isHaxiomVectorClass: true };
         }
         var registryCls = Type.resolveClass("haxiom.macro.StdlibRegistry");
         if (registryCls != null) {

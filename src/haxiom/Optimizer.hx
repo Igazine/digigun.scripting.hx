@@ -13,8 +13,8 @@ class Optimizer {
             case EIdent(v):
                 EIdent(v);
                 
-            case EVar(name, type, e, isFinal):
-                EVar(name, type, e == null ? null : foldConstants(e), isFinal);
+            case EVar(name, type, e, isFinal, meta):
+                EVar(name, type, e == null ? null : foldConstants(e), isFinal, meta);
                 
             case EAssign(target, e):
                 EAssign(foldConstants(target), foldConstants(e));
@@ -158,7 +158,7 @@ class Optimizer {
             case EMapDecl(values):
                 EMapDecl(values.map(v -> {key: foldConstants(v.key), value: foldConstants(v.value)}));
                 
-            case EClass(name, fields, methods, parent, interfaces, params):
+            case EClass(name, fields, methods, parent, interfaces, params, meta):
                 var foldedFields = fields.map(f -> {
                     name: f.name,
                     type: f.type,
@@ -166,7 +166,8 @@ class Optimizer {
                     isStatic: f.isStatic,
                     isPublic: f.isPublic,
                     isFinal: f.isFinal,
-                    property: f.property
+                    property: f.property,
+                    meta: f.meta
                 });
                 var foldedMethods = methods.map(m -> {
                     name: m.name,
@@ -174,9 +175,10 @@ class Optimizer {
                     retType: m.retType,
                     body: foldConstants(m.body),
                     isStatic: m.isStatic,
-                    isPublic: m.isPublic
+                    isPublic: m.isPublic,
+                    meta: m.meta
                 });
-                EClass(name, foldedFields, foldedMethods, parent, interfaces, params);
+                EClass(name, foldedFields, foldedMethods, parent, interfaces, params, meta);
                 
             case EBlock(exprs):
                 EBlock(exprs.map(foldConstants));
@@ -249,14 +251,24 @@ class Optimizer {
             case ECast(e, type):
                 ECast(foldConstants(e), type);
                 
-            case EInterface(name, methods, parents, params):
+            case EMeta(meta, e):
+                EMeta(meta, foldConstants(e));
+                
+            case EInterface(name, fields, methods, parents, params, meta):
+                var foldedFields = fields.map(f -> {
+                    name: f.name,
+                    type: f.type,
+                    property: f.property,
+                    meta: f.meta
+                });
                 var foldedMethods = methods.map(m -> {
                     name: m.name,
                     args: m.args,
                     retType: m.retType,
-                    body: m.body == null ? null : foldConstants(m.body)
+                    body: m.body == null ? null : foldConstants(m.body),
+                    meta: m.meta
                 });
-                EInterface(name, foldedMethods, parents, params);
+                EInterface(name, foldedFields, foldedMethods, parents, params, meta);
                 
             case EEnum(name, constructors):
                 EEnum(name, constructors);
@@ -267,7 +279,7 @@ class Optimizer {
             case ENew(type, args):
                 ENew(type, args.map(foldConstants));
                 
-            case EAbstract(name, underlyingType, fields, methods, params):
+            case EAbstract(name, underlyingType, fields, methods, params, meta):
                 var foldedFields = fields.map(f -> {
                     name: f.name,
                     type: f.type,
@@ -275,7 +287,8 @@ class Optimizer {
                     isStatic: f.isStatic,
                     isPublic: f.isPublic,
                     isFinal: f.isFinal,
-                    property: f.property
+                    property: f.property,
+                    meta: f.meta
                 });
                 var foldedMethods = methods.map(m -> {
                     name: m.name,
@@ -283,9 +296,10 @@ class Optimizer {
                     retType: m.retType,
                     body: foldConstants(m.body),
                     isStatic: m.isStatic,
-                    isPublic: m.isPublic
+                    isPublic: m.isPublic,
+                    meta: m.meta
                 });
-                EAbstract(name, underlyingType, foldedFields, foldedMethods, params);
+                EAbstract(name, underlyingType, foldedFields, foldedMethods, params, meta);
                 
             case ETypedef(name, type, params):
                 ETypedef(name, type, params);

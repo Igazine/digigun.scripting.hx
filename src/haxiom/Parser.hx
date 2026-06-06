@@ -26,9 +26,12 @@ class Parser {
 
     function parseStatement():Expr {
         skipNewlines();
+        var meta = parseMetadata();
         var t = peek();
+        var expr:Expr = null;
         switch (t.def) {
             case TPackage:
+                if (meta != null) throw new CompileException("Metadata cannot be attached to a package declaration", t.pos.line, t.pos.col, file);
                 next();
                 var path = [];
                 if (!is(TSemicolon)) {
@@ -38,8 +41,9 @@ class Parser {
                     }
                 }
                 match(TSemicolon);
-                return mk(EPackage(path), t.pos);
+                expr = mk(EPackage(path), t.pos);
             case TImport:
+                if (meta != null) throw new CompileException("Metadata cannot be attached to an import declaration", t.pos.line, t.pos.col, file);
                 next();
                 var path = [];
                 if (match(TStar)) {
@@ -63,8 +67,9 @@ class Parser {
                     default:
                 }
                 match(TSemicolon);
-                return mk(EImport(path, alias), t.pos);
+                expr = mk(EImport(path, alias), t.pos);
             case TUsing:
+                if (meta != null) throw new CompileException("Metadata cannot be attached to a using declaration", t.pos.line, t.pos.col, file);
                 next();
                 var path = [];
                 path.push(expectIdent());
@@ -72,12 +77,12 @@ class Parser {
                     path.push(expectIdent());
                 }
                 match(TSemicolon);
-                return mk(EUsing(path), t.pos);
+                expr = mk(EUsing(path), t.pos);
             case TThrow:
                 next();
                 var e = parseExpr();
                 match(TSemicolon);
-                return mk(EThrow(e), t.pos);
+                expr = mk(EThrow(e), t.pos);
             case TTry:
                 next();
                 var tryBody = parseStatement();
@@ -105,40 +110,40 @@ class Parser {
                     var catchBody = parseStatement();
                     catches.push({ pattern: pattern, type: typeDecl, guard: guard, body: catchBody });
                 }
-                return mk(ETry(tryBody, catches), t.pos);
+                expr = mk(ETry(tryBody, catches), t.pos);
             case TFinal:
                 next();
                 match(TVar);
                 var name = expectIdent();
                 var vType = parseOptType();
-                var expr = null;
+                var e = null;
                 if (match(TAssign)) {
-                    expr = parseExpr();
+                    e = parseExpr();
                 }
                 match(TSemicolon);
-                return mk(EVar(name, vType, expr, true), t.pos);
+                expr = mk(EVar(name, vType, e, true, meta), t.pos);
             case TClass:
-                return parseClass();
+                expr = parseClass(meta);
             case TAbstract:
-                return parseAbstract();
+                expr = parseAbstract(meta);
             case TTypedef:
-                return parseTypedef();
+                expr = parseTypedef();
             case TInterface:
-                return parseInterface();
+                expr = parseInterface(meta);
             case TEnum:
-                return parseEnum();
+                expr = parseEnum();
             case TVar:
-                return parseVar();
+                expr = parseVar(meta);
             case TIf:
-                return parseIf();
+                expr = parseIf();
             case TWhile:
-                return parseWhile();
+                expr = parseWhile();
             case TDo:
-                return parseDoWhile();
+                expr = parseDoWhile();
             case TFor:
-                return parseFor();
+                expr = parseFor();
             case TSwitch:
-                return parseSwitch();
+                expr = parseSwitch();
             case TReturn:
                 next();
                 var e = null;
@@ -146,22 +151,33 @@ class Parser {
                     e = parseExpr();
                 }
                 match(TSemicolon);
-                return mk(EReturn(e), t.pos);
+                expr = mk(EReturn(e), t.pos);
             case TBreak:
                 next();
                 match(TSemicolon);
-                return mk(EBreak, t.pos);
+                expr = mk(EBreak, t.pos);
             case TContinue:
                 next();
                 match(TSemicolon);
-                return mk(EContinue, t.pos);
+                expr = mk(EContinue, t.pos);
             case TBraceOpen:
-                return parseBlock();
+                expr = parseBlock();
             default:
-                var e = parseExpr();
+                expr = parseExpr();
                 match(TSemicolon);
-                return e;
         }
+        
+        if (meta != null && expr != null) {
+            switch (expr.def) {
+                case EClass(_, _, _, _, _, _, _): // meta already attached inside class
+                case EInterface(_, _, _, _, _, _): // meta already attached inside interface
+                case EAbstract(_, _, _, _, _, _): // meta already attached inside abstract
+                case EVar(_, _, _, _, _): // meta already attached inside var/final
+                default:
+                    expr = mk(EMeta(meta, expr), t.pos);
+            }
+        }
+        return expr;
     }
 
     function parseBlock():Expr {
@@ -221,7 +237,32 @@ class Parser {
         }
     }
 
-    function parseClass():Expr {
+    function parseMetadata():Array<{name:String, params:Array<Expr>}> {
+        var meta = [];
+        while (match(TAt)) {
+            var name = "";
+            if (match(TColon)) {
+                name = ":" + expectIdent();
+            } else {
+                name = expectIdent();
+            }
+            var params = [];
+            if (match(TParenOpen)) {
+                if (!is(TParenClose)) {
+                    params.push(parseExpr());
+                    while (match(TComma)) {
+                        params.push(parseExpr());
+                    }
+                }
+                expect(TParenClose);
+            }
+            meta.push({ name: name, params: params });
+            skipNewlines();
+        }
+        return meta.length > 0 ? meta : null;
+    }
+
+    function parseClass(?meta:Array<{name:String, params:Array<Expr>}>):Expr {
         var t = expect(TClass);
         var name = expectIdent();
         var params = parseOptParams();
@@ -240,6 +281,7 @@ class Parser {
         var methods = [];
         
         while (!is(TBraceClose) && !is(TEof)) {
+            var fMeta = parseMetadata();
             var isStatic = false;
             var isPublic = false; // Default member visibility is private
             var isFinal = false;
@@ -279,7 +321,7 @@ class Parser {
                     fExpr = parseExpr();
                 }
                 match(TSemicolon);
-                fields.push({ name: fName, type: fType, expr: fExpr, isStatic: isStatic, isPublic: isPublic, isFinal: isFinal, property: prop });
+                fields.push({ name: fName, type: fType, expr: fExpr, isStatic: isStatic, isPublic: isPublic, isFinal: isFinal, property: prop, meta: fMeta });
             } else if (memberT.def == TFunction) {
                 next();
                 var mName = "";
@@ -291,17 +333,17 @@ class Parser {
                 var mArgs = parseArgs();
                 var mRetType = parseOptType();
                 var mBody = parseBlock();
-                methods.push({ name: mName, args: mArgs, retType: mRetType, body: mBody, isStatic: isStatic, isPublic: isPublic });
+                methods.push({ name: mName, args: mArgs, retType: mRetType, body: mBody, isStatic: isStatic, isPublic: isPublic, meta: fMeta });
             } else {
                 throw new CompileException('Unexpected token inside class ${memberT.def}', memberT.pos.line, memberT.pos.col, file);
             }
             skipNewlines();
         }
         expect(TBraceClose);
-        return mk(EClass(name, fields, methods, parent, interfaces, params), t.pos);
+        return mk(EClass(name, fields, methods, parent, interfaces, params, meta), t.pos);
     }
 
-    function parseAbstract():Expr {
+    function parseAbstract(?meta:Array<{name:String, params:Array<Expr>}>):Expr {
         var t = expect(TAbstract);
         var name = expectIdent();
         var params = parseOptParams();
@@ -316,6 +358,7 @@ class Parser {
         var methods = [];
         
         while (!is(TBraceClose) && !is(TEof)) {
+            var fMeta = parseMetadata();
             var isStatic = false;
             var isPublic = true; // Abstracts default visibility to public in Haxe
             var isFinal = false;
@@ -355,7 +398,7 @@ class Parser {
                     fExpr = parseExpr();
                 }
                 match(TSemicolon);
-                fields.push({ name: fName, type: fType, expr: fExpr, isStatic: isStatic, isPublic: isPublic, isFinal: isFinal, property: prop });
+                fields.push({ name: fName, type: fType, expr: fExpr, isStatic: isStatic, isPublic: isPublic, isFinal: isFinal, property: prop, meta: fMeta });
             } else if (memberT.def == TFunction) {
                 next();
                 var mName = "";
@@ -367,17 +410,17 @@ class Parser {
                 var mArgs = parseArgs();
                 var mRetType = parseOptType();
                 var mBody = parseBlock();
-                methods.push({ name: mName, args: mArgs, retType: mRetType, body: mBody, isStatic: isStatic, isPublic: isPublic });
+                methods.push({ name: mName, args: mArgs, retType: mRetType, body: mBody, isStatic: isStatic, isPublic: isPublic, meta: fMeta });
             } else {
                 throw new CompileException('Unexpected token inside abstract ${memberT.def}', memberT.pos.line, memberT.pos.col, file);
             }
             skipNewlines();
         }
         expect(TBraceClose);
-        return mk(EAbstract(name, underlyingType, fields, methods, params), t.pos);
+        return mk(EAbstract(name, underlyingType, fields, methods, params, meta), t.pos);
     }
 
-    function parseVar():Expr {
+    function parseVar(?meta:Array<{name:String, params:Array<Expr>}>):Expr {
         var t = expect(TVar);
         var name = expectIdent();
         var vType = parseOptType();
@@ -386,7 +429,7 @@ class Parser {
             expr = parseExpr();
         }
         match(TSemicolon);
-        return mk(EVar(name, vType, expr), t.pos);
+        return mk(EVar(name, vType, expr, false, meta), t.pos);
     }
 
     function parseIf():Expr {
@@ -1052,7 +1095,7 @@ class Parser {
         return { def: def, pos: pos };
     }
 
-    function parseInterface():Expr {
+    function parseInterface(?meta:Array<{name:String, params:Array<Expr>}>):Expr {
         var t = expect(TInterface);
         var name = expectIdent();
         var params = parseOptParams();
@@ -1065,24 +1108,47 @@ class Parser {
         }
         expect(TBraceOpen);
         skipNewlines();
+        
+        var fields = [];
         var methods = [];
         while (!is(TBraceClose) && !is(TEof)) {
+            var fMeta = parseMetadata();
+            // Interfaces are always public, but we allow modifiers to avoid parser syntax errors
             while (match(TPublic) || match(TPrivate) || match(TStatic)) {}
-            expect(TFunction);
-            var mName = expectIdent();
-            var mArgs = parseArgs();
-            var mRetType = parseOptType();
-            var mBody = null;
-            if (is(TBraceOpen)) {
-                mBody = parseStatement();
-            } else {
+            
+            skipNewlines();
+            var memberT = peek();
+            if (memberT.def == TVar) {
+                next();
+                var fName = expectIdent();
+                var prop = null;
+                if (match(TParenOpen)) {
+                    var getM = parsePropertyAccessor();
+                    expect(TComma);
+                    var setM = parsePropertyAccessor();
+                    expect(TParenClose);
+                    prop = { get: getM, set: setM };
+                }
+                var fType = parseOptType();
                 match(TSemicolon);
+                fields.push({ name: fName, type: fType, property: prop, meta: fMeta });
+            } else {
+                expect(TFunction);
+                var mName = expectIdent();
+                var mArgs = parseArgs();
+                var mRetType = parseOptType();
+                var mBody = null;
+                if (is(TBraceOpen)) {
+                    mBody = parseStatement();
+                } else {
+                    match(TSemicolon);
+                }
+                methods.push({ name: mName, args: mArgs, retType: mRetType, body: mBody, meta: fMeta });
             }
-            methods.push({ name: mName, args: mArgs, retType: mRetType, body: mBody });
             skipNewlines();
         }
         expect(TBraceClose);
-        return mk(EInterface(name, methods, parents, params), t.pos);
+        return mk(EInterface(name, fields, methods, parents, params, meta), t.pos);
     }
 
     function parseEnum():Expr {
