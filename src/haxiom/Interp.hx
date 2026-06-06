@@ -947,10 +947,17 @@ class Interp {
             var abs = inst.abstractType;
             if (abs.fields.exists(field)) {
                 var fDef = abs.fields.get(field);
-                if (fDef.property != null && fDef.property.get == "get") {
-                    var m = abs.methods.get("get_" + field);
-                    if (m != null) {
-                        return Reflect.callMethod(null, bindMethod(obj, m), []);
+                if (fDef.property != null && !isInsideAccessor(field)) {
+                    var getAccessor = fDef.property.get;
+                    if (getAccessor == "get") {
+                        var m = abs.methods.get("get_" + field);
+                        if (m != null) {
+                            return Reflect.callMethod(null, bindMethod(obj, m), []);
+                        }
+                    } else if (getAccessor == "null" || getAccessor == "never") {
+                        if (currentThis != obj) {
+                            throw 'Cannot access private property $field of abstract ${abs.name}';
+                        }
                     }
                 }
             }
@@ -966,9 +973,16 @@ class Interp {
             var fDef = findFieldDef(inst.cls, field);
             if (fDef != null) {
                 checkMemberAccess(inst.cls, fDef.isPublic);
-                if (fDef.property != null && fDef.property.get == "get") {
-                    var m = findMethod(inst.cls, "get_" + field);
-                    if (m != null) return Reflect.callMethod(null, bindMethod(obj, m), []);
+                if (fDef.property != null && !isInsideAccessor(field)) {
+                    var getAccessor = fDef.property.get;
+                    if (getAccessor == "get") {
+                        var m = findMethod(inst.cls, "get_" + field);
+                        if (m != null) return Reflect.callMethod(null, bindMethod(obj, m), []);
+                    } else if (getAccessor == "null" || getAccessor == "never") {
+                        if (!isContextInsideClass(inst.cls)) {
+                            throw 'Cannot access private property $field of class ${inst.cls.name}';
+                        }
+                    }
                 }
             }
             if (inst.fields.exists(field)) return inst.fields.get(field);
@@ -1067,10 +1081,17 @@ class Interp {
             var abs = inst.abstractType;
             if (abs.fields.exists(field)) {
                 var fDef = abs.fields.get(field);
-                if (fDef.property != null && fDef.property.set == "set") {
-                    var m = abs.methods.get("set_" + field);
-                    if (m != null) {
-                        return Reflect.callMethod(null, bindMethod(obj, m), [val]);
+                if (fDef.property != null && !isInsideAccessor(field)) {
+                    var setAccessor = fDef.property.set;
+                    if (setAccessor == "set") {
+                        var m = abs.methods.get("set_" + field);
+                        if (m != null) {
+                            return Reflect.callMethod(null, bindMethod(obj, m), [val]);
+                        }
+                    } else if (setAccessor == "null" || setAccessor == "never") {
+                        if (currentThis != obj) {
+                            throw 'Cannot write to private property $field of abstract ${abs.name}';
+                        }
                     }
                 }
             }
@@ -1082,9 +1103,16 @@ class Interp {
             var fDef = findFieldDef(inst.cls, field);
             if (fDef != null) {
                 checkMemberAccess(inst.cls, fDef.isPublic);
-                if (fDef.property != null && fDef.property.set == "set") {
-                    var m = findMethod(inst.cls, "set_" + field);
-                    if (m != null) return Reflect.callMethod(null, bindMethod(obj, m), [val]);
+                if (fDef.property != null && !isInsideAccessor(field)) {
+                    var setAccessor = fDef.property.set;
+                    if (setAccessor == "set") {
+                        var m = findMethod(inst.cls, "set_" + field);
+                        if (m != null) return Reflect.callMethod(null, bindMethod(obj, m), [val]);
+                    } else if (setAccessor == "null" || setAccessor == "never") {
+                        if (!isContextInsideClass(inst.cls)) {
+                            throw 'Cannot write to private property $field of class ${inst.cls.name}';
+                        }
+                    }
                 }
                 if (fDef.isFinal) {
                     if (currentConstructorInstance != inst) {
@@ -1173,7 +1201,7 @@ class Interp {
                     if (Std.isOfType(currentThis, HaxiomInstance)) {
                         var inst:HaxiomInstance = cast currentThis;
                         var fDef = findFieldDef(inst.cls, name);
-                        if (fDef != null && fDef.property != null && fDef.property.get == "get") {
+                        if (fDef != null && fDef.property != null && fDef.property.get == "get" && !isInsideAccessor(name)) {
                             var m = findMethod(inst.cls, "get_" + name);
                             if (m != null) return Reflect.callMethod(null, bindMethod(currentThis, m), []);
                         }
@@ -1216,7 +1244,7 @@ class Interp {
                             if (Std.isOfType(currentThis, HaxiomInstance)) {
                                 var inst:HaxiomInstance = cast currentThis;
                                 var fDef = findFieldDef(inst.cls, name);
-                                if (fDef != null && fDef.property != null && fDef.property.set == "set") {
+                                if (fDef != null && fDef.property != null && fDef.property.set == "set" && !isInsideAccessor(name)) {
                                     var m = findMethod(inst.cls, "set_" + name);
                                     if (m != null) return Reflect.callMethod(null, bindMethod(currentThis, m), [val]);
                                 }
@@ -1232,7 +1260,7 @@ class Interp {
                             } else if (Std.isOfType(currentThis, HaxiomAbstractInstance)) {
                                 var inst:HaxiomAbstractInstance = cast currentThis;
                                 var fDef = inst.abstractType.fields.get(name);
-                                if (fDef != null && fDef.property != null && fDef.property.set == "set") {
+                                if (fDef != null && fDef.property != null && fDef.property.set == "set" && !isInsideAccessor(name)) {
                                     var m = inst.abstractType.methods.get("set_" + name);
                                     if (m != null) return Reflect.callMethod(null, bindMethod(currentThis, m), [val]);
                                 }
@@ -2937,7 +2965,7 @@ class Interp {
                 } else if (currentThis != null && Std.isOfType(currentThis, HaxiomInstance)) {
                     var inst:HaxiomInstance = cast currentThis;
                     var fDef = findFieldDef(inst.cls, name);
-                    if (fDef != null && fDef.property != null && fDef.property.set == "set") {
+                    if (fDef != null && fDef.property != null && fDef.property.set == "set" && !isInsideAccessor(name)) {
                         var m = findMethod(inst.cls, "set_" + name);
                         if (m != null) {
                             Reflect.callMethod(null, bindMethod(currentThis, m), [val]);
@@ -2971,7 +2999,7 @@ class Interp {
                 if (Std.isOfType(obj, HaxiomInstance)) {
                     var inst:HaxiomInstance = cast obj;
                     var fDef = findFieldDef(inst.cls, field);
-                    if (fDef != null && fDef.property != null && fDef.property.set == "set") {
+                    if (fDef != null && fDef.property != null && fDef.property.set == "set" && !isInsideAccessor(field)) {
                         var m = findMethod(inst.cls, "set_" + field);
                         if (m != null) {
                             Reflect.callMethod(null, bindMethod(obj, m), [val]);
@@ -3012,6 +3040,39 @@ class Interp {
         while (curr != null) {
             if (curr == c2) return true;
             curr = curr.parent;
+        }
+        return false;
+    }
+
+    function isContextInsideClass(targetCls:HaxiomClass):Bool {
+        if (currentThis != null) {
+            if (Std.isOfType(currentThis, HaxiomInstance)) {
+                var inst:HaxiomInstance = cast currentThis;
+                if (isSubclassOf(inst.cls, targetCls) || isSubclassOf(targetCls, inst.cls)) {
+                    return true;
+                }
+            } else if (Std.isOfType(currentThis, HaxiomClass)) {
+                var cls:HaxiomClass = cast currentThis;
+                if (isSubclassOf(cls, targetCls) || isSubclassOf(targetCls, cls)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    function isInsideAccessor(fieldName:String):Bool {
+        haxe.Log.trace("isInsideAccessor check for " + fieldName + ", stack: " + [for (f in callStack) f.method].join(", "), null);
+        if (callStack.length == 0) return false;
+        var suffix1 = ".get_" + fieldName;
+        var suffix2 = ".set_" + fieldName;
+        var i = callStack.length - 1;
+        while (i >= 0) {
+            var method = callStack[i].method;
+            if (StringTools.endsWith(method, suffix1) || StringTools.endsWith(method, suffix2) || method == "get_" + fieldName || method == "set_" + fieldName) {
+                return true;
+            }
+            i--;
         }
         return false;
     }

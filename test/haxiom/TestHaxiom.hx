@@ -1924,6 +1924,85 @@ class TestHaxiom {
         ";
         testStdHaxiom.interpret(script62_success);
         trace("SUCCESS: Manually imported standard library classes work correctly");
+
+        // 63. Script-Side Property Getters/Setters Verification
+        var script63 = "
+            class TestProperties {
+                public var x(get, set):Int;
+                var _x:Int = 0;
+                public function get_x():Int {
+                    return _x;
+                }
+                public function set_x(v:Int):Int {
+                    _x = v;
+                    return _x;
+                }
+
+                // Testing recursion protection
+                public var recursiveProp(get, set):Int;
+                var _rec:Int = 10;
+                public function get_recursiveProp():Int {
+                    return recursiveProp;
+                }
+                public function set_recursiveProp(v:Int):Int {
+                    recursiveProp = v;
+                    return recursiveProp;
+                }
+
+                // default, set
+                public var y(default, set):Int;
+                public function set_y(v:Int):Int {
+                    y = v + 1;
+                    return y;
+                }
+
+                // get, null
+                public var z(get, null):Int;
+                var _z:Int = 99;
+                public function get_z():Int {
+                    return _z;
+                }
+                
+                public function new() {
+                    recursiveProp = 10;
+                }
+            }
+
+            var t = new TestProperties();
+            
+            // 1. Get/Set redirection
+            t.x = 42;
+            if (t.x != 42) throw 'Property get/set redirection failed';
+
+            // 2. Recursion protection check
+            if (t.recursiveProp != 10) throw 'Property read inside getter recursive loop failed';
+            t.recursiveProp = 55;
+            if (t.recursiveProp != 55) throw 'Property write inside setter recursive loop failed';
+
+            // 3. Default, set check
+            t.y = 100;
+            if (t.y != 101) throw 'Property default, set failed';
+
+            // 4. Get, null check
+            if (t.z != 99) throw 'Property get, null read failed';
+        ";
+        haxiom.interpret(script63);
+        trace("SUCCESS: Valid property read/write and recursion protection passed.");
+
+        var nullSetterBlocked = false;
+        try {
+            haxiom.interpret("
+                class TestProp {
+                    public var val(default, null):Int = 10;
+                }
+                var p = new TestProp();
+                p.val = 20;
+            ");
+        } catch (e:Dynamic) {
+            nullSetterBlocked = true;
+            trace("SUCCESS: Caught expected null setter write blocking: " + e);
+        }
+        if (!nullSetterBlocked) throw "FAIL: Null setter write was not blocked from outside the class";
     }
 }
 

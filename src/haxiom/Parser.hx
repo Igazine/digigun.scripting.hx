@@ -204,6 +204,23 @@ class Parser {
         return params;
     }
 
+    function parsePropertyAccessor():String {
+        var t = peek();
+        switch (t.def) {
+            case TIdent(id):
+                next();
+                return id;
+            case TDefault:
+                next();
+                return "default";
+            case TNull:
+                next();
+                return "null";
+            default:
+                throw new CompileException("Expected property accessor (identifier, default, or null) but got " + t.def, t.pos.line, t.pos.col, file);
+        }
+    }
+
     function parseClass():Expr {
         var t = expect(TClass);
         var name = expectIdent();
@@ -250,9 +267,9 @@ class Parser {
                 var fName = expectIdent();
                 var prop = null;
                 if (match(TParenOpen)) {
-                    var getM = expectIdent();
+                    var getM = parsePropertyAccessor();
                     expect(TComma);
-                    var setM = expectIdent();
+                    var setM = parsePropertyAccessor();
                     expect(TParenClose);
                     prop = { get: getM, set: setM };
                 }
@@ -326,9 +343,9 @@ class Parser {
                 var fName = expectIdent();
                 var prop = null;
                 if (match(TParenOpen)) {
-                    var getM = expectIdent();
+                    var getM = parsePropertyAccessor();
                     expect(TComma);
-                    var setM = expectIdent();
+                    var setM = parsePropertyAccessor();
                     expect(TParenClose);
                     prop = { get: getM, set: setM };
                 }
