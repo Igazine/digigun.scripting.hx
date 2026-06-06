@@ -493,9 +493,9 @@ class Parser {
             var caseT = peek();
             if (match(TCase)) {
                 var values = [];
-                values.push(parseExpr());
+                values.push(parseCasePattern());
                 while (match(TComma)) {
-                    values.push(parseExpr());
+                    values.push(parseCasePattern());
                 }
                 var guard = null;
                 if (match(TIf)) {
@@ -542,6 +542,15 @@ class Parser {
         }
         expect(TParenClose);
         return args;
+    }
+
+    function parseCasePattern():Expr {
+        var e = parseExpr();
+        if (match(TMapArrow)) {
+            var pat = parseExpr();
+            e = mk(EBinop("=>", e, pat), e.pos);
+        }
+        return e;
     }
 
     // --- Expression Pratt/Operator Precedence Parser ---

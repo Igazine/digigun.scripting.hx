@@ -448,8 +448,21 @@ class Interp {
     function evaluateMetadata(metaList:Array<{name:String, params:Array<Expr>}>, scope:Scope):Array<{name:String, params:Array<Dynamic>}> {
         if (metaList == null) return [];
         return [for (m in metaList) {
-            name: m.name,
-            params: [for (p in m.params) eval(p, scope)]
+            var isOp = (m.name == ":op" || m.name == "op");
+            {
+                name: m.name,
+                params: [for (p in m.params) {
+                    if (isOp) {
+                        p;
+                    } else {
+                        try {
+                            eval(p, scope);
+                        } catch (e:Dynamic) {
+                            p;
+                        }
+                    }
+                }]
+            }
         }];
     }
 
@@ -1548,6 +1561,9 @@ class Interp {
 
                 var v1 = eval(e1, scope);
                 var v2 = eval(e2, scope);
+                var overloadRes = findAbstractBinopOverload(op, v1, v2);
+                if (overloadRes.success) return overloadRes.value;
+                
                 var binopRes:Dynamic = null;
                 switch (op) {
                     case "+": binopRes = (v1 + v2 : Dynamic);
@@ -1574,11 +1590,25 @@ class Interp {
             case EUnop(op, expr):
                 if (op == "post++" || op == "post--") {
                     var val = eval(expr, scope);
+                    if (Std.isOfType(val, HaxiomAbstractInstance)) {
+                        var overloadRes = findAbstractUnopOverload(op, val);
+                        if (overloadRes.success) {
+                            assign(expr, overloadRes.value, scope);
+                            return val;
+                        }
+                    }
                     var nextVal = op == "post++" ? (cast val : Float) + 1 : (cast val : Float) - 1;
                     assign(expr, nextVal, scope);
                     return val;
                 }
                 var val = eval(expr, scope);
+                var overloadRes = findAbstractUnopOverload(op, val);
+                if (overloadRes.success) {
+                    if (op == "++" || op == "--") {
+                        assign(expr, overloadRes.value, scope);
+                    }
+                    return overloadRes.value;
+                }
                 var unopRes:Dynamic = null;
                 switch (op) {
                     case "!": unopRes = !(cast val : Bool);
@@ -3062,15 +3092,23 @@ class Interp {
                         return res;
                     } catch (flow:ControlFlow) {
                         popFrame();
-                        Scope.recycle(fScope);
                         switch (flow) {
                             case Return(val):
                                 if (retType != null && typeToString(retType) == "Void") {
+                                    Scope.recycle(fScope);
                                     return null;
                                 }
-                                checkType(val, retType, fScope);
+                                try {
+                                    checkType(val, retType, fScope);
+                                } catch (e:Dynamic) {
+                                    Scope.recycle(fScope);
+                                    throw e;
+                                }
+                                Scope.recycle(fScope);
                                 return val;
-                            default: throw flow;
+                            default:
+                                Scope.recycle(fScope);
+                                throw flow;
                         }
                     } catch (err:Dynamic) {
                         popFrame();
@@ -3412,6 +3450,42 @@ class Interp {
 
     function matchPattern(val:Dynamic, pattern:Expr, scope:Scope, outBindings:Scope):Bool {
         switch (pattern.def) {
+            case EBinop("|", left, right):
+                var tempScope = Scope.create(outBindings);
+                if (matchPattern(val, left, scope, tempScope)) {
+                    for (k in tempScope.variables.keys()) {
+                        outBindings.declare(k, tempScope.variables.get(k));
+                    }
+                    Scope.recycle(tempScope);
+                    return true;
+                }
+                Scope.recycle(tempScope);
+                
+                tempScope = Scope.create(outBindings);
+                if (matchPattern(val, right, scope, tempScope)) {
+                    for (k in tempScope.variables.keys()) {
+                        outBindings.declare(k, tempScope.variables.get(k));
+                    }
+                    Scope.recycle(tempScope);
+                    return true;
+                }
+                Scope.recycle(tempScope);
+                return false;
+
+            case EBinop("=>", extractor, pattern):
+                var tempScope = Scope.create(scope);
+                tempScope.declare("_", val);
+                var extractedVal:Dynamic = null;
+                try {
+                    extractedVal = eval(extractor, tempScope);
+                } catch (e:Dynamic) {
+                    Scope.recycle(tempScope);
+                    return false;
+                }
+                var matched = matchPattern(extractedVal, pattern, scope, outBindings);
+                Scope.recycle(tempScope);
+                return matched;
+
             case EIdent("_"):
                 return true;
                 
@@ -3591,15 +3665,23 @@ class Interp {
                 inAbstractMethod = oldAbstract;
                 currentThis = oldThis;
                 popFrame();
-                Scope.recycle(fScope);
                 switch (flow) {
                     case Return(val):
                         if (method.retType != null && typeToString(method.retType) == "Void") {
+                            Scope.recycle(fScope);
                             return null;
                         }
-                        checkType(val, method.retType, fScope, bindings);
+                        try {
+                            checkType(val, method.retType, fScope, bindings);
+                        } catch (e:Dynamic) {
+                            Scope.recycle(fScope);
+                            throw e;
+                        }
+                        Scope.recycle(fScope);
                         return val;
-                    default: throw flow;
+                    default:
+                        Scope.recycle(fScope);
+                        throw flow;
                 }
             } catch (e:Dynamic) {
                 inAbstractMethod = oldAbstract;
@@ -3658,15 +3740,23 @@ class Interp {
             } catch (flow:ControlFlow) {
                 currentThis = oldThis;
                 popFrame();
-                Scope.recycle(fScope);
                 switch (flow) {
                     case Return(val):
                         if (method.retType != null && typeToString(method.retType) == "Void") {
+                            Scope.recycle(fScope);
                             return null;
                         }
-                        checkType(val, method.retType, fScope, bindings);
+                        try {
+                            checkType(val, method.retType, fScope, bindings);
+                        } catch (e:Dynamic) {
+                            Scope.recycle(fScope);
+                            throw e;
+                        }
+                        Scope.recycle(fScope);
                         return val;
-                    default: throw flow;
+                    default:
+                        Scope.recycle(fScope);
+                        throw flow;
                 }
             } catch (e:Dynamic) {
                 currentThis = oldThis;
@@ -4643,6 +4733,65 @@ class Interp {
             copy: Reflect.copy,
             makeVarArgs: Reflect.makeVarArgs
         };
+    }
+
+    function findAbstractOpMethod(abs:HaxiomAbstract, op:String, isBinop:Bool):Null<Dynamic> {
+        for (mName in abs.methods.keys()) {
+            var m = abs.methods.get(mName);
+            if (m.meta != null) {
+                for (meta in m.meta) {
+                    if (meta.name == ":op" || meta.name == "op") {
+                        if (meta.params != null && meta.params.length > 0) {
+                            var paramExpr:Expr = cast meta.params[0];
+                            if (paramExpr != null) {
+                                switch (paramExpr.def) {
+                                    case EBinop(o, _, _) if (isBinop && o == op):
+                                        return m;
+                                    case EUnop(o, _) if (!isBinop && o == op):
+                                        return m;
+                                    default:
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    function findAbstractBinopOverload(op:String, v1:Dynamic, v2:Dynamic):{success:Bool, value:Dynamic} {
+        if (Std.isOfType(v1, HaxiomAbstractInstance)) {
+            var inst:HaxiomAbstractInstance = cast v1;
+            var method = findAbstractOpMethod(inst.abstractType, op, true);
+            if (method != null) {
+                return {success: true, value: callAbstractOp(inst.abstractType, method, [v1, v2])};
+            }
+        }
+        if (Std.isOfType(v2, HaxiomAbstractInstance)) {
+            var inst:HaxiomAbstractInstance = cast v2;
+            var method = findAbstractOpMethod(inst.abstractType, op, true);
+            if (method != null) {
+                return {success: true, value: callAbstractOp(inst.abstractType, method, [v1, v2])};
+            }
+        }
+        return {success: false, value: null};
+    }
+
+    function findAbstractUnopOverload(op:String, val:Dynamic):{success:Bool, value:Dynamic} {
+        if (Std.isOfType(val, HaxiomAbstractInstance)) {
+            var inst:HaxiomAbstractInstance = cast val;
+            var method = findAbstractOpMethod(inst.abstractType, op, false);
+            if (method != null) {
+                return {success: true, value: callAbstractOp(inst.abstractType, method, [val])};
+            }
+        }
+        return {success: false, value: null};
+    }
+
+    function callAbstractOp(abs:HaxiomAbstract, method:Dynamic, args:Array<Dynamic>):Dynamic {
+        var func = bindMethod(null, method);
+        return Reflect.callMethod(null, func, args);
     }
 
     function resolveNativeClass(fqName:String):Dynamic {

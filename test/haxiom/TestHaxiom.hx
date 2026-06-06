@@ -2136,6 +2136,93 @@ class TestHaxiom {
         }
         if (!accessNoImportFailed) throw "FAIL: Accessing native class without import was not blocked";
         trace("SUCCESS: Cross-platform stdlib packages with explicit/wildcard imports work correctly.");
+
+        // 68. Advanced Switch Pattern Matching
+        var script68 = "
+            enum Animal {
+                Dog(name:String, age:Int);
+                Cat(name:String);
+                Bird;
+            }
+
+            function testPattern(a:Animal):String {
+                switch (a) {
+                    case Dog('Rex', 1 | 2):
+                        return 'Young Rex';
+                    case Dog(name, 5 | 10):
+                        return name + ' is older';
+                    case Cat('Garfield' | 'Tom'):
+                        return 'Famous Cat';
+                    case Cat(name) if (name == 'Sylvester'):
+                        return 'Sylvester';
+                    case _.toString() => 'Bird':
+                        return 'Bird Extractor';
+                    default:
+                        return 'Other';
+                }
+            }
+
+            if (testPattern(Dog('Rex', 2)) != 'Young Rex') throw 'Rex age 2 mismatch';
+            if (testPattern(Dog('Rex', 3)) != 'Other') throw 'Rex age 3 mismatch';
+            if (testPattern(Dog('Max', 10)) != 'Max is older') throw 'Max age 10 mismatch';
+            if (testPattern(Cat('Tom')) != 'Famous Cat') throw 'Tom mismatch';
+            if (testPattern(Cat('Felix')) != 'Other') throw 'Felix mismatch';
+            if (testPattern(Bird) != 'Bird Extractor') throw 'Bird extractor mismatch';
+        ";
+        haxiom.interpret(script68);
+        trace("SUCCESS: Advanced Switch Pattern Matching (Or-patterns, extractors) verified.");
+
+        // 69. Abstract Operator Overloading
+        var script69 = "
+            abstract MyInt(Int) {
+                public function new(v:Int) {
+                    this = v;
+                }
+                public function getValue():Int {
+                    return this;
+                }
+                @:op(A + B)
+                public static function add(a:MyInt, b:MyInt):MyInt {
+                    return new MyInt(a.getValue() + b.getValue());
+                }
+                @:op(A * B)
+                public static function multiply(a:MyInt, b:Int):MyInt {
+                    return new MyInt(a.getValue() * b);
+                }
+                @:op(-A)
+                public static function negate(a:MyInt):MyInt {
+                    return new MyInt(-a.getValue());
+                }
+                @:op(++A)
+                public static function preIncrement(a:MyInt):MyInt {
+                    return new MyInt(a.getValue() + 1);
+                }
+                @:op(A++)
+                public static function postIncrement(a:MyInt):MyInt {
+                    return new MyInt(a.getValue() + 1);
+                }
+            }
+
+            var x = new MyInt(10);
+            var y = new MyInt(5);
+            var z = x + y;
+            if (z.getValue() != 15) throw 'Overloaded binary + failed';
+
+            var z2 = x * 3;
+            if (z2.getValue() != 30) throw 'Overloaded binary * failed';
+
+            var z3 = -x;
+            if (z3.getValue() != -10) throw 'Overloaded unary - failed';
+
+            var w = new MyInt(20);
+            var pre = ++w;
+            if (pre.getValue() != 21 || w.getValue() != 21) throw 'Overloaded prefix ++ failed';
+
+            var post = w++;
+            if (post.getValue() != 21 || w.getValue() != 22) throw 'Overloaded postfix ++ failed';
+        ";
+        haxiom.interpret(script69);
+        trace("SUCCESS: Abstract Operator Overloading verified.");
     }
 }
 

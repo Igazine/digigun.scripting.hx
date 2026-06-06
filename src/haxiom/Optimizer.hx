@@ -98,7 +98,6 @@ class Optimizer {
                                     case ">": (v1 : Float) > (v2 : Float);
                                     case ">=": (v1 : Float) >= (v2 : Float);
                                     case "&": (v1 : Int) & (v2 : Int);
-                                    case "|": (v1 : Int) | (v2 : Int);
                                     case "^": (v1 : Int) ^ (v2 : Int);
                                     case "<<": (v1 : Int) << (v2 : Int);
                                     case ">>": (v1 : Int) >> (v2 : Int);
