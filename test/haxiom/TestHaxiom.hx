@@ -2223,6 +2223,54 @@ class TestHaxiom {
         ";
         haxiom.interpret(script69);
         trace("SUCCESS: Abstract Operator Overloading verified.");
+
+        // 70. AST Serialization & Deserialization
+        var script70 = "
+            abstract MyInt(Int) {
+                public function new(v:Int) {
+                    this = v;
+                }
+                public function getValue():Int {
+                    return this;
+                }
+                @:op(A + B)
+                public static function add(a:MyInt, b:MyInt):MyInt {
+                    return new MyInt(a.getValue() + b.getValue());
+                }
+            }
+            var a = new MyInt(100);
+            var b = new MyInt(200);
+            var c = a + b;
+            c.getValue();
+        ";
+        var bytes = haxiom.compileToBytes(script70);
+        if (bytes == null || bytes.length == 0) throw "Failed to compile to bytes";
+        
+        var freshHaxiom = new haxiom.Haxiom();
+        var result:Int = freshHaxiom.executeBytes(bytes);
+        if (result != 300) throw "Serialization execution result mismatch: " + result;
+
+        // Test error position recovery from deserialized bytes
+        var script70_error = "
+            var a = 10;
+            var b = 0;
+            var c = a / b;
+            throw 'Explicit Error!';
+        ";
+        var errorBytes = haxiom.compileToBytes(script70_error);
+        var errorHaxiom = new haxiom.Haxiom();
+        var errorOccurred = false;
+        try {
+            errorHaxiom.executeBytes(errorBytes, script70_error);
+        } catch (e:haxiom.ScriptException) {
+            errorOccurred = true;
+            if (e.line != 5) throw "Expected error on line 5 but got: " + e.line;
+            if (e.message.indexOf("throw 'Explicit Error!'") == -1) {
+                throw "Expected code frame with source line but got: " + e.message;
+            }
+        }
+        if (!errorOccurred) throw "Expected error during execution of errorBytes, but none occurred";
+        trace("SUCCESS: AST Serialization & Deserialization verified.");
     }
 }
 

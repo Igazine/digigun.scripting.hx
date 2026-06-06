@@ -88,6 +88,20 @@ class Haxiom implements common.IScriptEngine {
         return result;
     }
 
+    public function compileToBytes(source:String, ?filename:String):haxe.io.Bytes {
+        var ast = compile(source, filename);
+        if (ast == null) return null;
+        return Serializer.serializeToBytes(ast);
+    }
+
+    public function executeBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String):T {
+        if (sourceCode != null) {
+            interp.lastSource = sourceCode;
+        }
+        var ast = Serializer.deserializeFromBytes(bytes);
+        return execute(ast);
+    }
+
     public function setGlobal(name:String, value:Dynamic):Void {
         interp.globals.declare(name, value);
     }
