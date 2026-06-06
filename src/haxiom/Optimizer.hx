@@ -286,6 +286,9 @@ class Optimizer {
                     isPublic: m.isPublic
                 });
                 EAbstract(name, underlyingType, foldedFields, foldedMethods, params);
+                
+            case ETypedef(name, type, params):
+                ETypedef(name, type, params);
         };
         
         return { def: foldedDef, pos: expr.pos };

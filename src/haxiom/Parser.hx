@@ -121,6 +121,8 @@ class Parser {
                 return parseClass();
             case TAbstract:
                 return parseAbstract();
+            case TTypedef:
+                return parseTypedef();
             case TInterface:
                 return parseInterface();
             case TEnum:
@@ -1095,6 +1097,16 @@ class Parser {
         }
         expect(TBraceClose);
         return mk(EEnum(name, constructors), t.pos);
+    }
+
+    function parseTypedef():Expr {
+        var t = expect(TTypedef);
+        var name = expectIdent();
+        var params = parseOptParams();
+        expect(TAssign);
+        var type = parseType();
+        match(TSemicolon);
+        return mk(ETypedef(name, type, params), t.pos);
     }
 
     function desugarComprehension(stmt:Expr, pos:Pos):Expr {

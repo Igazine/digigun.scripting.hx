@@ -1756,6 +1756,174 @@ class TestHaxiom {
         }
         
         trace("SUCCESS: Sandbox and API exposure security checks passed.");
+
+        // 59. Typedef Declarations and Resolution
+        var script59 = "
+            typedef Age = Int;
+            var x:Age = 25;
+            if (x != 25) throw 'Typedef alias assignment failed';
+
+            typedef Point = {x:Int, y:Int};
+            var p:Point = {x:10, y:20};
+            if (p.x != 10 || p.y != 20) throw 'Typedef structural assignment failed';
+
+            typedef Container<T> = {value:T};
+            var c:Container<String> = {value:'hello'};
+            if (c.value != 'hello') throw 'Typedef generic assignment failed';
+        ";
+        haxiom.interpret(script59);
+        trace("SUCCESS: Typedef valid assignments passed.");
+
+        var invalidPointThrown = false;
+        try {
+            haxiom.interpret("
+                typedef Point = {x:Int, y:Int};
+                var p:Point = {x:10};
+            ");
+        } catch (e:Dynamic) {
+            invalidPointThrown = true;
+            trace("SUCCESS: Caught expected typedef Point validation error: " + e);
+        }
+        if (!invalidPointThrown) throw "FAIL: Mismatched anonymous structure typedef did not throw";
+
+        var invalidGenericThrown = false;
+        try {
+            haxiom.interpret("
+                typedef Container<T> = {value:T};
+                var c:Container<Int> = {value:'not-an-int'};
+            ");
+        } catch (e:Dynamic) {
+            invalidGenericThrown = true;
+            trace("SUCCESS: Caught expected typedef generic parameter validation error: " + e);
+        }
+        if (!invalidGenericThrown) throw "FAIL: Mismatched typedef generic parameter did not throw";
+
+        // 60. Explicit Function Type Validation
+        var script60 = "
+            var cb:(Int, String)->Bool = function(a:Int, b:String):Bool {
+                return true;
+            };
+            if (cb(5, 'hello') != true) throw 'Function callback execution failed';
+        ";
+        haxiom.interpret(script60);
+        trace("SUCCESS: Function signature valid assignment passed.");
+
+        var invalidArgCountThrown = false;
+        try {
+            haxiom.interpret("
+                var cb:(Int, String)->Bool = function(a:Int):Bool { return true; };
+            ");
+        } catch (e:Dynamic) {
+            invalidArgCountThrown = true;
+            trace("SUCCESS: Caught expected function argument count mismatch: " + e);
+        }
+        if (!invalidArgCountThrown) throw "FAIL: Mismatched function argument count did not throw";
+
+        var invalidArgTypeThrown = false;
+        try {
+            haxiom.interpret("
+                var cb:(Int, String)->Bool = function(a:String, b:String):Bool { return true; };
+            ");
+        } catch (e:Dynamic) {
+            invalidArgTypeThrown = true;
+            trace("SUCCESS: Caught expected function argument type mismatch: " + e);
+        }
+        if (!invalidArgTypeThrown) throw "FAIL: Mismatched function argument type did not throw";
+
+        var invalidReturnTypeThrown = false;
+        try {
+            haxiom.interpret("
+                var cb:(Int, String)->Bool = function(a:Int, b:String):String { return 'test'; };
+            ");
+        } catch (e:Dynamic) {
+            invalidReturnTypeThrown = true;
+            trace("SUCCESS: Caught expected function return type mismatch: " + e);
+        }
+        if (!invalidReturnTypeThrown) throw "FAIL: Mismatched function return type did not throw";
+
+        // 61. AST Caching Verification
+        var testCacheHaxiom = new haxiom.Haxiom();
+        testCacheHaxiom.enableAstCache = true;
+        var src = "var cacheTest = 100;";
+        var ast1 = testCacheHaxiom.compile(src);
+        var ast2 = testCacheHaxiom.compile(src);
+        if (ast1 != ast2) {
+            throw "FAIL: AST Caching failed to return cached AST reference";
+        }
+        trace("SUCCESS: AST Caching returned identical AST reference on repeat compile");
+
+        // Test caching disabled
+        testCacheHaxiom.enableAstCache = false;
+        var ast3 = testCacheHaxiom.compile(src);
+        if (ast1 == ast3) {
+            throw "FAIL: AST Caching returned cached AST reference even when disabled";
+        }
+        trace("SUCCESS: AST Caching disabled check passed");
+
+        // Test capacity eviction (1000 items)
+        var testCacheHaxiom2 = new haxiom.Haxiom();
+        testCacheHaxiom2.enableAstCache = true;
+        var preEvictAst = testCacheHaxiom2.compile("var x = 1000;");
+        for (i in 0...999) {
+            testCacheHaxiom2.compile("var x = " + i + ";");
+        }
+        testCacheHaxiom2.compile("var x = 1001;");
+        var postEvictAst = testCacheHaxiom2.compile("var x = 1000;");
+        if (preEvictAst == postEvictAst) {
+            throw "FAIL: AST Cache capacity eviction did not clear the cache";
+        }
+        trace("SUCCESS: AST Cache capacity eviction verified successfully");
+
+        // 62. Expanded Stdlib Mapping
+        var testStdHaxiom = new haxiom.Haxiom();
+        
+        var accessJsonWithoutImportThrown = false;
+        try {
+            testStdHaxiom.interpret("
+                var parsed = Json.parse('{\"x\":1}');
+            ");
+        } catch (e:Dynamic) {
+            accessJsonWithoutImportThrown = true;
+            trace("SUCCESS: Caught expected Json access without import error: " + e);
+        }
+        if (!accessJsonWithoutImportThrown) throw "FAIL: Accessing Json without import did not throw";
+
+        var accessStringBufWithoutImportThrown = false;
+        try {
+            testStdHaxiom.interpret("
+                var buf = new StringBuf();
+            ");
+        } catch (e:Dynamic) {
+            accessStringBufWithoutImportThrown = true;
+            trace("SUCCESS: Caught expected StringBuf access without import error: " + e);
+        }
+        if (!accessStringBufWithoutImportThrown) throw "FAIL: Accessing StringBuf without import did not throw";
+
+        var script62_success = "
+            import haxe.Json;
+            import haxe.Timer;
+            import StringBuf;
+            import haxe.io.Bytes;
+            import haxe.io.Path;
+
+            var parsed = Json.parse('{\"value\": 100}');
+            if (parsed.value != 100) throw 'Json value mismatch';
+
+            var stamp = Timer.stamp();
+
+            var buf = new StringBuf();
+            buf.add('hello');
+            buf.add(' world');
+            if (buf.toString() != 'hello world') throw 'StringBuf value mismatch';
+
+            var bytes = Bytes.ofString('haxiom');
+            if (bytes.getString(0, 6) != 'haxiom') throw 'Bytes value mismatch';
+
+            var path = new Path('/some/file.txt');
+            if (path.ext != 'txt') throw 'Path extension mismatch';
+        ";
+        testStdHaxiom.interpret(script62_success);
+        trace("SUCCESS: Manually imported standard library classes work correctly");
     }
 }
 

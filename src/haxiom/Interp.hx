@@ -190,6 +190,18 @@ class HaxiomAbstractInstance {
     }
 }
 
+class HaxiomTypedef {
+    public var name:String;
+    public var type:TypeDecl;
+    public var params:Array<String> = [];
+
+    public function new(name:String, type:TypeDecl, ?params:Array<String>) {
+        this.name = name;
+        this.type = type;
+        this.params = params != null ? params : [];
+    }
+}
+
 @:keep
 class HaxiomAnchor {
     public static function keep() {
@@ -215,6 +227,7 @@ class Interp {
     public var moduleResolver:String->String = null;
     public var importWhitelist:Array<String> = defaultWhitelist.copy();
     public var importedModules:Map<String, Scope> = new Map();
+    public var functionSignatures:haxe.ds.ObjectMap<Dynamic, TypeDecl> = new haxe.ds.ObjectMap();
     var currentConstructorInstance:Dynamic = null;
     var inAbstractMethod:Bool = false;
     public var activeUsings:Array<Dynamic> = [];
@@ -2470,6 +2483,18 @@ class Interp {
                 }
                 return haxiomEnum;
 
+            case ETypedef(name, type, params):
+                var fqName = currentPackage.length > 0 ? currentPackage.join(".") + "." + name : name;
+                var tdef = new HaxiomTypedef(name, type, params);
+                scope.declare(name, tdef);
+                if (globals != scope) {
+                    globals.declare(name, tdef);
+                }
+                if (currentPackage.length > 0) {
+                    registerFullyQualified(fqName, tdef, globals);
+                }
+                return tdef;
+
             case EPackage(path):
                 currentPackage = path;
                 return null;
@@ -2718,6 +2743,29 @@ class Interp {
                     case 4: (a, b, c, d) -> func([a, b, c, d]);
                     default: (callArgs:Array<Dynamic>) -> func(callArgs);
                 };
+                var signatureArgs = [];
+                for (arg in args) {
+                    var t = arg.type != null ? arg.type : TPath(["Dynamic"], []);
+                    var currentBindings:Map<String, TypeDecl> = null;
+                    if (scope.exists("this")) {
+                        var thisVal = scope.get("this");
+                        if (thisVal != null && Std.isOfType(thisVal, HaxiomInstance)) {
+                            currentBindings = (cast thisVal : HaxiomInstance).genericBindings;
+                        }
+                    }
+                    var resolvedT = resolveGenericType(t, currentBindings, scope);
+                    signatureArgs.push(resolvedT);
+                }
+                var signatureRet = retType != null ? retType : TPath(["Dynamic"], []);
+                var currentBindings:Map<String, TypeDecl> = null;
+                if (scope.exists("this")) {
+                    var thisVal = scope.get("this");
+                    if (thisVal != null && Std.isOfType(thisVal, HaxiomInstance)) {
+                        currentBindings = (cast thisVal : HaxiomInstance).genericBindings;
+                    }
+                }
+                var resolvedRet = resolveGenericType(signatureRet, currentBindings, scope);
+                functionSignatures.set(haxeFunc, TFun(signatureArgs, resolvedRet));
                 if (name != null) {
                     scope.declare(name, haxeFunc);
                 }
@@ -3126,10 +3174,10 @@ class Interp {
     }
 
     function bindMethod(obj:Dynamic, method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}):Dynamic {
+        var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
         var func = (callArgs:Array<Dynamic>) -> {
             var fScope = Scope.create(globals);
             fScope.declare("this", obj);
-            var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
             for (i in 0...method.args.length) {
                 var arg = method.args[i];
                 var val = i < callArgs.length ? callArgs[i] : null;
@@ -3193,14 +3241,23 @@ class Interp {
             case 4: (a, b, c, d) -> func([a, b, c, d]);
             default: (callArgs:Array<Dynamic>) -> func(callArgs);
         };
+        var signatureArgs = [];
+        for (arg in method.args) {
+            var t = arg.type != null ? arg.type : TPath(["Dynamic"], []);
+            var resolvedT = resolveGenericType(t, bindings, globals);
+            signatureArgs.push(resolvedT);
+        }
+        var signatureRet = method.retType != null ? method.retType : TPath(["Dynamic"], []);
+        var resolvedRet = resolveGenericType(signatureRet, bindings, globals);
+        functionSignatures.set(boundFunc, TFun(signatureArgs, resolvedRet));
         return boundFunc;
     }
 
     function bindStaticExtensionMethod(obj:Dynamic, method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}):Dynamic {
+        var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
         var func = (callArgs:Array<Dynamic>) -> {
             var fScope = Scope.create(globals);
             var fullArgs = [obj].concat(callArgs);
-            var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
             for (i in 0...method.args.length) {
                 var arg = method.args[i];
                 var val = i < fullArgs.length ? fullArgs[i] : null;
@@ -3252,6 +3309,16 @@ class Interp {
             case 4: (a, b, c, d) -> func([a, b, c, d]);
             default: (callArgs:Array<Dynamic>) -> func(callArgs);
         };
+        var signatureArgs = [];
+        for (i in 1...method.args.length) {
+            var arg = method.args[i];
+            var t = arg.type != null ? arg.type : TPath(["Dynamic"], []);
+            var resolvedT = resolveGenericType(t, bindings, globals);
+            signatureArgs.push(resolvedT);
+        }
+        var signatureRet = method.retType != null ? method.retType : TPath(["Dynamic"], []);
+        var resolvedRet = resolveGenericType(signatureRet, bindings, globals);
+        functionSignatures.set(boundFunc, TFun(signatureArgs, resolvedRet));
         return boundFunc;
     }
 
@@ -3329,6 +3396,46 @@ class Interp {
             }
         }
         return null;
+    }
+
+    public function resolveType(t:TypeDecl, scope:Scope):TypeDecl {
+        if (t == null) return null;
+        switch (t) {
+            case TPath(path, params):
+                var typeName = path.join(".");
+                if (scope != null && scope.exists(typeName)) {
+                    var cls = scope.get(typeName);
+                    if (Std.isOfType(cls, HaxiomTypedef)) {
+                        var tdef:HaxiomTypedef = cast cls;
+                        var nextBindings = new Map<String, TypeDecl>();
+                        for (i in 0...tdef.params.length) {
+                            var paramName = tdef.params[i];
+                            if (params != null && i < params.length) {
+                                nextBindings.set(paramName, resolveType(params[i], scope));
+                            }
+                        }
+                        var resolvedUnderlying = resolveGenericType(tdef.type, nextBindings, scope);
+                        return resolveType(resolvedUnderlying, scope);
+                    }
+                }
+                var resolvedParams = [];
+                for (p in params) {
+                    resolvedParams.push(resolveType(p, scope));
+                }
+                return TPath(path, resolvedParams);
+            case TFun(args, ret):
+                var resolvedArgs = [];
+                for (arg in args) {
+                    resolvedArgs.push(resolveType(arg, scope));
+                }
+                return TFun(resolvedArgs, resolveType(ret, scope));
+            case TAnonymous(fields):
+                var resolvedFields = [];
+                for (f in fields) {
+                    resolvedFields.push({ name: f.name, type: resolveType(f.type, scope) });
+                }
+                return TAnonymous(resolvedFields);
+        }
     }
 
     public function resolveGenericType(type:TypeDecl, genericBindings:Map<String, TypeDecl>, scope:Scope):TypeDecl {
@@ -3449,6 +3556,7 @@ class Interp {
     public function checkType(val:Dynamic, type:TypeDecl, scope:Scope, ?genericBindings:Map<String, TypeDecl>):Void {
         if (type == null) return;
         var resolvedType = resolveGenericType(type, genericBindings, scope);
+        resolvedType = resolveType(resolvedType, scope);
         switch (resolvedType) {
             case TPath(path, params):
                 var typeName = path.join(".");
@@ -3608,6 +3716,28 @@ class Interp {
                 }
             case TFun(args, ret):
                 if (!Reflect.isFunction(val)) throw "Type mismatch: expected Function";
+                if (functionSignatures.exists(val)) {
+                    var actualSig = functionSignatures.get(val);
+                    switch (actualSig) {
+                        case TFun(actualArgs, actualRet):
+                            if (actualArgs.length != args.length) {
+                                throw 'Type mismatch: expected function with ${args.length} arguments but got ${actualArgs.length}';
+                            }
+                            for (i in 0...args.length) {
+                                var expectedArgResolved = resolveType(args[i], scope);
+                                var actualArgResolved = resolveType(actualArgs[i], scope);
+                                if (!typesEqual(expectedArgResolved, actualArgResolved)) {
+                                    throw 'Type mismatch in function argument ${i + 1}: expected ${typeToString(args[i])} but got ${typeToString(actualArgs[i])}';
+                                }
+                            }
+                            var expectedRetResolved = resolveType(ret, scope);
+                            var actualRetResolved = resolveType(actualRet, scope);
+                            if (!typesEqual(expectedRetResolved, actualRetResolved)) {
+                                throw 'Type mismatch in function return type: expected ${typeToString(ret)} but got ${typeToString(actualRet)}';
+                            }
+                        default:
+                    }
+                }
             case TAnonymous(fields):
                 if (val == null) return;
                 if (Reflect.isFunction(val) || Std.isOfType(val, Int) || Std.isOfType(val, Float) || Std.isOfType(val, Bool) || Std.isOfType(val, String)) {
@@ -3727,6 +3857,18 @@ class Interp {
         return Reflect.field(val, "__isHaxiomPackage") == true;
     }
 
+    function isClassInScope(cls:Dynamic, scope:Scope):Bool {
+        if (importWhitelist == null) return true;
+        var curr = scope;
+        while (curr != null) {
+            for (v in curr.variables) {
+                if (v == cls) return true;
+            }
+            curr = curr.parent;
+        }
+        return false;
+    }
+
     function tryResolveExpressionPath(e:Expr, scope:Scope):{success:Bool, value:Dynamic} {
         var path = getExprPath(e);
         if (path == null || path.length == 0) return {success: false, value: null};
@@ -3783,6 +3925,12 @@ class Interp {
             }
             
             if (resolvedType != null) {
+                if (fqName == "haxe.Json" || fqName == "haxe.Timer" || fqName == "StringBuf" || fqName == "haxe.io.Bytes" || fqName == "haxe.io.Path") {
+                    if (!isClassInScope(resolvedType, scope)) {
+                        len--;
+                        continue;
+                    }
+                }
                 var remaining = path.slice(len);
                 var current:Dynamic = resolvedType;
                 for (field in remaining) {
@@ -3811,17 +3959,33 @@ class Interp {
             }
         }
         
-        if (val != null) return val;
+        if (val != null) {
+            var fq = path.join(".");
+            if (fq == "haxe.Json" || fq == "haxe.Timer" || fq == "StringBuf" || fq == "haxe.io.Bytes" || fq == "haxe.io.Path") {
+                if (!isClassInScope(val, scope)) return null;
+            }
+            return val;
+        }
         
         var fqName = path.join(".");
         
         if (haxiom.FFI.exposedAbstracts.exists(fqName)) {
             var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
-            return resolveAbstractImpl(fqName, absInfo.implClass);
+            var impl = resolveAbstractImpl(fqName, absInfo.implClass);
+            if (impl != null && (fqName == "haxe.Json" || fqName == "haxe.Timer" || fqName == "StringBuf" || fqName == "haxe.io.Bytes" || fqName == "haxe.io.Path")) {
+                if (!isClassInScope(impl, scope)) return null;
+            }
+            return impl;
         }
         
         var cls = resolveNativeClass(fqName);
-        if (cls != null) return cls;
+        if (cls != null) {
+            if (fqName == "haxe.Json" || fqName == "haxe.Timer" || fqName == "StringBuf" || fqName == "haxe.io.Bytes" || fqName == "haxe.io.Path") {
+                if (!isClassInScope(cls, scope)) return null;
+            }
+            return cls;
+        }
+        
         var enm = Type.resolveEnum(fqName);
         if (enm != null) return enm;
         
@@ -3834,7 +3998,12 @@ class Interp {
                 var runtimeFq = parentPkg != "" ? parentPkg + "." + subName : subName;
                 
                 var c = resolveNativeClass(runtimeFq);
-                if (c != null) return c;
+                if (c != null) {
+                    if (runtimeFq == "haxe.Json" || runtimeFq == "haxe.Timer" || runtimeFq == "StringBuf" || runtimeFq == "haxe.io.Bytes" || runtimeFq == "haxe.io.Path") {
+                        if (!isClassInScope(c, scope)) return null;
+                    }
+                    return c;
+                }
                 var e = Type.resolveEnum(runtimeFq);
                 if (e != null) return e;
             }

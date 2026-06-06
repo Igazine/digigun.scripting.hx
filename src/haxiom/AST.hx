@@ -52,6 +52,7 @@ enum TokenDef {
     TEnum;
     TUsing;
     TAbstract;
+    TTypedef;
     
     // Operators
     TPlus;
@@ -164,6 +165,7 @@ enum ExprDef {
     ESafeField(e:Expr, field:String);
     ENew(type:TypeDecl, args:Array<Expr>);
     EAbstract(name:String, underlyingType:TypeDecl, fields:Array<{name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}}>, methods:Array<{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}>, ?params:Array<String>);
+    ETypedef(name:String, type:TypeDecl, ?params:Array<String>);
 }
 
 typedef Expr = {

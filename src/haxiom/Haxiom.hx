@@ -6,6 +6,9 @@ import haxiom.Interp;
 
 class Haxiom implements common.IScriptEngine {
     public var interp:Interp;
+    public var enableAstCache:Bool = true;
+    public var astCache:Map<String, haxiom.AST.Expr> = new Map();
+    var astCacheSize:Int = 0;
 
     public var moduleResolver(get, set):String->String;
     inline function get_moduleResolver() return interp.moduleResolver;
@@ -24,6 +27,9 @@ class Haxiom implements common.IScriptEngine {
     }
 
     public function compile(source:String, ?filename:String):haxiom.AST.Expr {
+        if (enableAstCache && astCache.exists(source)) {
+            return astCache.get(source);
+        }
         var fileInfo = filename != null ? filename : "script";
         interp.lastSource = source;
         try {
@@ -31,7 +37,16 @@ class Haxiom implements common.IScriptEngine {
             var tokens = lexer.tokenize();
             var parser = new Parser(tokens, fileInfo);
             var ast = parser.parse();
-            return Optimizer.foldConstants(ast);
+            var folded = Optimizer.foldConstants(ast);
+            if (enableAstCache) {
+                if (astCacheSize >= 1000) {
+                    astCache = new Map();
+                    astCacheSize = 0;
+                }
+                astCache.set(source, folded);
+                astCacheSize++;
+            }
+            return folded;
         } catch (e:ScriptException) {
             if (errorHandler != null) {
                 errorHandler(e);

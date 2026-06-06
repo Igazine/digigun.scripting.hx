@@ -108,6 +108,7 @@ class Lexer {
                     case "enum": TEnum;
                     case "using": TUsing;
                     case "abstract": TAbstract;
+                    case "typedef": TTypedef;
                     default: TIdent(id);
                 };
                 tokens.push({ def: def, pos: { line: startLine, col: startCol, file: file } });
