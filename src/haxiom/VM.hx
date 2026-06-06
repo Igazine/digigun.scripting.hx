@@ -171,6 +171,12 @@ class VM {
                         var name:String = consts[idx];
                         if (name == "this") {
                             stack.push(interp.currentThis);
+                        } else if (name == "super") {
+                            if (interp.currentThis != null && Std.isOfType(interp.currentThis, HaxiomInstance)) {
+                                stack.push(new haxiom.HaxiomSuperInstance(cast interp.currentThis, interp, frame.scope));
+                            } else {
+                                throw "Cannot use 'super' outside of a class instance constructor or method";
+                            }
                         } else {
                             if (!frame.scope.exists(name) && interp.currentThis != null && Std.isOfType(interp.currentThis, HaxiomInstance)) {
                                 stack.push(interp.evalField(interp.currentThis, name, frame.scope, currentPos()));
@@ -374,8 +380,14 @@ class VM {
                             args.unshift(stack.pop());
                         }
                         
-                        var res = Reflect.callMethod(null, func, args);
-                        stack.push(res);
+                        if (func != null && Std.isOfType(func, haxiom.HaxiomSuperInstance)) {
+                            var superInst:haxiom.HaxiomSuperInstance = cast func;
+                            var res = superInst.callConstructor(args);
+                            stack.push(res);
+                        } else {
+                            var res = Reflect.callMethod(null, func, args);
+                            stack.push(res);
+                        }
 
                     case OP_RETURN:
                         var res = stack.pop();
@@ -395,7 +407,18 @@ class VM {
                         var fieldName:String = consts[idx];
                         var obj = stack.pop();
                         if (obj == null) throw 'Cannot read field "$fieldName" of null';
-                        stack.push(interp.evalField(obj, fieldName, frame.scope, currentPos()));
+                        if (Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
+                            var superInst:haxiom.HaxiomSuperInstance = cast obj;
+                            var parentCls = superInst.inst.cls.parent;
+                            var m = interp.findMethod(parentCls, fieldName);
+                            if (m != null) {
+                                stack.push(interp.bindMethod(superInst.inst, m));
+                            } else {
+                                throw 'Parent method or field "$fieldName" not found on class ${superInst.inst.cls.name}';
+                            }
+                        } else {
+                            stack.push(interp.evalField(obj, fieldName, frame.scope, currentPos()));
+                        }
 
                     case OP_SET_FIELD:
                         var idx = inst[frame.ip++];
@@ -403,7 +426,13 @@ class VM {
                         var val = stack.pop();
                         var obj = stack.pop();
                         if (obj == null) throw 'Cannot write field "$fieldName" of null';
-                        stack.push(interp.assignField(obj, fieldName, val, frame.scope));
+                        if (Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
+                            var superInst:haxiom.HaxiomSuperInstance = cast obj;
+                            superInst.inst.fields.set(fieldName, val);
+                            stack.push(val);
+                        } else {
+                            stack.push(interp.assignField(obj, fieldName, val, frame.scope));
+                        }
 
                     case OP_SAFE_GET_FIELD:
                         var idx = inst[frame.ip++];
@@ -809,6 +838,20 @@ class VM {
                             args.unshift(stack.pop());
                         }
 
+                        if (obj != null && Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
+                            var superInst:haxiom.HaxiomSuperInstance = cast obj;
+                            var parentCls = superInst.inst.cls.parent;
+                            var m = interp.findMethod(parentCls, fieldName);
+                            if (m != null) {
+                                var boundMethod = interp.bindMethod(superInst.inst, m);
+                                var res = Reflect.callMethod(null, boundMethod, args);
+                                stack.push(res);
+                                continue;
+                            } else {
+                                throw 'Parent method or field "$fieldName" not found on class ${superInst.inst.cls.name}';
+                            }
+                        }
+
                         if (obj != null && Std.isOfType(obj, HaxiomInstance)) {
                             var instObj:HaxiomInstance = cast obj;
                             var m = interp.findMethod(instObj.cls, fieldName);
@@ -897,5 +940,63 @@ class VM {
         }
 
         return stack.length > 0 ? stack[stack.length - 1] : null;
+    }
+}
+
+@:keep
+class HaxiomSuperInstance {
+    public var inst:HaxiomInstance;
+    public var interp:Interp;
+    public var scope:Scope;
+
+    public function new(inst:HaxiomInstance, interp:Interp, scope:Scope) {
+        this.inst = inst;
+        this.interp = interp;
+        this.scope = scope;
+    }
+
+    public function callConstructor(args:Array<Dynamic>):Dynamic {
+        var parentCls = inst.cls.parent;
+        if (parentCls != null) {
+            var constr = interp.findMethod(parentCls, "new");
+            if (constr != null) {
+                var cScope = Scope.create(scope);
+                cScope.declare("this", inst);
+                for (i in 0...constr.args.length) {
+                    var arg = constr.args[i];
+                    var val = i < args.length ? args[i] : null;
+                    interp.checkType(val, arg.type, cScope);
+                    cScope.declare(arg.name, val, arg.type);
+                }
+                var oldThis = interp.currentThis;
+                var oldConstrInst = interp.currentConstructorInstance;
+                interp.currentConstructorInstance = inst;
+                interp.currentThis = inst;
+                try {
+                    if (interp.useVM) {
+                        var cDyn:Dynamic = constr;
+                        if (cDyn.bytecodeChunk == null) {
+                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body);
+                        }
+                        VM.runChunk(interp, cDyn.bytecodeChunk, cScope, inst, parentCls.name + ".new");
+                    } else {
+                        interp.eval(constr.body, cScope);
+                    }
+                    Scope.recycle(cScope);
+                } catch (flow:ControlFlow) {
+                    Scope.recycle(cScope);
+                    switch (flow) {
+                        case Return(_):
+                        default: throw flow;
+                    }
+                } catch (err:Dynamic) {
+                    Scope.recycle(cScope);
+                    throw err;
+                }
+                interp.currentConstructorInstance = oldConstrInst;
+                interp.currentThis = oldThis;
+            }
+        }
+        return null;
     }
 }

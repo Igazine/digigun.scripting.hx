@@ -1739,7 +1739,15 @@ class Interp {
                                     var oldConstrInst = currentConstructorInstance;
                                     currentConstructorInstance = inst;
                                     try {
-                                        eval(constr.body, cScope);
+                                        if (useVM) {
+                                            var cDyn:Dynamic = constr;
+                                            if (cDyn.bytecodeChunk == null) {
+                                                cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body);
+                                            }
+                                            haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, currentThis, parentCls.name + ".new");
+                                        } else {
+                                            eval(constr.body, cScope);
+                                        }
                                         Scope.recycle(cScope);
                                     } catch (flow:ControlFlow) {
                                         Scope.recycle(cScope);
@@ -2328,7 +2336,15 @@ class Interp {
                         currentConstructorInstance = inst;
                         pushFrame(cls.name + ".new", constr.body.pos);
                         try {
-                            eval(constr.body, cScope);
+                            if (useVM) {
+                                var cDyn:Dynamic = constr;
+                                if (cDyn.bytecodeChunk == null) {
+                                    cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body);
+                                }
+                                haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, cls.name + ".new");
+                            } else {
+                                eval(constr.body, cScope);
+                            }
                             popFrame();
                             Scope.recycle(cScope);
                         } catch (e:ControlFlow) {
@@ -2483,7 +2499,15 @@ class Interp {
                                 currentConstructorInstance = inst;
                                 pushFrame(cls.name + ".new", constr.body.pos);
                                 try {
-                                    eval(constr.body, cScope);
+                                    if (useVM) {
+                                        var cDyn:Dynamic = constr;
+                                        if (cDyn.bytecodeChunk == null) {
+                                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body);
+                                        }
+                                        haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, cls.name + ".new");
+                                    } else {
+                                        eval(constr.body, cScope);
+                                    }
                                     popFrame();
                                     Scope.recycle(cScope);
                                 } catch (e:ControlFlow) {
@@ -2523,7 +2547,15 @@ class Interp {
                                 inAbstractMethod = true;
                                 pushFrame(abs.name + ".new", constr.body.pos);
                                 try {
-                                    eval(constr.body, cScope);
+                                    if (useVM) {
+                                        var cDyn:Dynamic = constr;
+                                        if (cDyn.bytecodeChunk == null) {
+                                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body);
+                                        }
+                                        haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, abs.name + ".new");
+                                    } else {
+                                        eval(constr.body, cScope);
+                                    }
                                     popFrame();
                                     Scope.recycle(cScope);
                                 } catch (e:ControlFlow) {
@@ -3714,7 +3746,16 @@ class Interp {
             }
             pushFrame(className + "." + method.name, method.body.pos);
             try {
-                var res = eval(method.body, fScope);
+                var res:Dynamic = null;
+                if (useVM) {
+                    var mDyn:Dynamic = method;
+                    if (mDyn.bytecodeChunk == null) {
+                        mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body);
+                    }
+                    res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, obj, className + "." + method.name);
+                } else {
+                    res = eval(method.body, fScope);
+                }
                 if (method.retType != null && typeToString(method.retType) == "Void") {
                     res = null;
                 } else {

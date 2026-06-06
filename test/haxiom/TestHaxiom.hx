@@ -2446,6 +2446,92 @@ class TestHaxiom {
         }
         if (!persistErrorOccurred) throw "Expected bytecode runtime error, but none occurred";
         trace("SUCCESS: Bytecode & AST Persistence verified.");
+
+        // 73. VM Class, Constructor, Method, and Property Parity Verification
+        var vmClassEngine = new haxiom.Haxiom();
+        vmClassEngine.useVM = true;
+        
+        var script73 = "
+            class Animal {
+                public var name:String;
+                public function new(name:String) {
+                    this.name = name;
+                }
+                public function greet():String {
+                    return 'Animal:' + this.name;
+                }
+            }
+
+            class Dog extends Animal {
+                public var breed:String;
+                public var barkCount:Int = 0;
+                
+                public function new(name:String, breed:String) {
+                    super(name);
+                    this.breed = breed;
+                }
+                
+                public function greet():String {
+                    return 'Dog:' + this.name + ' (' + this.breed + ')';
+                }
+                
+                public var fullTitle(get, set):String;
+                public function get_fullTitle():String {
+                    return this.greet() + ' (barkCount=' + this.barkCount + ')';
+                }
+                public function set_fullTitle(val:String):String {
+                    this.barkCount++;
+                    return val;
+                }
+            }
+
+            var d = new Dog('Buddy', 'Golden Retriever');
+            var firstGreet = d.greet();
+            var titleBefore = d.fullTitle;
+            d.fullTitle = 'Test';
+            var titleAfter = d.fullTitle;
+            
+            var out = {
+                firstGreet: firstGreet,
+                titleBefore: titleBefore,
+                titleAfter: titleAfter,
+                barkCount: d.barkCount
+            };
+            out;
+        ";
+        
+        var result73:Dynamic = vmClassEngine.interpret(script73);
+        if (result73.firstGreet != "Dog:Buddy (Golden Retriever)") throw "VM Class parity failed: firstGreet=" + result73.firstGreet;
+        if (result73.titleBefore != "Dog:Buddy (Golden Retriever) (barkCount=0)") throw "VM Class parity failed: titleBefore=" + result73.titleBefore;
+        if (result73.barkCount != 1) throw "VM Class parity failed: barkCount=" + result73.barkCount;
+        if (result73.titleAfter != "Dog:Buddy (Golden Retriever) (barkCount=1)") throw "VM Class parity failed: titleAfter=" + result73.titleAfter;
+
+        var script73_error = "
+            class ErrorProducer {
+                public function new() {}
+                public function fail():Void {
+                    throw 'Explicit Method Error!';
+                }
+            }
+            var p = new ErrorProducer();
+            p.fail();
+        ";
+        var errEngine73 = new haxiom.Haxiom();
+        errEngine73.useVM = true;
+        var errOccurred73 = false;
+        try {
+            var ast = errEngine73.compile(script73_error, "error_producer.hx");
+            errEngine73.execute(ast);
+        } catch (e:haxiom.ScriptException) {
+            errOccurred73 = true;
+            if (e.line != 5) throw "VM Class method error expected line 5 but got: " + e.line;
+            if (e.file != "error_producer.hx") throw "VM Class method error expected file error_producer.hx but got: " + e.file;
+            if (e.message.indexOf("throw 'Explicit Method Error!'") == -1) {
+                throw "VM Class method error expected code frame with source line but got: " + e.message;
+            }
+        }
+        if (!errOccurred73) throw "Expected VM class method runtime error, but none occurred";
+        trace("SUCCESS: VM Class, Constructor, Method, and Property Parity verified.");
     }
 }
 
