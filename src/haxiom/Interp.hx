@@ -631,6 +631,63 @@ class Interp {
         }
     }
 
+    public function executeChunk(chunk:haxiom.VM.BytecodeChunk):Dynamic {
+        currentPackage = [];
+        callStack = [];
+        activeUsings = [];
+        if (chunk.positions.length > 0 && chunk.positions[0] != null) {
+            lastEvalPos = chunk.positions[0];
+        }
+        try {
+            return VM.runChunk(this, chunk, globals, null, "toplevel");
+        } catch (e:ControlFlow) {
+            switch (e) {
+                case Return(val): return val;
+                default: throw "Unexpected control flow break/continue at top-level";
+            }
+        } catch (e:Dynamic) {
+            var traceLines = [];
+            var isScriptException = Std.isOfType(e, haxiom.ScriptException);
+            
+            var formatted = "";
+            var finalException:Dynamic = null;
+            if (isScriptException) {
+                finalException = e;
+            } else {
+                var errPos = lastEvalPos != null ? lastEvalPos : { line: 1, col: 1 };
+                var fileInfo = errPos.file != null ? errPos.file : "script";
+                var lineVal = errPos != null ? errPos.line : 1;
+                var colVal = errPos != null ? errPos.col : 1;
+
+                var codeFrame = ScriptException.makeCodeFrame(lastSource, lineVal, colVal, fileInfo);
+                var locationStr = 'Runtime Error: ' + Std.string(e) + ' at ' + fileInfo + ':' + lineVal + ':' + colVal;
+                if (codeFrame != "") {
+                    locationStr += "\n" + codeFrame;
+                }
+                traceLines.push(locationStr);
+                var i = callStack.length - 1;
+                while (i >= 0) {
+                    var frame = callStack[i];
+                    var fileInfoFrame = frame.pos.file != null ? frame.pos.file : "script";
+                    var framePos = (i == callStack.length - 1 && lastEvalPos != null) ? lastEvalPos : frame.pos;
+                    traceLines.push('    at ' + frame.method + ' (' + fileInfoFrame + ':' + framePos.line + ':' + framePos.col + ')');
+                    i--;
+                }
+                if (callStack.length == 0) {
+                    traceLines.push('    at toplevel (' + fileInfo + ':' + lineVal + ':' + colVal + ')');
+                }
+                formatted = traceLines.join("\n");
+                finalException = new haxiom.ScriptException(e, callStack.copy(), formatted, lineVal, colVal, fileInfo);
+            }
+            
+            if (errorHandler != null) {
+                errorHandler(finalException);
+                return null;
+            }
+            throw finalException;
+        }
+    }
+
     function getTypeName(v:Dynamic):String {
         if (v == null) return "null";
         if (Std.isOfType(v, Int)) return "Int";

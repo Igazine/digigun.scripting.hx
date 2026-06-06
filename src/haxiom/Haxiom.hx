@@ -93,17 +93,55 @@ class Haxiom implements common.IScriptEngine {
     }
 
     public function compileToBytes(source:String, ?filename:String):haxe.io.Bytes {
+        if (useVM) {
+            return compileToBytecodeBytes(source, filename);
+        }
+        return compileToASTBytes(source, filename);
+    }
+
+    public function executeBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String):T {
+        if (useVM) {
+            return executeBytecodeBytes(bytes, sourceCode);
+        }
+        return executeASTBytes(bytes, sourceCode);
+    }
+
+    public function compileToASTBytes(source:String, ?filename:String):haxe.io.Bytes {
         var ast = compile(source, filename);
         if (ast == null) return null;
         return Serializer.serializeToBytes(ast);
     }
 
-    public function executeBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String):T {
+    public function compileToBytecodeBytes(source:String, ?filename:String):haxe.io.Bytes {
+        var ast = compile(source, filename);
+        if (ast == null) return null;
+        var chunk = BytecodeCompiler.compile(ast);
+        return Serializer.serializeBytecode(chunk);
+    }
+
+    public function executeASTBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String):T {
         if (sourceCode != null) {
             interp.lastSource = sourceCode;
         }
         var ast = Serializer.deserializeFromBytes(bytes);
-        return execute(ast);
+        var oldUseVM = interp.useVM;
+        interp.useVM = false;
+        try {
+            var result = execute(ast);
+            interp.useVM = oldUseVM;
+            return cast result;
+        } catch (e:Dynamic) {
+            interp.useVM = oldUseVM;
+            throw e;
+        }
+    }
+
+    public function executeBytecodeBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String):T {
+        if (sourceCode != null) {
+            interp.lastSource = sourceCode;
+        }
+        var chunk = Serializer.deserializeBytecode(bytes);
+        return cast interp.executeChunk(chunk);
     }
 
     public function setGlobal(name:String, value:Dynamic):Void {

@@ -2383,6 +2383,69 @@ class TestHaxiom {
         }
         if (!errorOccurred) throw "Expected VM runtime error, but none occurred";
         trace("SUCCESS: VM Execution Mode verified.");
+
+        // 72. Bytecode & AST Persistence Verification
+        var persistEngine = new haxiom.Haxiom();
+        
+        var script72 = "
+            var factor = 5;
+            var closure = (x) -> x * factor;
+            var sum = 0;
+            for (i in 1...4) {
+                sum += closure(i);
+            }
+            var switchRes = 'none';
+            var val = 100;
+            switch (val) {
+                case 100 if (factor == 5): switchRes = 'hundred';
+                default: switchRes = 'other';
+            }
+            var res = { sum: sum, switchRes: switchRes };
+            res;
+        ";
+        
+        // 1. AST Persistence Test
+        var astBytes = persistEngine.compileToASTBytes(script72);
+        if (astBytes == null) throw "Failed to compile AST to bytes";
+        
+        var astLoaderEngine = new haxiom.Haxiom();
+        var astResult:Dynamic = astLoaderEngine.executeASTBytes(astBytes);
+        if (astResult.sum != 30) throw "AST persistence execution failed: sum=" + astResult.sum;
+        if (astResult.switchRes != "hundred") throw "AST persistence execution failed: switchRes=" + astResult.switchRes;
+
+        // 2. Bytecode Persistence Test
+        var bytecodeBytes = persistEngine.compileToBytecodeBytes(script72);
+        if (bytecodeBytes == null) throw "Failed to compile Bytecode to bytes";
+        
+        var bcLoaderEngine = new haxiom.Haxiom();
+        bcLoaderEngine.useVM = true;
+        var bcResult:Dynamic = bcLoaderEngine.executeBytecodeBytes(bytecodeBytes);
+        if (bcResult.sum != 30) throw "Bytecode persistence execution failed: sum=" + bcResult.sum;
+        if (bcResult.switchRes != "hundred") throw "Bytecode persistence execution failed: switchRes=" + bcResult.switchRes;
+
+        // 3. VM Bytecode Error Recovery Test
+        var script72_error = "
+            var a = 200;
+            throw 'Bytecode Explicit Error!';
+        ";
+        var errCompileEngine = new haxiom.Haxiom();
+        var errBytes = errCompileEngine.compileToBytecodeBytes(script72_error, "error_bytecode.hx");
+        
+        var errRunEngine = new haxiom.Haxiom();
+        errRunEngine.useVM = true;
+        var persistErrorOccurred = false;
+        try {
+            errRunEngine.executeBytecodeBytes(errBytes, script72_error);
+        } catch (e:haxiom.ScriptException) {
+            persistErrorOccurred = true;
+            if (e.line != 3) throw "Bytecode persistence expected error on line 3 but got: " + e.line;
+            if (e.file != "error_bytecode.hx") throw "Bytecode persistence expected file name error_bytecode.hx but got: " + e.file;
+            if (e.message.indexOf("throw 'Bytecode Explicit Error!'") == -1) {
+                throw "Bytecode persistence expected code frame with source line but got: " + e.message;
+            }
+        }
+        if (!persistErrorOccurred) throw "Expected bytecode runtime error, but none occurred";
+        trace("SUCCESS: Bytecode & AST Persistence verified.");
     }
 }
 

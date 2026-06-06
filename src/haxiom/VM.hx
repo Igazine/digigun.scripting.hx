@@ -80,6 +80,7 @@ enum abstract Opcode(Int) from Int to Int {
     var OP_PUSH_CASE_SCOPE = 72;
 }
 
+@:keep
 class BytecodeChunk {
     public var instructions:Array<Int>;
     public var constants:Array<Dynamic>;

@@ -1,6 +1,7 @@
 package haxiom;
 
 import haxiom.AST.Expr;
+import haxiom.VM.BytecodeChunk;
 
 class Serializer {
     public static function serialize(expr:Expr):String {
@@ -23,5 +24,18 @@ class Serializer {
 
     public static function deserializeFromBytes(bytes:haxe.io.Bytes):Expr {
         return deserialize(bytes.toString());
+    }
+
+    public static function serializeBytecode(chunk:BytecodeChunk):haxe.io.Bytes {
+        var s = new haxe.Serializer();
+        s.useCache = true;
+        s.useEnumIndex = true;
+        s.serialize(chunk);
+        return haxe.io.Bytes.ofString(s.toString());
+    }
+
+    public static function deserializeBytecode(bytes:haxe.io.Bytes):BytecodeChunk {
+        var u = new haxe.Unserializer(bytes.toString());
+        return u.unserialize();
     }
 }
