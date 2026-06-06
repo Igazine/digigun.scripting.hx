@@ -410,6 +410,7 @@ class HaxiomAnchor {
     }
 }
 
+@:allow(haxiom)
 class Interp {
     public static var defaultWhitelist:Array<String> = [
         "Date", "DateTools", "StringBuf", "Xml", "haxe.Timer", "haxe.Json",
@@ -569,12 +570,18 @@ class Interp {
         HaxiomAnchor.keep();
     }
 
+    public var useVM:Bool = false;
+
     public function execute(expr:Expr):Dynamic {
         currentPackage = [];
         callStack = [];
         activeUsings = [];
         lastEvalPos = expr.pos;
         try {
+            if (useVM) {
+                var chunk = BytecodeCompiler.compile(expr);
+                return VM.runChunk(this, chunk, globals, null, "toplevel");
+            }
             return eval(expr, globals);
         } catch (e:ControlFlow) {
             switch (e) {

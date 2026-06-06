@@ -2271,6 +2271,118 @@ class TestHaxiom {
         }
         if (!errorOccurred) throw "Expected error during execution of errorBytes, but none occurred";
         trace("SUCCESS: AST Serialization & Deserialization verified.");
+
+        // 71. VM Execution Mode Verification
+        var vmEngine = new haxiom.Haxiom();
+        vmEngine.useVM = true;
+        
+        var script71 = "
+            // 1. Arithmetic & variables
+            var a = 100;
+            var b = 200;
+            var c = (a + b) * 3 / 2 % 100; // 300 * 3 / 2 = 450. 450 % 100 = 50
+            
+            // 2. Local variables and mutated increments
+            var x = 10;
+            var pre = ++x; // pre = 11, x = 11
+            var post = x++; // post = 11, x = 12
+            
+            // 3. Conditionals and Loops
+            var sum = 0;
+            for (i in 0...5) {
+                sum += i;
+            } // sum = 0 + 1 + 2 + 3 + 4 = 10
+            
+            var j = 0;
+            var whileSum = 0;
+            while (j < 3) {
+                j++;
+                if (j == 2) continue;
+                whileSum += j;
+            } // j=1: whileSum=1. j=2: skipped. j=3: whileSum=1+3=4
+            
+            // 4. Switch pattern matching
+            var switchRes = 'none';
+            var val = 42;
+            switch (val) {
+                case 10: switchRes = 'ten';
+                case 42 if (a == 100): switchRes = 'forty-two';
+                default: switchRes = 'def';
+            }
+            
+            // 5. Array & Map declarators & subscripting
+            var arr = [10, 20, 30];
+            arr[1] = 99;
+            var arrVal = arr[0] + arr[1] + arr[2]; // 10 + 99 + 30 = 139
+            
+            var map = ['x' => 1, 'y' => 2];
+            map['z'] = 3;
+            var mapVal = map['x'] + map['y'] + map['z']; // 1 + 2 + 3 = 6
+            
+            // 6. Closures
+            var multiplier = (factor) -> {
+                return (val) -> val * factor;
+            };
+            var timesTen = multiplier(10);
+            var closureRes = timesTen(5); // 50
+            
+            // 7. Try-Catch exception handling
+            var caughtMessage = 'none';
+            try {
+                throw 'Custom Error!';
+            } catch (err:String) {
+                caughtMessage = err;
+            }
+            
+            // Return struct containing verification results
+            var resStruct = {
+                c: c,
+                pre: pre,
+                post: post,
+                x: x,
+                sum: sum,
+                whileSum: whileSum,
+                switchRes: switchRes,
+                arrVal: arrVal,
+                mapVal: mapVal,
+                closureRes: closureRes,
+                caughtMessage: caughtMessage
+            };
+            resStruct;
+        ";
+        
+        var vmResult:Dynamic = vmEngine.interpret(script71);
+        if (vmResult.c != 50) throw "VM arithmetic/ops failed: " + vmResult.c;
+        if (vmResult.pre != 11 || vmResult.post != 11 || vmResult.x != 12) throw "VM mutating unops failed";
+        if (vmResult.sum != 10) throw "VM for-loop failed: " + vmResult.sum;
+        if (vmResult.whileSum != 4) throw "VM while-loop with continue failed: " + vmResult.whileSum;
+        if (vmResult.switchRes != "forty-two") throw "VM switch pattern matching failed";
+        if (vmResult.arrVal != 139) throw "VM array subscript read/write failed: " + vmResult.arrVal;
+        if (vmResult.mapVal != 6) throw "VM map/subscript failed: " + vmResult.mapVal;
+        if (vmResult.closureRes != 50) throw "VM closure failed: " + vmResult.closureRes;
+        if (vmResult.caughtMessage != "Custom Error!") throw "VM try-catch exception handling failed";
+
+        // 8. Test error position recovery inside VM
+        var script71_error = "
+            var a = 10;
+            var b = 0;
+            var c = a / b;
+            throw 'VM Explicit Error!';
+        ";
+        var errEngine = new haxiom.Haxiom();
+        errEngine.useVM = true;
+        var errorOccurred = false;
+        try {
+            errEngine.interpret(script71_error);
+        } catch (e:haxiom.ScriptException) {
+            errorOccurred = true;
+            if (e.line != 5) throw "VM Expected error on line 5 but got: " + e.line;
+            if (e.message.indexOf("throw 'VM Explicit Error!'") == -1) {
+                throw "VM Expected code frame with source line but got: " + e.message;
+            }
+        }
+        if (!errorOccurred) throw "Expected VM runtime error, but none occurred";
+        trace("SUCCESS: VM Execution Mode verified.");
     }
 }
 

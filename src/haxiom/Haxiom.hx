@@ -22,6 +22,10 @@ class Haxiom implements common.IScriptEngine {
     inline function get_errorHandler() return interp.errorHandler;
     inline function set_errorHandler(v) return interp.errorHandler = v;
 
+    public var useVM(get, set):Bool;
+    inline function get_useVM() return interp.useVM;
+    inline function set_useVM(v) return interp.useVM = v;
+
     public function new() {
         interp = new Interp();
     }
