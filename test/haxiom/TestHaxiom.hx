@@ -2419,6 +2419,36 @@ class TestHaxiom {
         
         var bcLoaderEngine = new haxiom.Haxiom();
         bcLoaderEngine.useVM = true;
+
+        // Verify HXBC magic header
+        var headerStr = bytecodeBytes.getString(0, 4);
+        if (headerStr != "HXBC") {
+            throw "Bytecode persistence failed: expected magic HXBC header, got " + headerStr;
+        }
+
+        // Verify version byte
+        var verByte = bytecodeBytes.get(4);
+        if (verByte != 1) {
+            throw "Bytecode persistence failed: expected version 1, got " + verByte;
+        }
+
+        // Verify checksum validation on corrupted data
+        var corruptedBytes = haxe.io.Bytes.alloc(bytecodeBytes.length);
+        corruptedBytes.blit(0, bytecodeBytes, 0, bytecodeBytes.length);
+        if (bytecodeBytes.length > 13) {
+            corruptedBytes.set(bytecodeBytes.length - 1, corruptedBytes.get(bytecodeBytes.length - 1) ^ 0xAA);
+        }
+        
+        var checksumErrorOccurred = false;
+        try {
+            bcLoaderEngine.executeBytecodeBytes(corruptedBytes);
+        } catch (e:Dynamic) {
+            if (Std.string(e).indexOf("checksum verification failed") != -1) {
+                checksumErrorOccurred = true;
+            }
+        }
+        if (!checksumErrorOccurred) throw "Expected bytecode checksum verification error on corrupted bytes, but none occurred";
+
         var bcResult:Dynamic = bcLoaderEngine.executeBytecodeBytes(bytecodeBytes);
         if (bcResult.sum != 30) throw "Bytecode persistence execution failed: sum=" + bcResult.sum;
         if (bcResult.switchRes != "hundred") throw "Bytecode persistence execution failed: switchRes=" + bcResult.switchRes;
