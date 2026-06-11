@@ -2653,6 +2653,66 @@ class TestHaxiom {
         if (!typeErrorOccurred) throw "Expected type check error, but none occurred";
 
         trace("SUCCESS: VM compile-time slot resolution, slot reuse, shadowing, closures, and variable type validation verified.");
+
+        // Test 75: Bytecode Verification & Safety Checks
+        var verEngine = new haxiom.Haxiom();
+        
+        // 1. Get a valid compiled bytecode bytes
+        var validScript = "var x = 10; x + 5;";
+        var validBytes = verEngine.compileToBytecodeBytes(validScript);
+        
+        // Deserializing valid bytes should succeed
+        var validChunk = Serializer.deserializeBytecode(validBytes);
+        
+        // Test invalid opcode check
+        var invalidOpcodeChunk = new haxiom.VM.BytecodeChunk([99], [], [], 0);
+        var invalidOpcodeCaught = false;
+        try {
+            BytecodeVerifier.verify(invalidOpcodeChunk);
+        } catch (e:Dynamic) {
+            if (Std.string(e).indexOf("Invalid opcode") != -1) {
+                invalidOpcodeCaught = true;
+            }
+        }
+        if (!invalidOpcodeCaught) throw "Expected verification error for invalid opcode, but none occurred";
+        
+        // Test out-of-bounds constant index check
+        var invalidConstChunk = new haxiom.VM.BytecodeChunk([1, 5], [], [], 0);
+        var invalidConstCaught = false;
+        try {
+            BytecodeVerifier.verify(invalidConstChunk);
+        } catch (e:Dynamic) {
+            if (Std.string(e).indexOf("Constant index") != -1) {
+                invalidConstCaught = true;
+            }
+        }
+        if (!invalidConstCaught) throw "Expected verification error for out-of-bounds constant, but none occurred";
+        
+        // Test out-of-bounds local slot index check
+        var invalidSlotChunk = new haxiom.VM.BytecodeChunk([2, 5], [], [], 2);
+        var invalidSlotCaught = false;
+        try {
+            BytecodeVerifier.verify(invalidSlotChunk);
+        } catch (e:Dynamic) {
+            if (Std.string(e).indexOf("Local slot index") != -1) {
+                invalidSlotCaught = true;
+            }
+        }
+        if (!invalidSlotCaught) throw "Expected verification error for out-of-bounds slot, but none occurred";
+
+        // Test out-of-bounds jump target check
+        var invalidJumpChunk = new haxiom.VM.BytecodeChunk([28, 50], [], [], 0);
+        var invalidJumpCaught = false;
+        try {
+            BytecodeVerifier.verify(invalidJumpChunk);
+        } catch (e:Dynamic) {
+            if (Std.string(e).indexOf("Jump target") != -1) {
+                invalidJumpCaught = true;
+            }
+        }
+        if (!invalidJumpCaught) throw "Expected verification error for out-of-bounds jump, but none occurred";
+
+        trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
     }
 }
 

@@ -159,6 +159,8 @@ class Serializer {
         var constsStr = payloadInput.readString(constsLen);
         var constants:Array<Dynamic> = haxe.Unserializer.run(constsStr);
         
-        return new BytecodeChunk(instructions, constants, positions, maxSlots);
+        var chunk = new BytecodeChunk(instructions, constants, positions, maxSlots);
+        BytecodeVerifier.verify(chunk);
+        return chunk;
     }
 }
