@@ -431,17 +431,9 @@ To execute performance benchmarks comparing the AST Interpreter vs VM (No Poolin
 ```bash
 haxe --library digigun.scripting.hx --class-path test --main haxiom.TestVMPerformance -js bin/test_perf.js && node bin/test_perf.js
 ```
-
----
-
-## Future Plans
-
-* **Enhanced Async/Await VM Support**: Deep integration of non-blocking multitasking inside the stack-based VM. To remain 100% syntactically valid Haxe and linter-friendly, this will utilize `@:haxiom.async` function metadata and magic FFI method calls like `Haxiom.await(promise)`.
-* **Unified Scripting Host Bridge**: Abstract and unify FFI, class registration, and global bindings to allow Haxiom, Wren, and future scripting engines to be fully hot-swappable with zero host code changes.
-* **Dart-Subset Scripting Engine**: Implement a lightweight, class-based, dynamic Dart-subset interpreter and stack-based VM as a clean, quirk-free third scripting engine candidate.
-
 ---
 
 ## License
 
 Part of the **Digigun** ecosystem. Licensed under the MIT License.
+
