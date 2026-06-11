@@ -2453,6 +2453,15 @@ class TestHaxiom {
         if (bcResult.sum != 30) throw "Bytecode persistence execution failed: sum=" + bcResult.sum;
         if (bcResult.switchRes != "hundred") throw "Bytecode persistence execution failed: switchRes=" + bcResult.switchRes;
 
+        // Verify BytecodeChunk.getBytes() and BytecodeChunk.fromBytes() direct APIs
+        var ast72 = bcLoaderEngine.compile(script72);
+        var chunk72 = BytecodeCompiler.compile(ast72);
+        var chunkBytes = chunk72.getBytes();
+        var deserializedChunk = VM.BytecodeChunk.fromBytes(chunkBytes);
+        var directResult = bcLoaderEngine.interp.executeChunk(deserializedChunk);
+        if (directResult.sum != 30) throw "Direct getBytes/fromBytes execution failed: sum=" + directResult.sum;
+        if (directResult.switchRes != "hundred") throw "Direct getBytes/fromBytes execution failed: switchRes=" + directResult.switchRes;
+
         // 3. VM Bytecode Error Recovery Test
         var script72_error = "
             var a = 200;

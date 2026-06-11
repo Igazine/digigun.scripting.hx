@@ -94,6 +94,14 @@ class BytecodeChunk {
         this.positions = positions;
         this.maxSlots = maxSlots;
     }
+
+    public function getBytes():haxe.io.Bytes {
+        return haxiom.Serializer.serializeBytecode(this);
+    }
+
+    public static function fromBytes(bytes:haxe.io.Bytes):BytecodeChunk {
+        return haxiom.Serializer.deserializeBytecode(bytes);
+    }
 }
 
 class VMCallFrame {
@@ -114,11 +122,57 @@ class VMCallFrame {
 }
 
 class VM {
+    public static var enablePooling:Bool = true;
+    static var framePool:Array<VMCallFrame> = [];
+
+    public static function obtainFrame(chunk:BytecodeChunk, ip:Int, scope:Scope, methodName:String):VMCallFrame {
+        var frame:VMCallFrame = null;
+        if (enablePooling && framePool.length > 0) {
+            frame = framePool.pop();
+            frame.chunk = chunk;
+            frame.ip = ip;
+            frame.scope = scope;
+            frame.methodName = methodName;
+            #if haxe4
+            frame.tryStack.resize(0);
+            #else
+            frame.tryStack = [];
+            #end
+            if (frame.locals.length < chunk.maxSlots) {
+                frame.locals = [for (i in 0...chunk.maxSlots) null];
+            } else {
+                for (i in 0...chunk.maxSlots) {
+                    frame.locals[i] = null;
+                }
+            }
+        } else {
+            frame = new VMCallFrame(chunk, ip, scope, methodName);
+        }
+        return frame;
+    }
+
+    public static function recycleFrame(frame:VMCallFrame):Void {
+        if (frame == null) return;
+        if (!enablePooling) return;
+        frame.chunk = null;
+        frame.scope = null;
+        frame.methodName = null;
+        for (i in 0...frame.locals.length) {
+            frame.locals[i] = null;
+        }
+        #if haxe4
+        frame.tryStack.resize(0);
+        #else
+        frame.tryStack = [];
+        #end
+        framePool.push(frame);
+    }
+
     public static function runChunk(interp:Interp, chunk:BytecodeChunk, scope:Scope, ?currentThis:Dynamic, ?methodName:String = "toplevel", ?args:Array<Dynamic>):Dynamic {
         var stack:Array<Dynamic> = [];
         var callFrames:Array<VMCallFrame> = [];
         
-        var frame = new VMCallFrame(chunk, 0, scope, methodName);
+        var frame = obtainFrame(chunk, 0, scope, methodName);
         if (args != null) {
             for (i in 0...args.length) {
                 if (i < frame.locals.length) {
@@ -137,19 +191,21 @@ class VM {
             return frame.chunk.positions[frame.ip] != null ? frame.chunk.positions[frame.ip] : { line: 1, col: 1 };
         }
 
-        while (true) {
-            try {
-                if (frame.ip >= inst.length) {
-                    if (callFrames.length > 1) {
-                        callFrames.pop();
-                        frame = callFrames[callFrames.length - 1];
-                        inst = frame.chunk.instructions;
-                        consts = frame.chunk.constants;
-                        posTable = frame.chunk.positions;
-                        continue;
+        try {
+            while (true) {
+                try {
+                    if (frame.ip >= inst.length) {
+                        if (callFrames.length > 1) {
+                            var popped = callFrames.pop();
+                            recycleFrame(popped);
+                            frame = callFrames[callFrames.length - 1];
+                            inst = frame.chunk.instructions;
+                            consts = frame.chunk.constants;
+                            posTable = frame.chunk.positions;
+                            continue;
+                        }
+                        break;
                     }
-                    break;
-                }
                 
                 // Track source position in interpreter for stack traces
                 var currentFramePos = frame.chunk.positions[frame.ip];
@@ -401,14 +457,16 @@ class VM {
                     case OP_RETURN:
                         var res = stack.pop();
                         if (callFrames.length > 1) {
-                            callFrames.pop();
+                            var popped = callFrames.pop();
+                            recycleFrame(popped);
                             frame = callFrames[callFrames.length - 1];
                             inst = frame.chunk.instructions;
                             consts = frame.chunk.constants;
                             posTable = frame.chunk.positions;
                             stack.push(res);
                         } else {
-                            return res;
+                            stack.push(res);
+                            break;
                         }
 
                     case OP_GET_FIELD:
@@ -499,6 +557,7 @@ class VM {
                         var proto = consts[protoIdx];
                         var closureScope = frame.scope;
                         closureScope.markCaptured();
+                        var creationPos = currentPos();
                         
                         var func = (callArgs:Array<Dynamic>) -> {
                             var fScope = Scope.create(closureScope);
@@ -509,7 +568,7 @@ class VM {
                                 fScope.declare(arg.name, val, arg.type);
                             }
                             
-                            interp.pushFrame(proto.name != null ? proto.name : "anonymous", currentPos());
+                            interp.pushFrame(proto.name != null ? proto.name : "anonymous", creationPos);
                             try {
                                 var res = VM.runChunk(interp, proto.bodyChunk, fScope, interp.currentThis, proto.name != null ? proto.name : "anonymous", callArgs);
                                 if (proto.retType != null && interp.typeToString(proto.retType) == "Void") {
@@ -945,7 +1004,8 @@ class VM {
                         foundHandler = true;
                         break;
                     }
-                    callFrames.pop();
+                    var popped = callFrames.pop();
+                    recycleFrame(popped);
                 }
                 if (foundHandler) {
                     continue;
@@ -953,8 +1013,17 @@ class VM {
                 throw e;
             }
         }
-
-        return stack.length > 0 ? stack[stack.length - 1] : null;
+            var res = stack.length > 0 ? stack[stack.length - 1] : null;
+            for (f in callFrames) {
+                recycleFrame(f);
+            }
+            return res;
+        } catch (e:Dynamic) {
+            for (f in callFrames) {
+                recycleFrame(f);
+            }
+            throw e;
+        }
     }
 }
 
