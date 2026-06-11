@@ -14,6 +14,7 @@ class TestHXBCSecurityDebug {
         testDebugSymbolsAndLocalsDump();
         testEngineExposureBlockage();
         testAutoExecuteMain();
+        testNativeClassCasting();
         
         trace("SUCCESS: All HXBC Security and Debug Symbols tests passed!");
     }
@@ -234,5 +235,32 @@ class TestHXBCSecurityDebug {
         }
 
         trace("SUCCESS: Automatic main execution verified.");
+    }
+
+    static function testNativeClassCasting() {
+        var engine = new Haxiom();
+        engine.useVM = true;
+        
+        FFI.registerClass(engine, "haxe.crypto.Sha1", haxe.crypto.Sha1);
+
+        var script = "
+            import haxe.crypto.Sha1;
+            class CastDemo {
+                static public function main() {
+                    var rawObj:Dynamic = new Sha1();
+                    var casted = cast(rawObj, Sha1);
+                }
+            }
+        ";
+        
+        engine.interpret(script);
+        
+        // Test AST mode as well
+        var engineAST = new Haxiom();
+        engineAST.useVM = false;
+        FFI.registerClass(engineAST, "haxe.crypto.Sha1", haxe.crypto.Sha1);
+        engineAST.interpret(script);
+
+        trace("SUCCESS: Native class casting verified.");
     }
 }

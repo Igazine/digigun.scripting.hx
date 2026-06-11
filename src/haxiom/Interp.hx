@@ -4381,7 +4381,18 @@ class Interp {
                             return;
                         }
 
-                        var nativeClass = resolveNativeClass(typeName);
+                        var nativeClass:Dynamic = null;
+                        if (resolvedTypePathVal != null) {
+                            if (!Std.isOfType(resolvedTypePathVal, HaxiomClass) && 
+                                !Std.isOfType(resolvedTypePathVal, HaxiomInterface) && 
+                                !Std.isOfType(resolvedTypePathVal, HaxiomEnum) && 
+                                !Std.isOfType(resolvedTypePathVal, HaxiomAbstract)) {
+                                nativeClass = resolvedTypePathVal;
+                            }
+                        }
+                        if (nativeClass == null) {
+                            nativeClass = resolveNativeClass(typeName);
+                        }
                         if (nativeClass != null) {
                             if (val == null) return;
                             if (!Std.isOfType(val, nativeClass)) throw 'Type mismatch: expected $typeName but got ${val == null ? "null" : Std.string(val)}';
