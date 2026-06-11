@@ -4956,6 +4956,9 @@ class Interp {
     }
 
     function resolveNativeClass(fqName:String):Dynamic {
+        if (fqName == "haxiom.Haxiom" || fqName == "haxiom.Interp" || fqName == "haxiom.VM" || fqName == "haxiom.FFI") {
+            return null;
+        }
         if (!isImportWhitelisted(fqName)) {
             return null;
         }

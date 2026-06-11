@@ -12,6 +12,7 @@ class TestHXBCSecurityDebug {
         testBytecodeEncryption();
         testBytecodeObfuscationCheck();
         testDebugSymbolsAndLocalsDump();
+        testEngineExposureBlockage();
         
         trace("SUCCESS: All HXBC Security and Debug Symbols tests passed!");
     }
@@ -162,5 +163,40 @@ class TestHXBCSecurityDebug {
         if (!caughtDebug) throw "Expected exception to be thrown by debug bytecode";
 
         trace("SUCCESS: Debug Symbols and Locals Dump verified.");
+    }
+
+    static function testEngineExposureBlockage() {
+        var engine = new Haxiom();
+        engine.importWhitelist = null; // Open up the whitelist to test override
+
+        var script = "
+            import haxiom.Haxiom;
+            var h = new Haxiom();
+        ";
+        var caught = false;
+        try {
+            engine.interpret(script);
+        } catch (e:Dynamic) {
+            caught = true;
+        }
+        if (!caught) {
+            throw "Engine exposure blockage failed: guest script was able to load haxiom.Haxiom!";
+        }
+
+        var script2 = "
+            import haxiom.Interp;
+            var i = new Interp();
+        ";
+        var caught2 = false;
+        try {
+            engine.interpret(script2);
+        } catch (e:Dynamic) {
+            caught2 = true;
+        }
+        if (!caught2) {
+            throw "Engine exposure blockage failed: guest script was able to load haxiom.Interp!";
+        }
+
+        trace("SUCCESS: Engine exposure blockage verified.");
     }
 }
