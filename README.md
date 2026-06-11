@@ -395,6 +395,8 @@ haxe --library digigun.scripting.hx --class-path test --main haxiom.TestVMPerfor
 ## Future Plans
 
 * **Enhanced Async/Await VM Support**: Deep integration of non-blocking multitasking inside the stack-based VM.
+* **Unified Scripting Host Bridge**: Abstract and unify FFI, class registration, and global bindings to allow Haxiom, Wren, and future scripting engines to be fully hot-swappable with zero host code changes.
+* **Dart-Subset Scripting Engine**: Implement a lightweight, class-based, dynamic Dart-subset interpreter and stack-based VM as a clean, quirk-free third scripting engine candidate.
 
 ---
 
