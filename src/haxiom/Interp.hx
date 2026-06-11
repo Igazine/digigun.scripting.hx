@@ -3047,6 +3047,28 @@ class Interp {
                             }
                         }
                     }
+                    
+                    // Check local package namespaces in globals
+                    var parts = parentPath.split(".");
+                    var currentObj:Dynamic = null;
+                    if (scope.exists(parts[0])) {
+                        currentObj = scope.get(parts[0]);
+                        for (i in 1...parts.length) {
+                            if (currentObj != null && Reflect.hasField(currentObj, parts[i])) {
+                                currentObj = Reflect.field(currentObj, parts[i]);
+                            } else {
+                                currentObj = null;
+                                break;
+                            }
+                        }
+                    }
+                    if (currentObj != null) {
+                        for (field in Reflect.fields(currentObj)) {
+                            if (field != "__isHaxiomPackage") {
+                                scope.declare(field, Reflect.field(currentObj, field));
+                            }
+                        }
+                    }
                     return null;
                 }
                 
