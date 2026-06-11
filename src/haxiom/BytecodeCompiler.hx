@@ -55,7 +55,7 @@ class BytecodeCompiler {
         if (compiler.debugMode) {
             compiler.closeAllActiveLocals();
         }
-        return new BytecodeChunk(compiler.instructions, compiler.constants, compiler.positions, compiler.maxSlots, compiler.isAsync, compiler.debugMode ? compiler.debugSymbols : null);
+        return new BytecodeChunk(compiler.instructions, compiler.constants, compiler.debugMode ? compiler.positions : [], compiler.maxSlots, compiler.isAsync, compiler.debugMode ? compiler.debugSymbols : null);
     }
 
     function declareLocal(name:String, type:Null<TypeDecl>):LocalVar {

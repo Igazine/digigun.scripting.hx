@@ -2468,7 +2468,7 @@ class TestHaxiom {
             throw 'Bytecode Explicit Error!';
         ";
         var errCompileEngine = new haxiom.Haxiom();
-        var errBytes = errCompileEngine.compileToBytecodeBytes(script72_error, "error_bytecode.hx");
+        var errBytes = errCompileEngine.compileToBytecodeBytes(script72_error, "error_bytecode.hx", null, true);
         
         var errRunEngine = new haxiom.Haxiom();
         errRunEngine.useVM = true;

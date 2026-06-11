@@ -591,6 +591,7 @@ class Interp {
     }
 
     public var useVM:Bool = false;
+    public var debugMode:Bool = true;
 
     public function execute(expr:Expr):Dynamic {
         currentPackage = [];
@@ -600,7 +601,7 @@ class Interp {
         lastEvalPos = expr.pos;
         try {
             if (useVM) {
-                var chunk = BytecodeCompiler.compile(expr);
+                var chunk = BytecodeCompiler.compile(expr, null, true, false, debugMode);
                 return VM.runChunk(this, chunk, globals, null, "toplevel");
             }
             return eval(expr, globals);
@@ -1776,7 +1777,7 @@ class Interp {
                                         if (useVM) {
                                             var cDyn:Dynamic = constr;
                                             if (cDyn.bytecodeChunk == null) {
-                                                cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false);
+                                                cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode);
                                             }
                                             haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, currentThis, parentCls.name + ".new", args);
                                         } else {
@@ -2373,7 +2374,7 @@ class Interp {
                             if (useVM) {
                                 var cDyn:Dynamic = constr;
                                 if (cDyn.bytecodeChunk == null) {
-                                    cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false);
+                                    cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode);
                                 }
                                 haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, cls.name + ".new", args);
                             } else {
@@ -2536,7 +2537,7 @@ class Interp {
                                     if (useVM) {
                                         var cDyn:Dynamic = constr;
                                         if (cDyn.bytecodeChunk == null) {
-                                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false);
+                                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode);
                                         }
                                         haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, cls.name + ".new", args);
                                     } else {
@@ -2584,7 +2585,7 @@ class Interp {
                                     if (useVM) {
                                         var cDyn:Dynamic = constr;
                                         if (cDyn.bytecodeChunk == null) {
-                                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false);
+                                            cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode);
                                         }
                                         haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, abs.name + ".new", args);
                                     } else {
@@ -3798,7 +3799,7 @@ class Interp {
                     if (useVM) {
                         var mDyn:Dynamic = method;
                         if (mDyn.bytecodeChunk == null) {
-                            mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, isMethodAsync);
+                            mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, isMethodAsync, debugMode);
                         }
                         res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, obj, className + "." + method.name, callArgs);
                     } else {

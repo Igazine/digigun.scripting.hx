@@ -45,8 +45,32 @@ class Serializer {
         return result;
     }
 
+    static function writeVarInt(out:BytesOutput, v:Int) {
+        if (v >= 0 && v < 240) {
+            out.writeByte(v);
+        } else if (v >= 0 && v < 65536) {
+            out.writeByte(240);
+            out.writeUInt16(v);
+        } else {
+            out.writeByte(241);
+            out.writeInt32(v);
+        }
+    }
+
+    static function readVarInt(input:BytesInput):Int {
+        var b = input.readByte();
+        if (b < 240) {
+            return b;
+        } else if (b == 240) {
+            return input.readUInt16();
+        } else {
+            return input.readInt32();
+        }
+    }
+
     public static function serializeBytecode(chunk:BytecodeChunk, ?key:HXBCKey):Bytes {
         var payloadOut = new BytesOutput();
+        payloadOut.bigEndian = false;
         
         // 1. Build string pool for filenames and variable names
         var stringPool:Array<String> = [];
@@ -77,53 +101,78 @@ class Serializer {
         }
         
         // Write stringPool length and items
-        payloadOut.writeInt32(stringPool.length);
+        writeVarInt(payloadOut, stringPool.length);
         for (s in stringPool) {
             var sBytes = Bytes.ofString(s);
-            payloadOut.writeInt32(sBytes.length);
+            writeVarInt(payloadOut, sBytes.length);
             payloadOut.write(sBytes);
         }
         
         // 2. Write instructions
         var insts = chunk.instructions != null ? chunk.instructions : [];
-        payloadOut.writeInt32(insts.length);
+        writeVarInt(payloadOut, insts.length);
         for (inst in insts) {
-            payloadOut.writeInt32(inst);
+            writeVarInt(payloadOut, inst);
         }
         
-        // 3. Write positions
+        // 3. Write positions (RLE)
         var positions = chunk.positions != null ? chunk.positions : [];
-        payloadOut.writeInt32(positions.length);
-        for (pos in positions) {
+        var rlePositions = [];
+        if (positions.length > 0) {
+            var currentPos = positions[0];
+            var count = 1;
+            for (i in 1...positions.length) {
+                var p = positions[i];
+                var identical = false;
+                if (currentPos == null && p == null) {
+                    identical = true;
+                } else if (currentPos != null && p != null) {
+                    identical = currentPos.line == p.line && currentPos.col == p.col && currentPos.file == p.file;
+                }
+                if (identical) {
+                    count++;
+                } else {
+                    rlePositions.push({ pos: currentPos, count: count });
+                    currentPos = p;
+                    count = 1;
+                }
+            }
+            rlePositions.push({ pos: currentPos, count: count });
+        }
+        
+        writeVarInt(payloadOut, rlePositions.length);
+        for (item in rlePositions) {
+            writeVarInt(payloadOut, item.count);
+            var pos = item.pos;
             if (pos == null) {
-                payloadOut.writeInt32(0);
-                payloadOut.writeInt32(0);
-                payloadOut.writeInt32(-1);
+                writeVarInt(payloadOut, 0);
+                writeVarInt(payloadOut, 0);
+                writeVarInt(payloadOut, 0); // fileIdx + 1 = 0
             } else {
-                payloadOut.writeInt32(pos.line);
-                payloadOut.writeInt32(pos.col);
+                writeVarInt(payloadOut, pos.line);
+                writeVarInt(payloadOut, pos.col);
                 var fileIdx = -1;
                 if (pos.file != null) {
                     fileIdx = stringPoolMap.get(pos.file);
                 }
-                payloadOut.writeInt32(fileIdx);
+                writeVarInt(payloadOut, fileIdx + 1);
             }
         }
         
         // 4. Write constants via Serializer
         var constsStr = haxe.Serializer.run(chunk.constants != null ? chunk.constants : []);
         var constsBytes = Bytes.ofString(constsStr);
-        payloadOut.writeInt32(constsBytes.length);
+        writeVarInt(payloadOut, constsBytes.length);
         payloadOut.write(constsBytes);
 
         // 5. Write debug symbols
-        payloadOut.writeInt32(debugSymbols.length);
+        writeVarInt(payloadOut, debugSymbols.length);
         for (sym in debugSymbols) {
             var nameIdx = stringPoolMap.get(sym.name);
-            payloadOut.writeInt32(nameIdx);
-            payloadOut.writeInt32(sym.slot);
-            payloadOut.writeInt32(sym.startIp);
-            payloadOut.writeInt32(sym.endIp);
+            writeVarInt(payloadOut, nameIdx);
+            writeVarInt(payloadOut, sym.slot);
+            writeVarInt(payloadOut, sym.startIp);
+            writeVarInt(payloadOut, sym.endIp);
         }
         
         // Compute Adler32 checksum of the unencrypted payload bytes
@@ -139,6 +188,7 @@ class Serializer {
 
         // Assemble final output
         var headerOut = new BytesOutput();
+        headerOut.bigEndian = false;
         headerOut.writeString("HXBC");
         headerOut.writeByte(1); // Version 1
         
@@ -155,6 +205,7 @@ class Serializer {
 
     public static function deserializeBytecode(bytes:Bytes, ?key:HXBCKey):BytecodeChunk {
         var input = new BytesInput(bytes);
+        input.bigEndian = false;
         if (input.length < 14) {
             throw "Invalid bytecode: data too short";
         }
@@ -201,43 +252,48 @@ class Serializer {
         }
         
         var payloadInput = new BytesInput(payloadBytes);
+        payloadInput.bigEndian = false;
         
         // 1. Read string pool
-        var stringPoolLength = payloadInput.readInt32();
+        var stringPoolLength = readVarInt(payloadInput);
         var stringPool = [for (i in 0...stringPoolLength) {
-            var len = payloadInput.readInt32();
+            var len = readVarInt(payloadInput);
             payloadInput.readString(len);
         }];
         
         // 2. Read instructions
-        var instsLength = payloadInput.readInt32();
-        var instructions = [for (i in 0...instsLength) payloadInput.readInt32()];
+        var instsLength = readVarInt(payloadInput);
+        var instructions = [for (i in 0...instsLength) readVarInt(payloadInput)];
         
-        // 3. Read positions
-        var posLength = payloadInput.readInt32();
-        var positions = [for (i in 0...posLength) {
-            var line = payloadInput.readInt32();
-            var col = payloadInput.readInt32();
-            var fileIdx = payloadInput.readInt32();
+        // 3. Read positions (RLE)
+        var rleLength = readVarInt(payloadInput);
+        var positions = [];
+        for (i in 0...rleLength) {
+            var count = readVarInt(payloadInput);
+            var line = readVarInt(payloadInput);
+            var col = readVarInt(payloadInput);
+            var fileIdx = readVarInt(payloadInput) - 1;
             var file = (fileIdx >= 0 && fileIdx < stringPool.length) ? stringPool[fileIdx] : null;
-            var pos:haxiom.AST.Pos = { line: line, col: col, file: file };
-            pos;
-        }];
+            var pos:haxiom.AST.Pos = (line == 0 && col == 0 && fileIdx == -1) ? null : { line: line, col: col, file: file };
+            for (j in 0...count) {
+                positions.push(pos);
+            }
+        }
         
         // 4. Read constants
-        var constsLen = payloadInput.readInt32();
+        var constsLen = readVarInt(payloadInput);
         var constsStr = payloadInput.readString(constsLen);
         var constants:Array<Dynamic> = haxe.Unserializer.run(constsStr);
         
         // 5. Read debug symbols
-        var debugSymLength = payloadInput.readInt32();
+        var debugSymLength = readVarInt(payloadInput);
         var debugSymbols:Array<DebugSymbol> = null;
         if (debugSymLength > 0) {
             debugSymbols = [for (i in 0...debugSymLength) {
-                var nameIdx = payloadInput.readInt32();
-                var slot = payloadInput.readInt32();
-                var startIp = payloadInput.readInt32();
-                var endIp = payloadInput.readInt32();
+                var nameIdx = readVarInt(payloadInput);
+                var slot = readVarInt(payloadInput);
+                var startIp = readVarInt(payloadInput);
+                var endIp = readVarInt(payloadInput);
                 var name = (nameIdx >= 0 && nameIdx < stringPool.length) ? stringPool[nameIdx] : "";
                 var sym:DebugSymbol = { name: name, slot: slot, startIp: startIp, endIp: endIp };
                 sym;

@@ -29,6 +29,10 @@ class Haxiom implements common.IScriptEngine {
     public var preprocessorFlags(get, never):Map<String, Bool>;
     inline function get_preprocessorFlags() return interp.preprocessorFlags;
 
+    public var debugMode(get, set):Bool;
+    inline function get_debugMode() return interp.debugMode;
+    inline function set_debugMode(v) return interp.debugMode = v;
+
     public function new() {
         interp = new Interp();
         FFI.exposedModules.set("haxiom.AST", ["haxiom.ExprDef", "haxiom.TypeDecl"]);
