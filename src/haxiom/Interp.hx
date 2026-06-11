@@ -1518,6 +1518,18 @@ class Interp {
                         
                         var m = findMethod(inst.cls, name);
                         if (m != null) return bindMethod(currentThis, m);
+                    } else if (Std.isOfType(currentThis, HaxiomClass)) {
+                        var cls:HaxiomClass = cast currentThis;
+                        var fDef = findFieldDef(cls, name);
+                        if (fDef != null && fDef.isStatic) {
+                            if (fDef.property != null && fDef.property.get == "get" && !isInsideAccessor(name)) {
+                                var m = findStaticMethod(cls, "get_" + name);
+                                if (m != null) return Reflect.callMethod(null, bindMethod(currentThis, m), []);
+                            }
+                            if (cls.staticFields.exists(name)) return cls.staticFields.get(name);
+                        }
+                        var m = findStaticMethod(cls, name);
+                        if (m != null) return bindMethod(currentThis, m);
                     } else {
                         // Native Haxe object field
                         var f = Reflect.field(currentThis, name);
@@ -1566,6 +1578,21 @@ class Interp {
                                     checkType(val, fDef.type, scope, inst.genericBindings);
                                 }
                                 inst.fields.set(name, val);
+                            } else if (Std.isOfType(currentThis, HaxiomClass)) {
+                                var cls:HaxiomClass = cast currentThis;
+                                var fDef = findFieldDef(cls, name);
+                                if (fDef != null && fDef.isStatic) {
+                                    if (fDef.property != null && fDef.property.set == "set" && !isInsideAccessor(name)) {
+                                        var m = findStaticMethod(cls, "set_" + name);
+                                        if (m != null) return Reflect.callMethod(null, bindMethod(currentThis, m), [val]);
+                                    }
+                                    if (fDef.type != null) {
+                                        checkType(val, fDef.type, scope);
+                                    }
+                                    cls.staticFields.set(name, val);
+                                } else {
+                                    scope.declare(name, val);
+                                }
                             } else if (Std.isOfType(currentThis, HaxiomAbstractInstance)) {
                                 var inst:HaxiomAbstractInstance = cast currentThis;
                                 var fDef = inst.abstractType.fields.get(name);

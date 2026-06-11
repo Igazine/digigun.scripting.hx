@@ -51,6 +51,7 @@ class Haxiom implements common.IScriptEngine {
             var tokens = lexer.tokenize();
             var parser = new Parser(tokens, fileInfo);
             var ast = parser.parse();
+            ast = appendMainCallIfPresent(ast);
             
             // Pass 1: Scan and register macro definitions in interpreter scope
             haxiom.MacroExpander.registerMacros(ast, interp);
@@ -163,5 +164,76 @@ class Haxiom implements common.IScriptEngine {
 
     public function setGlobal(name:String, value:Dynamic):Void {
         interp.globals.declare(name, value);
+    }
+
+    static function appendMainCallIfPresent(expr:haxiom.AST.Expr):haxiom.AST.Expr {
+        var mainClass:String = null;
+        
+        function checkExpr(e:haxiom.AST.Expr) {
+            if (e == null) return;
+            switch (e.def) {
+                case EClass(name, _, methods, _, _, _, _):
+                    for (m in methods) {
+                        if (m.name == "main" && m.isStatic) {
+                            mainClass = name;
+                            break;
+                        }
+                    }
+                case EBlock(exprs):
+                    for (child in exprs) {
+                        checkExpr(child);
+                        if (mainClass != null) break;
+                    }
+                default:
+            }
+        }
+        
+        checkExpr(expr);
+        
+        if (mainClass != null) {
+            var hasExistingCall = false;
+            function checkForCall(e:haxiom.AST.Expr) {
+                if (e == null) return;
+                switch (e.def) {
+                    case ECall(sub, _):
+                        switch (sub.def) {
+                            case EField(ident, field):
+                                if (field == "main") {
+                                    switch (ident.def) {
+                                        case EIdent(name):
+                                            if (name == mainClass) {
+                                                hasExistingCall = true;
+                                            }
+                                        default:
+                                    }
+                                }
+                            default:
+                        }
+                    case EBlock(exprs):
+                        for (child in exprs) {
+                            checkForCall(child);
+                        }
+                    default:
+                }
+            }
+            checkForCall(expr);
+            
+            if (!hasExistingCall) {
+                var pos = expr.pos;
+                var identExpr:haxiom.AST.Expr = { def: EIdent(mainClass), pos: pos };
+                var fieldExpr:haxiom.AST.Expr = { def: EField(identExpr, "main"), pos: pos };
+                var callExpr:haxiom.AST.Expr = { def: ECall(fieldExpr, []), pos: pos };
+                
+                switch (expr.def) {
+                    case EBlock(exprs):
+                        exprs.push(callExpr);
+                        return expr;
+                    default:
+                        return { def: EBlock([expr, callExpr]), pos: pos };
+                }
+            }
+        }
+        
+        return expr;
     }
 }

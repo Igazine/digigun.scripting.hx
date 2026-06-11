@@ -291,8 +291,22 @@ class VM {
                                 throw "Cannot use 'super' outside of a class instance constructor or method";
                             }
                         } else {
-                            if (!frame.scope.exists(name) && interp.currentThis != null && Std.isOfType(interp.currentThis, HaxiomInstance)) {
-                                stack.push(interp.evalField(interp.currentThis, name, frame.scope, currentPos()));
+                            if (!frame.scope.exists(name) && interp.currentThis != null) {
+                                if (Std.isOfType(interp.currentThis, HaxiomInstance)) {
+                                    stack.push(interp.evalField(interp.currentThis, name, frame.scope, currentPos()));
+                                } else if (Std.isOfType(interp.currentThis, HaxiomClass)) {
+                                    var cls:HaxiomClass = cast interp.currentThis;
+                                    var fDef = interp.findFieldDef(cls, name);
+                                    var isStaticField = fDef != null && fDef.isStatic;
+                                    var isStaticMethod = interp.findStaticMethod(cls, name) != null;
+                                    if (isStaticField || isStaticMethod) {
+                                        stack.push(interp.evalField(interp.currentThis, name, frame.scope, currentPos()));
+                                    } else {
+                                        stack.push(frame.scope.get(name));
+                                    }
+                                } else {
+                                    stack.push(frame.scope.get(name));
+                                }
                             } else {
                                 stack.push(frame.scope.get(name));
                             }
@@ -305,22 +319,44 @@ class VM {
                         if (name == "this") {
                             interp.currentThis = val;
                         } else {
-                            if (!frame.scope.exists(name) && interp.currentThis != null && Std.isOfType(interp.currentThis, HaxiomInstance)) {
-                                var inst:HaxiomInstance = cast interp.currentThis;
-                                var fDef = interp.findFieldDef(inst.cls, name);
-                                if (fDef != null && fDef.property != null && fDef.property.set == "set" && !interp.isInsideAccessor(name)) {
-                                    var m = interp.findMethod(inst.cls, "set_" + name);
-                                    if (m != null) {
-                                        Reflect.callMethod(null, interp.bindMethod(interp.currentThis, m), [val]);
+                            if (!frame.scope.exists(name) && interp.currentThis != null) {
+                                if (Std.isOfType(interp.currentThis, HaxiomInstance)) {
+                                    var inst:HaxiomInstance = cast interp.currentThis;
+                                    var fDef = interp.findFieldDef(inst.cls, name);
+                                    if (fDef != null && fDef.property != null && fDef.property.set == "set" && !interp.isInsideAccessor(name)) {
+                                        var m = interp.findMethod(inst.cls, "set_" + name);
+                                        if (m != null) {
+                                            Reflect.callMethod(null, interp.bindMethod(interp.currentThis, m), [val]);
+                                        }
+                                    } else {
+                                        if (fDef != null && fDef.isFinal && interp.currentConstructorInstance != inst) {
+                                            throw 'Cannot reassign final field $name outside of constructor';
+                                        }
+                                        if (fDef != null && fDef.type != null) {
+                                            interp.checkType(val, fDef.type, frame.scope, inst.genericBindings);
+                                        }
+                                        inst.fields.set(name, val);
+                                    }
+                                } else if (Std.isOfType(interp.currentThis, HaxiomClass)) {
+                                    var cls:HaxiomClass = cast interp.currentThis;
+                                    var fDef = interp.findFieldDef(cls, name);
+                                    if (fDef != null && fDef.isStatic) {
+                                        if (fDef.property != null && fDef.property.set == "set" && !interp.isInsideAccessor(name)) {
+                                            var m = interp.findStaticMethod(cls, "set_" + name);
+                                            if (m != null) {
+                                                Reflect.callMethod(null, interp.bindMethod(interp.currentThis, m), [val]);
+                                            }
+                                        } else {
+                                            if (fDef.type != null) {
+                                                interp.checkType(val, fDef.type, frame.scope);
+                                            }
+                                            cls.staticFields.set(name, val);
+                                        }
+                                    } else {
+                                        frame.scope.checkAndSet(name, val, interp);
                                     }
                                 } else {
-                                    if (fDef != null && fDef.isFinal && interp.currentConstructorInstance != inst) {
-                                        throw 'Cannot reassign final field $name outside of constructor';
-                                    }
-                                    if (fDef != null && fDef.type != null) {
-                                        interp.checkType(val, fDef.type, frame.scope, inst.genericBindings);
-                                    }
-                                    inst.fields.set(name, val);
+                                    frame.scope.checkAndSet(name, val, interp);
                                 }
                             } else {
                                 frame.scope.checkAndSet(name, val, interp);
@@ -1159,8 +1195,8 @@ class VM {
         var clsName = cls != null ? Type.getClassName(cls) : "null";
         var hasThenField = Reflect.field(val, "then") != null;
         #if js
-        var isInstance = (untyped __js__("val instanceof haxiom_Future"));
-        var ctorStr = (untyped __js__("val && val.constructor ? val.constructor.toString() : 'null'"));
+        var isInstance = js.Syntax.code("({0} instanceof haxiom_Future)", val);
+        var ctorStr = js.Syntax.code("({0} && {0}.constructor ? {0}.constructor.toString() : 'null')", val);
         haxe.Log.trace("DEBUG registerAwait: val=" + val + " class=" + clsName + " hasThen=" + hasThenField + " instanceof=" + isInstance + " ctor=" + ctorStr, null);
         #else
         haxe.Log.trace("DEBUG registerAwait: val=" + val + " class=" + clsName + " hasThen=" + hasThenField, null);

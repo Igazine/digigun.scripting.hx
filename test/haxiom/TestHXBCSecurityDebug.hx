@@ -13,6 +13,7 @@ class TestHXBCSecurityDebug {
         testBytecodeObfuscationCheck();
         testDebugSymbolsAndLocalsDump();
         testEngineExposureBlockage();
+        testAutoExecuteMain();
         
         trace("SUCCESS: All HXBC Security and Debug Symbols tests passed!");
     }
@@ -198,5 +199,40 @@ class TestHXBCSecurityDebug {
         }
 
         trace("SUCCESS: Engine exposure blockage verified.");
+    }
+
+    static function testAutoExecuteMain() {
+        var engine = new Haxiom();
+        engine.useVM = true;
+
+        var script = "
+            class AutoMainDemo {
+                static public var ran:Bool = false;
+                static public function main() {
+                    ran = true;
+                }
+            }
+        ";
+
+        engine.interpret(script);
+
+        var clsVal:haxiom.Interp.HaxiomClass = cast engine.interp.globals.get("AutoMainDemo");
+        var ranVal = clsVal.staticFields.get("ran");
+        if (ranVal != true) {
+            throw "Automatic main execution failed: AutoMainDemo.main was not run!";
+        }
+
+        // Test AST mode as well
+        var engineAST = new Haxiom();
+        engineAST.useVM = false;
+        engineAST.interpret(script);
+
+        var clsValAST:haxiom.Interp.HaxiomClass = cast engineAST.interp.globals.get("AutoMainDemo");
+        var ranValAST = clsValAST.staticFields.get("ran");
+        if (ranValAST != true) {
+            throw "Automatic main execution (AST) failed: AutoMainDemo.main was not run!";
+        }
+
+        trace("SUCCESS: Automatic main execution verified.");
     }
 }
