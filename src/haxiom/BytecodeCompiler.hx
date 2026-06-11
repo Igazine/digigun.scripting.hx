@@ -3,6 +3,7 @@ package haxiom;
 import haxiom.AST;
 import haxiom.VM.Opcode;
 import haxiom.VM.BytecodeChunk;
+import haxiom.VM.DebugSymbol;
 
 typedef LoopContext = {
     var startLabel:Int;
@@ -27,13 +28,17 @@ class BytecodeCompiler {
 
     var isTopLevel:Bool = true;
     var isAsync:Bool = false;
+    var debugMode:Bool = false;
     var locals:Array<LocalVar> = [];
     var maxSlots:Int = 0;
     var capturedVars:Map<String, Bool> = new Map();
+    var debugSymbols:Array<DebugSymbol> = [];
+    var activeLocals:Array<{name:String, slot:Int, startIp:Int}> = [];
 
-    public function new(?args:Array<{name:String, type:Null<TypeDecl>}>, ?isTopLevel:Bool = true, ?isAsync:Bool = false) {
+    public function new(?args:Array<{name:String, type:Null<TypeDecl>}>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false) {
         this.isTopLevel = isTopLevel;
         this.isAsync = isAsync;
+        this.debugMode = debugMode;
         if (args != null && !isTopLevel) {
             for (arg in args) {
                 declareLocal(arg.name, arg.type);
@@ -41,13 +46,16 @@ class BytecodeCompiler {
         }
     }
 
-    public static function compile(expr:Expr, ?args:Array<{name:String, type:Null<TypeDecl>}>, ?isTopLevel:Bool = true, ?isAsync:Bool = false):BytecodeChunk {
-        var compiler = new BytecodeCompiler(args, isTopLevel, isAsync);
+    public static function compile(expr:Expr, ?args:Array<{name:String, type:Null<TypeDecl>}>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false):BytecodeChunk {
+        var compiler = new BytecodeCompiler(args, isTopLevel, isAsync, debugMode);
         if (!isTopLevel) {
             compiler.findCapturedVars(expr, new Map<String, Bool>(), compiler.capturedVars);
         }
         compiler.compileExpr(expr);
-        return new BytecodeChunk(compiler.instructions, compiler.constants, compiler.positions, compiler.maxSlots, compiler.isAsync);
+        if (compiler.debugMode) {
+            compiler.closeAllActiveLocals();
+        }
+        return new BytecodeChunk(compiler.instructions, compiler.constants, compiler.positions, compiler.maxSlots, compiler.isAsync, compiler.debugMode ? compiler.debugSymbols : null);
     }
 
     function declareLocal(name:String, type:Null<TypeDecl>):LocalVar {
@@ -56,6 +64,9 @@ class BytecodeCompiler {
         locals.push(loc);
         if (slot + 1 > maxSlots) {
             maxSlots = slot + 1;
+        }
+        if (debugMode) {
+            activeLocals.push({ name: name, slot: slot, startIp: instructions.length });
         }
         return loc;
     }
@@ -69,9 +80,42 @@ class BytecodeCompiler {
         return null;
     }
 
+    function closeLocal(name:String, slot:Int) {
+        var i = activeLocals.length - 1;
+        while (i >= 0) {
+            var active = activeLocals[i];
+            if (active.name == name && active.slot == slot) {
+                debugSymbols.push({
+                    name: name,
+                    slot: slot,
+                    startIp: active.startIp,
+                    endIp: instructions.length
+                });
+                activeLocals.splice(i, 1);
+                return;
+            }
+            i--;
+        }
+    }
+
+    function closeAllActiveLocals() {
+        while (activeLocals.length > 0) {
+            var active = activeLocals.pop();
+            debugSymbols.push({
+                name: active.name,
+                slot: active.slot,
+                startIp: active.startIp,
+                endIp: instructions.length
+            });
+        }
+    }
+
     function popScope() {
         while (locals.length > 0 && locals[locals.length - 1].depth == currentScopeDepth) {
-            locals.pop();
+            var loc = locals.pop();
+            if (debugMode) {
+                closeLocal(loc.name, loc.slot);
+            }
         }
         currentScopeDepth--;
     }
@@ -489,7 +533,7 @@ class BytecodeCompiler {
                 }
 
             case EFunction(name, args, retType, body):
-                var bodyChunk = BytecodeCompiler.compile(body, args, false);
+                var bodyChunk = BytecodeCompiler.compile(body, args, false, false, debugMode);
                 // Clean the body Chunk's positions so it knows its location
                 var proto = {
                     name: name,

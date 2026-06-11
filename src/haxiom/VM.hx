@@ -82,6 +82,13 @@ enum abstract Opcode(Int) from Int to Int {
     var OP_AWAIT = 74;
 }
 
+typedef DebugSymbol = {
+    var name:String;
+    var slot:Int;
+    var startIp:Int;
+    var endIp:Int;
+}
+
 @:keep
 class BytecodeChunk {
     public var instructions:Array<Int>;
@@ -89,21 +96,34 @@ class BytecodeChunk {
     public var positions:Array<Pos>;
     public var maxSlots:Int;
     public var isAsync:Bool;
+    public var debugSymbols:Null<Array<DebugSymbol>>;
 
-    public function new(instructions:Array<Int>, constants:Array<Dynamic>, positions:Array<Pos>, ?maxSlots:Int = 0, ?isAsync:Bool = false) {
+    public function new(instructions:Array<Int>, constants:Array<Dynamic>, positions:Array<Pos>, ?maxSlots:Int = 0, ?isAsync:Bool = false, ?debugSymbols:Null<Array<DebugSymbol>> = null) {
         this.instructions = instructions;
         this.constants = constants;
         this.positions = positions;
         this.maxSlots = maxSlots;
         this.isAsync = isAsync;
+        this.debugSymbols = debugSymbols;
     }
 
-    public function getBytes():haxe.io.Bytes {
-        return haxiom.Serializer.serializeBytecode(this);
+    public function getActiveLocalsAt(ip:Int):Map<Int, String> {
+        var active = new Map<Int, String>();
+        if (debugSymbols == null) return active;
+        for (sym in debugSymbols) {
+            if (ip >= sym.startIp && ip <= sym.endIp) {
+                active.set(sym.slot, sym.name);
+            }
+        }
+        return active;
     }
 
-    public static function fromBytes(bytes:haxe.io.Bytes):BytecodeChunk {
-        return haxiom.Serializer.deserializeBytecode(bytes);
+    public function getBytes(?key:haxiom.HXBCKey):haxe.io.Bytes {
+        return haxiom.Serializer.serializeBytecode(this, key);
+    }
+
+    public static function fromBytes(bytes:haxe.io.Bytes, ?key:haxiom.HXBCKey):BytecodeChunk {
+        return haxiom.Serializer.deserializeBytecode(bytes, key);
     }
 }
 
@@ -1040,6 +1060,22 @@ class VM {
                 // Rethrow control flows like Return, Break, Continue
                 throw e;
             } catch (e:Dynamic) {
+                if (callFrames.length > 0 && interp.lastActiveLocals == null) {
+                    var topFrame = callFrames[callFrames.length - 1];
+                    if (topFrame.chunk.debugSymbols != null) {
+                        var localsMap = new Map<String, Dynamic>();
+                        var errIp = topFrame.ip > 0 ? topFrame.ip - 1 : 0;
+                        var activeLocals = topFrame.chunk.getActiveLocalsAt(errIp);
+                        for (slot in activeLocals.keys()) {
+                            var name = activeLocals.get(slot);
+                            if (slot >= 0 && slot < topFrame.locals.length) {
+                                localsMap.set(name, topFrame.locals[slot]);
+                            }
+                        }
+                        interp.lastActiveLocals = localsMap;
+                    }
+                }
+                
                 var foundHandler = false;
                 while (callFrames.length > 0) {
                     var f = callFrames[callFrames.length - 1];
@@ -1058,6 +1094,7 @@ class VM {
                         frame.scope = handler.scope;
                         frame.ip = handler.catchIp;
                         foundHandler = true;
+                        interp.lastActiveLocals = null;
                         break;
                     }
                     var popped = callFrames.pop();

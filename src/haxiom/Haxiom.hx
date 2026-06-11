@@ -105,16 +105,16 @@ class Haxiom implements common.IScriptEngine {
         return result;
     }
 
-    public function compileToBytes(source:String, ?filename:String):haxe.io.Bytes {
+    public function compileToBytes(source:String, ?filename:String, ?key:HXBCKey, ?debugMode:Bool = false):haxe.io.Bytes {
         if (useVM) {
-            return compileToBytecodeBytes(source, filename);
+            return compileToBytecodeBytes(source, filename, key, debugMode);
         }
         return compileToASTBytes(source, filename);
     }
 
-    public function executeBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String):T {
+    public function executeBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String, ?key:HXBCKey):T {
         if (useVM) {
-            return executeBytecodeBytes(bytes, sourceCode);
+            return executeBytecodeBytes(bytes, sourceCode, key);
         }
         return executeASTBytes(bytes, sourceCode);
     }
@@ -125,11 +125,11 @@ class Haxiom implements common.IScriptEngine {
         return Serializer.serializeToBytes(ast);
     }
 
-    public function compileToBytecodeBytes(source:String, ?filename:String):haxe.io.Bytes {
+    public function compileToBytecodeBytes(source:String, ?filename:String, ?key:HXBCKey, ?debugMode:Bool = false):haxe.io.Bytes {
         var ast = compile(source, filename);
         if (ast == null) return null;
-        var chunk = BytecodeCompiler.compile(ast);
-        return Serializer.serializeBytecode(chunk);
+        var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode);
+        return Serializer.serializeBytecode(chunk, key);
     }
 
     public function executeASTBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String):T {
@@ -149,11 +149,11 @@ class Haxiom implements common.IScriptEngine {
         }
     }
 
-    public function executeBytecodeBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String):T {
+    public function executeBytecodeBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String, ?key:HXBCKey):T {
         if (sourceCode != null) {
             interp.lastSource = sourceCode;
         }
-        var chunk = Serializer.deserializeBytecode(bytes);
+        var chunk = Serializer.deserializeBytecode(bytes, key);
         return cast interp.executeChunk(chunk);
     }
 

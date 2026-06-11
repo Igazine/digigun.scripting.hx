@@ -438,6 +438,7 @@ class Interp {
     var lastEvalPos:Pos = null;
     public var lastSource:Null<String> = null;
     public var preprocessorFlags:Map<String, Bool> = new Map();
+    public var lastActiveLocals:Null<Map<String, Dynamic>> = null;
 
     public inline function pushFrame(methodName:String, pos:Pos) {
         callStack.push({ method: methodName, pos: pos });
@@ -595,6 +596,7 @@ class Interp {
         currentPackage = [];
         callStack = [];
         activeUsings = [];
+        lastActiveLocals = null;
         lastEvalPos = expr.pos;
         try {
             if (useVM) {
@@ -654,6 +656,7 @@ class Interp {
         currentPackage = [];
         callStack = [];
         activeUsings = [];
+        lastActiveLocals = null;
         if (chunk.positions.length > 0 && chunk.positions[0] != null) {
             lastEvalPos = chunk.positions[0];
         }
@@ -696,7 +699,8 @@ class Interp {
                     traceLines.push('    at toplevel (' + fileInfo + ':' + lineVal + ':' + colVal + ')');
                 }
                 formatted = traceLines.join("\n");
-                finalException = new haxiom.ScriptException(e, callStack.copy(), formatted, lineVal, colVal, fileInfo);
+                finalException = new haxiom.ScriptException(e, callStack.copy(), formatted, lineVal, colVal, fileInfo, lastActiveLocals);
+                lastActiveLocals = null;
             }
             
             if (errorHandler != null) {

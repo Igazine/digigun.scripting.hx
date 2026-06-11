@@ -9,15 +9,27 @@ class ScriptException extends haxe.Exception {
     public var line(default, null):Int;
     public var col(default, null):Int;
     public var file(default, null):String;
+    public var locals(default, null):Null<Map<String, Dynamic>>;
 
-    public function new(rawValue:Dynamic, virtualStack:Array<{method:String, pos:Pos}>, formattedStackTrace:String, line:Int = 1, col:Int = 1, ?file:String) {
-        super(formattedStackTrace);
+    public function new(rawValue:Dynamic, virtualStack:Array<{method:String, pos:Pos}>, formattedStackTrace:String, line:Int = 1, col:Int = 1, ?file:String, ?locals:Null<Map<String, Dynamic>> = null) {
+        var msg = formattedStackTrace;
+        if (locals != null) {
+            var localDump = [];
+            for (k in locals.keys()) {
+                localDump.push('    - $k: ' + Std.string(locals.get(k)));
+            }
+            if (localDump.length > 0) {
+                msg += "\nLocal Variables:\n" + localDump.join("\n");
+            }
+        }
+        super(msg);
         this.rawValue = rawValue;
         this.virtualStack = virtualStack;
-        this.formattedStackTrace = formattedStackTrace;
+        this.formattedStackTrace = msg;
         this.line = line;
         this.col = col;
         this.file = file;
+        this.locals = locals;
     }
 
     public static function makeCodeFrame(source:Null<String>, line:Int, col:Int, file:String):String {

@@ -2726,6 +2726,7 @@ class TestHaxiom {
         // Run Async/Await VM Verification Suite
         TestAsyncVM.runTests(() -> {
             TestCompilationFeatures.runTests();
+            TestHXBCSecurityDebug.runTests();
             trace("ALL TESTS COMPLETED SUCCESSFULLY!");
         });
     }
