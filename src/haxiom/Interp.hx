@@ -478,7 +478,7 @@ class Interp {
         #if flash preprocessorFlags.set("flash", true); #end
         #if java preprocessorFlags.set("java", true); #end
         #if cs preprocessorFlags.set("cs", true); #end
-        #if macos preprocessorFlags.set("mac", true); preprocessorFlags.set("macos", true); #end
+        #if mac preprocessorFlags.set("mac", true); preprocessorFlags.set("macos", true); #end
         #if windows preprocessorFlags.set("windows", true); #end
         #if linux preprocessorFlags.set("linux", true); #end
         #if debug preprocessorFlags.set("debug", true); #end
