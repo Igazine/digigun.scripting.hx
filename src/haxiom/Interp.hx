@@ -3017,11 +3017,13 @@ class Interp {
                 var fqName = path.join(".");
                 var shortName = alias != null ? alias : path[path.length - 1];
                 var targetName = path[path.length - 1];
+                /*
                 haxe.Log.trace("DEBUG EImport fqName: " + fqName, null);
                 haxe.Log.trace("DEBUG importWhitelist: " + importWhitelist, null);
                 haxe.Log.trace("DEBUG Type.resolveClass: " + Type.resolveClass(fqName), null);
                 haxe.Log.trace("DEBUG isImportWhitelisted: " + isImportWhitelisted(fqName), null);
                 haxe.Log.trace("DEBUG resolveNativeClass: " + resolveNativeClass(fqName), null);
+                */
                 
                 if (shortName == "*") {
                     var parentPath = path.slice(0, path.length - 1).join(".");
@@ -3595,7 +3597,7 @@ class Interp {
     }
 
     function isInsideAccessor(fieldName:String):Bool {
-        haxe.Log.trace("isInsideAccessor check for " + fieldName + ", stack: " + [for (f in callStack) f.method].join(", "), null);
+        // haxe.Log.trace("isInsideAccessor check for " + fieldName + ", stack: " + [for (f in callStack) f.method].join(", "), null);
         if (callStack.length == 0) return false;
         var suffix1 = ".get_" + fieldName;
         var suffix2 = ".set_" + fieldName;
@@ -4793,7 +4795,7 @@ class Interp {
                     }
                 } catch (e:Dynamic) {}
             }
-            haxe.Log.trace("DEBUG autoWhitelistedKeys: " + [for (k in autoWhitelistedTypes.keys()) k], null);
+            // haxe.Log.trace("DEBUG autoWhitelistedKeys: " + [for (k in autoWhitelistedTypes.keys()) k], null);
             #end
         }
         return autoWhitelistedTypes.exists(fqName);
@@ -4818,13 +4820,13 @@ class Interp {
 
     function isImportWhitelisted(fqName:String):Bool {
         var auto = isAutoWhitelisted(fqName);
-        haxe.Log.trace("isImportWhitelisted check for " + fqName + ": auto=" + auto, null);
+        // haxe.Log.trace("isImportWhitelisted check for " + fqName + ": auto=" + auto, null);
         if (auto) return true;
         
         var isNative = (Type.resolveClass(fqName) != null) || (Type.resolveEnum(fqName) != null);
-        haxe.Log.trace("isImportWhitelisted check for " + fqName + ": isNative=" + isNative, null);
+        // haxe.Log.trace("isImportWhitelisted check for " + fqName + ": isNative=" + isNative, null);
         if (isNative) {
-            haxe.Log.trace("isImportWhitelisted check for " + fqName + ": importWhitelist=" + importWhitelist, null);
+            // haxe.Log.trace("isImportWhitelisted check for " + fqName + ": importWhitelist=" + importWhitelist, null);
             if (importWhitelist == null) return true;
             for (pattern in importWhitelist) {
                 if (pattern == fqName) return true;
