@@ -17,6 +17,7 @@ A high-performance, modular scripting foundation for Haxe. This library is desig
   - [Dynamic Type vs Strict Type Annotations](#dynamic-type-vs-strict-type-annotations)
   - [Usage Example](#usage-example-1)
   - [Key Haxiom Features Highlighted](#key-haxiom-features-highlighted)
+  - [Compilation-Level Features](#compilation-level-features)
   - [Handling FFI, Abstracts, & Generics](#handling-ffi-abstracts--generics-dce-safety)
   - [Sandbox & Security Hardening](#sandbox--security-hardening)
   - [Example: Binding OpenFL and Preventing DCE](#example-binding-openfl-and-preventing-dce)
@@ -249,6 +250,9 @@ class Main {
 - [x] **Array/Generator Comprehensions**: supports standard Haxe-style syntax (e.g., `[for (x in items) if (x % 2 == 0) x]`).
 - [x] **Switch-Case Pattern Guards**: advanced pattern matching with `case Pattern if (condition):`.
 - [x] **Precise Error Diagnostics**: attaches exact line, column, and file coordinates to runtime errors.
+- [x] **Conditional Compilation Preprocessor**: support for `#if`, `#elseif`, `#else`, `#end`, and `#error` blocks based on host target and custom runtime flags.
+- [x] **Anonymous Optional Fields**: validation of optional fields (`?field`) inside structural types.
+- [x] **Compile-Time Macros**: run script-defined `@:haxiom.macro` static methods to perform AST transformations before execution.
 
 ### Haxiom Bytecode VM & Binary Persistence
 
@@ -295,6 +299,44 @@ class Main {
     }
 }
 ```
+
+### Compilation-Level Features
+
+Haxiom supports several advanced compilation-level features to match standard Haxe ergonomics:
+
+#### 1. Conditional Compilation Preprocessor
+Supports `#if`, `#elseif`, `#else`, `#end`, and `#error` blocks:
+* **Host Platform Auto-Detection**: Standard Haxe compiler defines from the host application (like `js`, `sys`, `mac`, `windows`, `linux`, `debug`, `eval`, etc.) are automatically detected and available at runtime inside Haxiom scripts.
+* **Custom Defines**: The host application can dynamically add or override preprocessor defines at runtime using the `preprocessorFlags` property:
+  ```haxe
+  engine.preprocessorFlags.set("my_feature", true);
+  ```
+* **Lexer-Level Pruning**: Inactive branches are completely skipped during tokenization and are never compiled into AST or bytecode, keeping the final output clean and target-specific.
+
+#### 2. Anonymous Optional Field Type Validation
+Standard Haxe optional markers are supported inside anonymous types:
+```haxe
+typedef User = {
+    var name:String;
+    var ?age:Int; // optional field
+}
+```
+* Type validation skips absent optional fields at runtime but still strictly type-checks them if they are present on the verified object.
+
+#### 3. Compile-Time Macros
+Allows defining static methods annotated with `@:haxiom.macro` to perform AST-to-AST transformations before compiling to bytecode or interpreting:
+```haxe
+class MyMacros {
+    @:haxiom.macro
+    public static function double(e) {
+        return {
+            def: ExprDef.EBinop("+", e, e),
+            pos: e.pos
+        };
+    }
+}
+```
+* Macro expansion runs at compile time, resolving macros and outputting raw expressions that can then be compiled into compact VM bytecode.
 
 ### Handling FFI, Abstracts, & Generics (DCE Safety)
 
