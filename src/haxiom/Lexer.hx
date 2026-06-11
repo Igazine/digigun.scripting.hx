@@ -8,16 +8,128 @@ class Lexer {
     var line:Int = 1;
     var col:Int = 1;
     var file:String;
+    var flags:Null<Map<String, Bool>>;
+    var preprocessorStack:Array<{active:Bool, matchedAny:Bool, parentActive:Bool}> = [];
 
-    public function new(input:String, ?file:String) {
+    public function new(input:String, ?file:String, ?flags:Map<String, Bool>) {
         this.input = input;
         this.file = file != null ? file : "script";
+        this.flags = flags;
+    }
+
+    inline function isSkipping():Bool {
+        if (flags == null) return false;
+        if (preprocessorStack.length == 0) return false;
+        return !preprocessorStack[preprocessorStack.length - 1].active;
+    }
+
+    function processPreprocessor(dir:String, arg:String, startLine:Int, startCol:Int) {
+        var parentActive = true;
+        if (preprocessorStack.length > 0) {
+            parentActive = preprocessorStack[preprocessorStack.length - 1].active;
+        }
+
+        switch (dir) {
+            case "if":
+                var condVal = false;
+                if (parentActive) {
+                    condVal = Preprocessor.evaluate(arg, flags);
+                }
+                preprocessorStack.push({
+                    active: parentActive && condVal,
+                    matchedAny: condVal,
+                    parentActive: parentActive
+                });
+            case "elseif":
+                if (preprocessorStack.length == 0) {
+                    throw new CompileException("Lexical Error: Unexpected #elseif without #if", startLine, startCol, file);
+                }
+                var top = preprocessorStack[preprocessorStack.length - 1];
+                var condVal = false;
+                if (top.parentActive && !top.matchedAny) {
+                    condVal = Preprocessor.evaluate(arg, flags);
+                }
+                top.active = top.parentActive && !top.matchedAny && condVal;
+                if (condVal) {
+                    top.matchedAny = true;
+                }
+            case "else":
+                if (preprocessorStack.length == 0) {
+                    throw new CompileException("Lexical Error: Unexpected #else without #if", startLine, startCol, file);
+                }
+                var top = preprocessorStack[preprocessorStack.length - 1];
+                top.active = top.parentActive && !top.matchedAny;
+                top.matchedAny = true;
+            case "end":
+                if (preprocessorStack.length == 0) {
+                    throw new CompileException("Lexical Error: Unexpected #end without #if", startLine, startCol, file);
+                }
+                preprocessorStack.pop();
+            case "error":
+                if (parentActive && (preprocessorStack.length == 0 || preprocessorStack[preprocessorStack.length - 1].active)) {
+                    throw new CompileException("Compilation Error: " + arg, startLine, startCol, file);
+                }
+            default:
+                throw new CompileException("Lexical Error: Unknown preprocessor directive #" + dir, startLine, startCol, file);
+        }
     }
 
     public function tokenize():Array<Token> {
         var tokens = [];
         while (pos < input.length) {
             var char = peek();
+
+            if (char == "#") {
+                var startLine = line;
+                var startCol = col;
+                advance(); // Skip '#'
+                
+                var dirStart = pos;
+                while (pos < input.length && isAlpha(peek())) advance();
+                var dir = input.substring(dirStart, pos);
+                
+                var argStart = pos;
+                while (pos < input.length && peek() != "\n") advance();
+                var arg = StringTools.trim(input.substring(argStart, pos));
+                
+                if (flags != null) {
+                    processPreprocessor(dir, arg, startLine, startCol);
+                } else {
+                    throw new CompileException("Lexical Error: Preprocessor directives are not supported in this context", startLine, startCol, file);
+                }
+                continue;
+            }
+
+            if (isSkipping()) {
+                if (char == "\n") {
+                    pos++;
+                    line++;
+                    col = 1;
+                } else if (char == "/" && peek(1) == "/") {
+                    while (pos < input.length && peek() != "\n") advance();
+                } else if (char == "/" && peek(1) == "*") {
+                    advance(); advance();
+                    var depth = 1;
+                    while (pos < input.length && depth > 0) {
+                        if (peek() == "/" && peek(1) == "*") {
+                            advance(); advance();
+                            depth++;
+                        } else if (peek() == "*" && peek(1) == "/") {
+                            advance(); advance();
+                            depth--;
+                        } else {
+                            if (peek() == "\n") {
+                                line++;
+                                col = 0;
+                            }
+                            advance();
+                        }
+                    }
+                } else {
+                    advance();
+                }
+                continue;
+            }
             
             if (char == " " || char == "\r" || char == "\t") {
                 advance();
@@ -257,6 +369,9 @@ class Lexer {
                 default:
                     throw new CompileException("Lexical Error: Unrecognized character '" + char + "'", line, col, file);
             }
+        }
+        if (preprocessorStack.length > 0) {
+            throw new CompileException("Lexical Error: Unclosed preprocessor directive (#if)", line, col, file);
         }
         tokens.push({ def: TEof, pos: { line: line, col: col, file: file } });
         return tokens;

@@ -437,6 +437,7 @@ class Interp {
     public var errorHandler:Null<ScriptException->Void> = null;
     var lastEvalPos:Pos = null;
     public var lastSource:Null<String> = null;
+    public var preprocessorFlags:Map<String, Bool> = new Map();
 
     public inline function pushFrame(methodName:String, pos:Pos) {
         callStack.push({ method: methodName, pos: pos });
@@ -467,7 +468,25 @@ class Interp {
         }];
     }
 
+    function initDefaultFlags() {
+        #if eval preprocessorFlags.set("eval", true); #end
+        #if js preprocessorFlags.set("js", true); #end
+        #if sys preprocessorFlags.set("sys", true); #end
+        #if cpp preprocessorFlags.set("cpp", true); #end
+        #if hl preprocessorFlags.set("hl", true); #end
+        #if neko preprocessorFlags.set("neko", true); #end
+        #if flash preprocessorFlags.set("flash", true); #end
+        #if java preprocessorFlags.set("java", true); #end
+        #if cs preprocessorFlags.set("cs", true); #end
+        #if macos preprocessorFlags.set("mac", true); preprocessorFlags.set("macos", true); #end
+        #if windows preprocessorFlags.set("windows", true); #end
+        #if linux preprocessorFlags.set("linux", true); #end
+        #if debug preprocessorFlags.set("debug", true); #end
+        preprocessorFlags.set("haxiom", true);
+    }
+
     public function new() {
+        initDefaultFlags();
         // Core standard print/trace redirection
         globals.declare("trace", (v:Dynamic) -> {
             haxe.Log.trace(Std.string(v), null);
@@ -3967,10 +3986,12 @@ class Interp {
                 return typesEqual(ret1, ret2);
             case [TAnonymous(fields1), TAnonymous(fields2)]:
                 if (fields1.length != fields2.length) return false;
-                var map1 = [for (f in fields1) f.name => f.type];
+                var map1 = [for (f in fields1) f.name => { type: f.type, opt: f.opt }];
                 for (f in fields2) {
                     if (!map1.exists(f.name)) return false;
-                    if (!typesEqual(map1.get(f.name), f.type)) return false;
+                    var m1 = map1.get(f.name);
+                    if (m1.opt != f.opt) return false;
+                    if (!typesEqual(m1.type, f.type)) return false;
                 }
                 return true;
             default:
@@ -4032,7 +4053,7 @@ class Interp {
             case TAnonymous(fields):
                 var resolvedFields = [];
                 for (f in fields) {
-                    resolvedFields.push({ name: f.name, type: resolveType(f.type, scope) });
+                    resolvedFields.push({ name: f.name, type: resolveType(f.type, scope), opt: f.opt });
                 }
                 return TAnonymous(resolvedFields);
         }
@@ -4074,7 +4095,7 @@ class Interp {
             case TAnonymous(fields):
                 var resolvedFields = [];
                 for (f in fields) {
-                    resolvedFields.push({ name: f.name, type: resolveGenericType(f.type, bindings, scope) });
+                    resolvedFields.push({ name: f.name, type: resolveGenericType(f.type, bindings, scope), opt: f.opt });
                 }
                 return TAnonymous(resolvedFields);
         }
@@ -4105,7 +4126,7 @@ class Interp {
             case TAnonymous(fields):
                 var resolvedFields = [];
                 for (f in fields) {
-                    resolvedFields.push({ name: f.name, type: resolveGenericTypeInBindings(f.type, declaringClassName, bindings) });
+                    resolvedFields.push({ name: f.name, type: resolveGenericTypeInBindings(f.type, declaringClassName, bindings), opt: f.opt });
                 }
                 return TAnonymous(resolvedFields);
         }
@@ -4346,6 +4367,7 @@ class Interp {
                 for (field in fields) {
                     var res = hasAndGetField(val, field.name);
                     if (!res.exists) {
+                        if (field.opt == true) continue;
                         throw 'Type mismatch: object is missing field "${field.name}"';
                     }
                     try {
@@ -4445,7 +4467,7 @@ class Interp {
             case TFun(args, ret):
                 return "(" + args.map(typeToString).join(", ") + ") -> " + typeToString(ret);
             case TAnonymous(fields):
-                return "{" + fields.map(f -> f.name + ":" + typeToString(f.type)).join(", ") + "}";
+                return "{" + fields.map(f -> (f.opt == true ? "?" : "") + f.name + ":" + typeToString(f.type)).join(", ") + "}";
         }
     }
 

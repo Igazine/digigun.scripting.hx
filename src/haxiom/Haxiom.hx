@@ -26,8 +26,14 @@ class Haxiom implements common.IScriptEngine {
     inline function get_useVM() return interp.useVM;
     inline function set_useVM(v) return interp.useVM = v;
 
+    public var preprocessorFlags(get, never):Map<String, Bool>;
+    inline function get_preprocessorFlags() return interp.preprocessorFlags;
+
     public function new() {
         interp = new Interp();
+        FFI.exposedModules.set("haxiom.AST", ["haxiom.ExprDef", "haxiom.TypeDecl"]);
+        FFI.registerEnum(this, "haxiom.ExprDef", haxiom.AST.ExprDef);
+        FFI.registerEnum(this, "haxiom.TypeDecl", haxiom.AST.TypeDecl);
     }
 
     public function compile(source:String, ?filename:String):haxiom.AST.Expr {
@@ -37,10 +43,17 @@ class Haxiom implements common.IScriptEngine {
         var fileInfo = filename != null ? filename : "script";
         interp.lastSource = source;
         try {
-            var lexer = new Lexer(source, fileInfo);
+            var lexer = new Lexer(source, fileInfo, interp.preprocessorFlags);
             var tokens = lexer.tokenize();
             var parser = new Parser(tokens, fileInfo);
             var ast = parser.parse();
+            
+            // Pass 1: Scan and register macro definitions in interpreter scope
+            haxiom.MacroExpander.registerMacros(ast, interp);
+            
+            // Pass 2: Crawl AST and expand macro static calls
+            ast = haxiom.MacroExpander.expand(ast, interp);
+            
             var folded = Optimizer.foldConstants(ast);
             if (enableAstCache) {
                 if (astCacheSize >= 1000) {

@@ -118,7 +118,7 @@ typedef Token = {
 enum TypeDecl {
     TPath(path:Array<String>, params:Array<TypeDecl>);
     TFun(args:Array<TypeDecl>, ret:TypeDecl);
-    TAnonymous(fields:Array<{name:String, type:TypeDecl}>);
+    TAnonymous(fields:Array<{name:String, type:TypeDecl, ?opt:Bool}>);
 }
 
 enum ExprDef {

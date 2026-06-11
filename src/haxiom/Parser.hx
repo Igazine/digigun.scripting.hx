@@ -986,17 +986,21 @@ class Parser {
             var fields = [];
             skipNewlines();
             if (!is(TBraceClose)) {
+                match(TVar);
+                var opt = match(TQuestion);
                 var fName = expectIdent();
                 expect(TColon);
                 var fType = parseType(allowArrow);
-                fields.push({ name: fName, type: fType });
+                fields.push({ name: fName, type: fType, opt: opt });
                 while (match(TComma) || match(TSemicolon)) {
                     skipNewlines();
                     if (is(TBraceClose)) break;
+                    match(TVar);
+                    var nextOpt = match(TQuestion);
                     var nextName = expectIdent();
                     expect(TColon);
                     var nextType = parseType(allowArrow);
-                    fields.push({ name: nextName, type: nextType });
+                    fields.push({ name: nextName, type: nextType, opt: nextOpt });
                 }
             }
             skipNewlines();
