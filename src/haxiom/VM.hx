@@ -1160,7 +1160,7 @@ class VM {
             return res;
         } catch (e:Dynamic) {
             #if js
-            haxe.Log.trace("executeLoop caught exception: " + e + ", stack: " + (untyped __js__("e && e.stack ? e.stack : null")), null);
+            haxe.Log.trace("executeLoop caught exception: " + e + ", stack: " + js.Syntax.code("({0} && {0}.stack ? {0}.stack : null)", e), null);
             #end
             if (fiber != null) {
                 if (!fiber.isSuspended) {

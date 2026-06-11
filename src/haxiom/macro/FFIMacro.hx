@@ -286,7 +286,7 @@ class FFIMacro {
             var expr:haxe.macro.Expr;
             if (haxe.macro.Context.defined("js")) {
                 var jsVar = fqName.split(".").join("_");
-                expr = macro untyped __js__($v{jsVar});
+                expr = macro js.Syntax.code($v{jsVar});
             } else {
                 var parts = absInfo.implClass.split(".");
                 for (i in 0...parts.length - 1) {
