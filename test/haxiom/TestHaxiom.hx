@@ -2722,6 +2722,11 @@ class TestHaxiom {
         if (!invalidJumpCaught) throw "Expected verification error for out-of-bounds jump, but none occurred";
 
         trace("SUCCESS: Bytecode Verification & Safety Checks verified.");
+
+        // Run Async/Await VM Verification Suite
+        TestAsyncVM.runTests(() -> {
+            trace("ALL TESTS COMPLETED SUCCESSFULLY!");
+        });
     }
 }
 

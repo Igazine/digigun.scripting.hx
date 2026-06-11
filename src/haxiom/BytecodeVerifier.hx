@@ -28,7 +28,7 @@ class BytecodeVerifier {
         var ip = 0;
         while (ip < inst.length) {
             var op:Int = inst[ip++];
-            if (op < 0 || op > 73) {
+            if (op < 0 || op > 74) {
                 throw 'Invalid opcode $op at instruction index ${ip - 1}';
             }
             
@@ -130,9 +130,12 @@ class BytecodeVerifier {
                     checkOperands(ip, 1, inst.length);
                     checkConstIndex(inst[ip++], chunk); // type
                     
+                case 74: // OP_AWAIT
+                    // 0 operands
+                    
                 default:
                     // Opcodes with 0 operands
-                    // OP_NOP, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD, OP_EQ, OP_NEQ, OP_LT, OP_LTE, OP_GT, OP_GTE, OP_AND, OP_OR, OP_NOT, OP_BIT_AND, OP_BIT_OR, OP_BIT_XOR, OP_BIT_NOT, OP_SHL, OP_SHR, OP_USHR, OP_RETURN, OP_THROW, OP_GET_THIS, OP_POP, OP_PUSH_SCOPE, OP_POP_SCOPE, OP_GET_ITERATOR, OP_ITERATOR_HAS_NEXT, OP_ITERATOR_NEXT, OP_POP_TRY, OP_ARRAY_ACCESS_GET, OP_ARRAY_ACCESS_SET, OP_DUP, OP_RANGE
+                    // OP_NOP, OP_ADD, OP_SUB, OP_MUL, OP_DIV, OP_MOD, OP_EQ, OP_NEQ, OP_LT, OP_LTE, OP_GT, OP_GTE, OP_AND, OP_OR, OP_NOT, OP_BIT_AND, OP_BIT_OR, OP_BIT_XOR, OP_BIT_NOT, OP_SHL, OP_SHR, OP_USHR, OP_RETURN, OP_THROW, OP_GET_THIS, OP_POP, OP_PUSH_SCOPE, OP_POP_SCOPE, OP_GET_ITERATOR, OP_ITERATOR_HAS_NEXT, OP_ITERATOR_NEXT, OP_POP_TRY, OP_ARRAY_ACCESS_GET, OP_ARRAY_ACCESS_SET, OP_DUP, OP_RANGE, OP_AWAIT
             }
         }
     }

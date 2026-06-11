@@ -246,6 +246,9 @@ class Parser {
             } else {
                 name = expectIdent();
             }
+            while (match(TDot)) {
+                name += "." + expectIdent();
+            }
             var params = [];
             if (match(TParenOpen)) {
                 if (!is(TParenClose)) {

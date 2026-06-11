@@ -1719,6 +1719,17 @@ class Interp {
 
             case ECall(calleeExpr, argsExprs):
                 switch (calleeExpr.def) {
+                    case EField(obj, field):
+                        if (field == "await" && obj != null) {
+                            switch (obj.def) {
+                                case EIdent("Haxiom"):
+                                    throw "Haxiom.await is only supported in VM execution mode (useVM = true)";
+                                default:
+                            }
+                        }
+                    default:
+                }
+                switch (calleeExpr.def) {
                     case EIdent("super"):
                         if (currentThis != null && Std.isOfType(currentThis, HaxiomInstance)) {
                             var inst:HaxiomInstance = cast currentThis;
@@ -3719,7 +3730,7 @@ class Interp {
         return findStaticMethod(cls.parent, name);
     }
 
-    function bindMethod(obj:Dynamic, method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}):Dynamic {
+    function bindMethod(obj:Dynamic, method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}):Dynamic {
         var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
         var func = (callArgs:Array<Dynamic>) -> {
             var fScope = Scope.create(globals);
@@ -3745,26 +3756,44 @@ class Interp {
                 }
             }
             pushFrame(className + "." + method.name, method.body.pos);
-            try {
-                var res:Dynamic = null;
-                if (useVM) {
-                    var mDyn:Dynamic = method;
-                    if (mDyn.bytecodeChunk == null) {
-                        mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false);
+                var isMethodAsync = false;
+                if (method.meta != null) {
+                    for (m in method.meta) {
+                        if (m.name == ":haxiom.async") {
+                            isMethodAsync = true;
+                            break;
+                        }
                     }
-                    res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, obj, className + "." + method.name, callArgs);
-                } else {
-                    res = eval(method.body, fScope);
                 }
+
+                if (isMethodAsync && !useVM) {
+                    throw 'Async/await execution requires Haxiom VM mode (useVM = true)';
+                }
+
+                try {
+                    var res:Dynamic = null;
+                    if (useVM) {
+                        var mDyn:Dynamic = method;
+                        if (mDyn.bytecodeChunk == null) {
+                            mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, isMethodAsync);
+                        }
+                        res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, obj, className + "." + method.name, callArgs);
+                    } else {
+                        res = eval(method.body, fScope);
+                    }
                 if (method.retType != null && typeToString(method.retType) == "Void") {
                     res = null;
                 } else {
-                    checkType(res, method.retType, fScope, bindings);
+                    if (!isMethodAsync) {
+                        checkType(res, method.retType, fScope, bindings);
+                    }
                 }
                 inAbstractMethod = oldAbstract;
                 currentThis = oldThis;
                 popFrame();
-                Scope.recycle(fScope);
+                if (!isMethodAsync) {
+                    Scope.recycle(fScope);
+                }
                 return res;
             } catch (flow:ControlFlow) {
                 inAbstractMethod = oldAbstract;
@@ -3773,26 +3802,26 @@ class Interp {
                 switch (flow) {
                     case Return(val):
                         if (method.retType != null && typeToString(method.retType) == "Void") {
-                            Scope.recycle(fScope);
+                            if (!isMethodAsync) Scope.recycle(fScope);
                             return null;
                         }
                         try {
-                            checkType(val, method.retType, fScope, bindings);
+                            if (!isMethodAsync) checkType(val, method.retType, fScope, bindings);
                         } catch (e:Dynamic) {
-                            Scope.recycle(fScope);
+                            if (!isMethodAsync) Scope.recycle(fScope);
                             throw e;
                         }
-                        Scope.recycle(fScope);
+                        if (!isMethodAsync) Scope.recycle(fScope);
                         return val;
                     default:
-                        Scope.recycle(fScope);
+                        if (!isMethodAsync) Scope.recycle(fScope);
                         throw flow;
                 }
             } catch (e:Dynamic) {
                 inAbstractMethod = oldAbstract;
                 currentThis = oldThis;
                 popFrame();
-                Scope.recycle(fScope);
+                if (!isMethodAsync) Scope.recycle(fScope);
                 throw e;
             }
         };

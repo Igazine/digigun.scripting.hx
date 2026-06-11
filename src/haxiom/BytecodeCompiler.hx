@@ -26,12 +26,14 @@ class BytecodeCompiler {
     var currentScopeDepth:Int = 0;
 
     var isTopLevel:Bool = true;
+    var isAsync:Bool = false;
     var locals:Array<LocalVar> = [];
     var maxSlots:Int = 0;
     var capturedVars:Map<String, Bool> = new Map();
 
-    public function new(?args:Array<{name:String, type:Null<TypeDecl>}>, ?isTopLevel:Bool = true) {
+    public function new(?args:Array<{name:String, type:Null<TypeDecl>}>, ?isTopLevel:Bool = true, ?isAsync:Bool = false) {
         this.isTopLevel = isTopLevel;
+        this.isAsync = isAsync;
         if (args != null && !isTopLevel) {
             for (arg in args) {
                 declareLocal(arg.name, arg.type);
@@ -39,13 +41,13 @@ class BytecodeCompiler {
         }
     }
 
-    public static function compile(expr:Expr, ?args:Array<{name:String, type:Null<TypeDecl>}>, ?isTopLevel:Bool = true):BytecodeChunk {
-        var compiler = new BytecodeCompiler(args, isTopLevel);
+    public static function compile(expr:Expr, ?args:Array<{name:String, type:Null<TypeDecl>}>, ?isTopLevel:Bool = true, ?isAsync:Bool = false):BytecodeChunk {
+        var compiler = new BytecodeCompiler(args, isTopLevel, isAsync);
         if (!isTopLevel) {
             compiler.findCapturedVars(expr, new Map<String, Bool>(), compiler.capturedVars);
         }
         compiler.compileExpr(expr);
-        return new BytecodeChunk(compiler.instructions, compiler.constants, compiler.positions, compiler.maxSlots);
+        return new BytecodeChunk(compiler.instructions, compiler.constants, compiler.positions, compiler.maxSlots, compiler.isAsync);
     }
 
     function declareLocal(name:String, type:Null<TypeDecl>):LocalVar {
@@ -399,22 +401,43 @@ class BytecodeCompiler {
                 emitInt(addConst(field), e.pos);
 
             case ECall(callExpr, args):
+                var isAwait = false;
                 switch (callExpr.def) {
                     case EField(obj, field):
-                        for (arg in args) {
-                            compileExpr(arg);
+                        if (field == "await" && obj != null) {
+                            switch (obj.def) {
+                                case EIdent("Haxiom"):
+                                    isAwait = true;
+                                default:
+                            }
                         }
-                        compileExpr(obj);
-                        emit(OP_CALL_METHOD, e.pos);
-                        emitInt(addConst(field), e.pos);
-                        emitInt(args.length, e.pos);
                     default:
-                        for (arg in args) {
-                            compileExpr(arg);
-                        }
-                        compileExpr(callExpr);
-                        emit(OP_CALL, e.pos);
-                        emitInt(args.length, e.pos);
+                }
+
+                if (isAwait) {
+                    if (args.length != 1) {
+                        throw "Haxiom.await expects exactly 1 argument";
+                    }
+                    compileExpr(args[0]);
+                    emit(OP_AWAIT, e.pos);
+                } else {
+                    switch (callExpr.def) {
+                        case EField(obj, field):
+                            for (arg in args) {
+                                compileExpr(arg);
+                            }
+                            compileExpr(obj);
+                            emit(OP_CALL_METHOD, e.pos);
+                            emitInt(addConst(field), e.pos);
+                            emitInt(args.length, e.pos);
+                        default:
+                            for (arg in args) {
+                                compileExpr(arg);
+                            }
+                            compileExpr(callExpr);
+                            emit(OP_CALL, e.pos);
+                            emitInt(args.length, e.pos);
+                    }
                 }
 
             case EArrayDecl(values):
@@ -818,7 +841,32 @@ class BytecodeCompiler {
                 emitInt(addConst(e), e.pos);
 
             case EMeta(meta, exprVal):
-                compileExpr(exprVal);
+                var isTargetAsync = false;
+                for (m in meta) {
+                    if (m.name == ":haxiom.async") {
+                        isTargetAsync = true;
+                        break;
+                    }
+                }
+
+                if (isTargetAsync) {
+                    switch (exprVal.def) {
+                        case EFunction(name, args, retType, body):
+                            var bodyChunk = BytecodeCompiler.compile(body, args, false, true);
+                            var proto = {
+                                name: name,
+                                args: args,
+                                retType: retType,
+                                bodyChunk: bodyChunk
+                            };
+                            emit(OP_MAKE_FUNCTION, exprVal.pos);
+                            emitInt(addConst(proto), exprVal.pos);
+                        default:
+                            compileExpr(exprVal);
+                    }
+                } else {
+                    compileExpr(exprVal);
+                }
 
             default:
                 throw 'Unsupported compile AST node: ${Type.enumConstructor(e.def)}';

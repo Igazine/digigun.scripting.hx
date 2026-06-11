@@ -95,6 +95,7 @@ class Serializer {
         var headerOut = new BytesOutput();
         headerOut.writeString("HXBC");
         headerOut.writeByte(1); // Version 1
+        headerOut.writeByte(chunk.isAsync ? 1 : 0);
         headerOut.writeInt32(chunk.maxSlots);
         headerOut.writeInt32(checksum);
         headerOut.write(payloadBytes);
@@ -104,7 +105,7 @@ class Serializer {
 
     public static function deserializeBytecode(bytes:Bytes):BytecodeChunk {
         var input = new BytesInput(bytes);
-        if (input.length < 13) {
+        if (input.length < 14) {
             throw "Invalid bytecode: data too short";
         }
         
@@ -118,11 +119,12 @@ class Serializer {
             throw 'Unsupported bytecode version $version';
         }
         
+        var isAsync = input.readByte() == 1;
         var maxSlots = input.readInt32();
         var checksum = input.readInt32();
         
         // Read payload
-        var payloadBytes = input.read(input.length - 13);
+        var payloadBytes = input.read(input.length - 14);
         
         // Verify checksum
         var computedChecksum = Adler32.make(payloadBytes);
@@ -159,7 +161,7 @@ class Serializer {
         var constsStr = payloadInput.readString(constsLen);
         var constants:Array<Dynamic> = haxe.Unserializer.run(constsStr);
         
-        var chunk = new BytecodeChunk(instructions, constants, positions, maxSlots);
+        var chunk = new BytecodeChunk(instructions, constants, positions, maxSlots, isAsync);
         BytecodeVerifier.verify(chunk);
         return chunk;
     }

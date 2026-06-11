@@ -79,6 +79,7 @@ enum abstract Opcode(Int) from Int to Int {
     var OP_RANGE = 71;
     var OP_PUSH_CASE_SCOPE = 72;
     var OP_CHECK_TYPE = 73;
+    var OP_AWAIT = 74;
 }
 
 @:keep
@@ -87,12 +88,14 @@ class BytecodeChunk {
     public var constants:Array<Dynamic>;
     public var positions:Array<Pos>;
     public var maxSlots:Int;
+    public var isAsync:Bool;
 
-    public function new(instructions:Array<Int>, constants:Array<Dynamic>, positions:Array<Pos>, ?maxSlots:Int = 0) {
+    public function new(instructions:Array<Int>, constants:Array<Dynamic>, positions:Array<Pos>, ?maxSlots:Int = 0, ?isAsync:Bool = false) {
         this.instructions = instructions;
         this.constants = constants;
         this.positions = positions;
         this.maxSlots = maxSlots;
+        this.isAsync = isAsync;
     }
 
     public function getBytes():haxe.io.Bytes {
@@ -169,31 +172,56 @@ class VM {
     }
 
     public static function runChunk(interp:Interp, chunk:BytecodeChunk, scope:Scope, ?currentThis:Dynamic, ?methodName:String = "toplevel", ?args:Array<Dynamic>):Dynamic {
+        if (chunk.isAsync) {
+            var fiber = new VMFiber();
+            fiber.scope = scope;
+            executeLoop(interp, fiber, chunk, scope, currentThis, methodName, args);
+            return fiber.future;
+        }
+        return executeLoop(interp, null, chunk, scope, currentThis, methodName, args);
+    }
+
+    public static function executeLoop(interp:Interp, fiber:Null<VMFiber>, chunk:Null<BytecodeChunk>, scope:Null<Scope>, ?currentThis:Dynamic, ?methodName:String = "toplevel", ?args:Array<Dynamic>):Dynamic {
         var stack:Array<Dynamic> = [];
         var callFrames:Array<VMCallFrame> = [];
         
-        var frame = obtainFrame(chunk, 0, scope, methodName);
-        if (args != null) {
-            for (i in 0...args.length) {
-                if (i < frame.locals.length) {
-                    frame.locals[i] = args[i];
+        var isResumption = (fiber != null && fiber.callFrames.length > 0);
+        if (isResumption) {
+            stack = fiber.stack;
+            callFrames = fiber.callFrames;
+        } else {
+            var frame = obtainFrame(chunk, 0, scope, methodName);
+            if (args != null) {
+                for (i in 0...args.length) {
+                    if (i < frame.locals.length) {
+                        frame.locals[i] = args[i];
+                    }
                 }
             }
+            if (currentThis != null) {
+                frame.scope.declare("this", currentThis);
+            }
+            callFrames.push(frame);
         }
-        callFrames.push(frame);
         
-        var ip = 0;
-        var inst = chunk.instructions;
-        var consts = chunk.constants;
-        var posTable = chunk.positions;
+        var frame = callFrames[callFrames.length - 1];
+        var inst = frame.chunk.instructions;
+        var consts = frame.chunk.constants;
+        var posTable = frame.chunk.positions;
 
         inline function currentPos():Pos {
             return frame.chunk.positions[frame.ip] != null ? frame.chunk.positions[frame.ip] : { line: 1, col: 1 };
         }
 
         try {
-            while (true) {
+            while (fiber == null || !fiber.isSuspended) {
                 try {
+                    if (fiber != null && fiber.hasError) {
+                        fiber.hasError = false;
+                        var err = fiber.error;
+                        fiber.error = null;
+                        throw err;
+                    }
                     if (frame.ip >= inst.length) {
                         if (callFrames.length > 1) {
                             var popped = callFrames.pop();
@@ -977,6 +1005,34 @@ class VM {
                         var val = stack[stack.length - 1];
                         interp.checkType(val, type, frame.scope);
 
+                    case OP_AWAIT:
+                        var promise = stack.pop();
+                        if (isPromiseLike(promise)) {
+                            if (fiber == null) {
+                                throw "Haxiom.await is only allowed inside async functions (annotated with @:haxiom.async)";
+                            }
+                            fiber.isSuspended = true;
+                            fiber.stack = stack;
+                            fiber.callFrames = callFrames;
+                            
+                            registerAwait(promise,
+                                (val) -> {
+                                    fiber.stack.push(val);
+                                    fiber.isSuspended = false;
+                                    executeLoop(interp, fiber, null, null, null, null, null);
+                                },
+                                (err) -> {
+                                    fiber.hasError = true;
+                                    fiber.error = err;
+                                    fiber.isSuspended = false;
+                                    executeLoop(interp, fiber, null, null, null, null, null);
+                                }
+                            );
+                            return null;
+                        } else {
+                            stack.push(promise);
+                        }
+
                     default:
                         throw 'Unsupported opcode $op';
                 }
@@ -1014,15 +1070,77 @@ class VM {
             }
         }
             var res = stack.length > 0 ? stack[stack.length - 1] : null;
+            if (fiber != null) {
+                if (fiber.isSuspended) {
+                    return null;
+                } else {
+                    fiber.future.resolve(res);
+                    if (fiber.scope != null) {
+                        Scope.recycle(fiber.scope);
+                        fiber.scope = null;
+                    }
+                }
+            }
             for (f in callFrames) {
                 recycleFrame(f);
             }
             return res;
         } catch (e:Dynamic) {
-            for (f in callFrames) {
-                recycleFrame(f);
+            #if js
+            haxe.Log.trace("executeLoop caught exception: " + e + ", stack: " + (untyped __js__("e && e.stack ? e.stack : null")), null);
+            #end
+            if (fiber != null) {
+                if (!fiber.isSuspended) {
+                    fiber.future.reject(e);
+                    if (fiber.scope != null) {
+                        Scope.recycle(fiber.scope);
+                        fiber.scope = null;
+                    }
+                }
             }
-            throw e;
+            if (fiber == null || !fiber.isSuspended) {
+                for (f in callFrames) {
+                    recycleFrame(f);
+                }
+            }
+            if (fiber == null) {
+                throw e;
+            } else {
+                return null;
+            }
+        }
+    }
+
+    static function isPromiseLike(val:Dynamic):Bool {
+        if (val == null) return false;
+        if (Std.isOfType(val, haxiom.Future)) return true;
+        return Reflect.hasField(val, "then") && Reflect.isFunction(Reflect.field(val, "then"));
+    }
+
+    static function registerAwait(val:Dynamic, onResolve:Dynamic->Void, onReject:Dynamic->Void):Void {
+        var cls = Type.getClass(val);
+        var clsName = cls != null ? Type.getClassName(cls) : "null";
+        var hasThenField = Reflect.field(val, "then") != null;
+        #if js
+        var isInstance = (untyped __js__("val instanceof haxiom_Future"));
+        var ctorStr = (untyped __js__("val && val.constructor ? val.constructor.toString() : 'null'"));
+        haxe.Log.trace("DEBUG registerAwait: val=" + val + " class=" + clsName + " hasThen=" + hasThenField + " instanceof=" + isInstance + " ctor=" + ctorStr, null);
+        #else
+        haxe.Log.trace("DEBUG registerAwait: val=" + val + " class=" + clsName + " hasThen=" + hasThenField, null);
+        #end
+        if (Std.isOfType(val, haxiom.Future)) {
+            var f:haxiom.Future = cast val;
+            f.then(onResolve, onReject);
+        } else {
+            try {
+                Reflect.callMethod(val, Reflect.field(val, "then"), [onResolve, onReject]);
+            } catch (e:Dynamic) {
+                try {
+                    Reflect.callMethod(val, Reflect.field(val, "then"), [onResolve]);
+                } catch (err:Dynamic) {
+                    onReject(err);
+                }
+            }
         }
     }
 }
@@ -1082,5 +1200,20 @@ class HaxiomSuperInstance {
             }
         }
         return null;
+    }
+}
+
+@:keep
+class VMFiber {
+    public var callFrames:Array<VMCallFrame> = [];
+    public var stack:Array<Dynamic> = [];
+    public var future:haxiom.Future;
+    public var scope:Scope = null;
+    public var isSuspended:Bool = false;
+    public var hasError:Bool = false;
+    public var error:Dynamic = null;
+
+    public function new() {
+        this.future = new haxiom.Future();
     }
 }
