@@ -4,42 +4,93 @@ import haxiom.Lexer;
 import haxiom.Parser;
 import haxiom.Interp;
 
+/**
+ * The main Haxiom scripting engine instance.
+ * Provides APIs for compiling, interpreting, and executing scripts in either
+ * AST interpretation mode or compiled Bytecode VM mode.
+ */
 class Haxiom implements common.IScriptEngine {
+    /**
+     * The underlying interpreter instance carrying the execution scope, globals, and callbacks.
+     */
     public var interp:Interp;
+
+    /**
+     * If true, enables caching of compiled ASTs to speed up subsequent executions of identical script strings.
+     */
     public var enableAstCache:Bool = true;
+
+    /**
+     * Internal cache storing compiled AST nodes by their raw source code key.
+     */
     public var astCache:Map<String, haxiom.AST.Expr> = new Map();
     var astCacheSize:Int = 0;
 
+    /**
+     * A callback invoked to resolve external dependency modules dynamically when an `import` statement is parsed.
+     * Maps a fully-qualified module path (e.g. `helper.MathUtils`) to its source code.
+     */
     public var moduleResolver(get, set):String->String;
     inline function get_moduleResolver() return interp.moduleResolver;
     inline function set_moduleResolver(v) return interp.moduleResolver = v;
 
+    /**
+     * The whitelist array containing permitted class/package names that the guest script is authorized to resolve.
+     */
     public var importWhitelist(get, set):Array<String>;
     inline function get_importWhitelist() return interp.importWhitelist;
     inline function set_importWhitelist(v) return interp.importWhitelist = v;
 
+    /**
+     * Optional callback triggered when a runtime or compile error occurs during script execution.
+     */
     public var errorHandler(get, set):Null<ScriptException->Void>;
     inline function get_errorHandler() return interp.errorHandler;
     inline function set_errorHandler(v) return interp.errorHandler = v;
 
+    /**
+     * If true, Haxiom compiles the AST to bytecode and executes it via the HXBC virtual machine.
+     * If false, Haxiom evaluates the AST nodes recursively in interpretation mode.
+     */
     public var useVM(get, set):Bool;
     inline function get_useVM() return interp.useVM;
     inline function set_useVM(v) return interp.useVM = v;
 
+    /**
+     * Read-only map of defined preprocessor flags currently active in the interpreter.
+     */
     public var preprocessorFlags(get, never):Map<String, Bool>;
     inline function get_preprocessorFlags() return interp.preprocessorFlags;
 
+    /**
+     * If true, compiles scripts in debug mode, tracking source code coordinates for traces
+     * and generating debug symbol lifespans to output local variable values in error stack traces.
+     */
     public var debugMode(get, set):Bool;
     inline function get_debugMode() return interp.debugMode;
     inline function set_debugMode(v) return interp.debugMode = v;
 
+    /**
+     * The maximum number of operations/instructions allowed per execution.
+     * Set to `0` to disable the safeguard / allow unlimited execution.
+     */
     public var maxInstructions(get, set):Int;
     inline function get_maxInstructions() return interp.maxInstructions;
     inline function set_maxInstructions(v) return interp.maxInstructions = v;
 
+    /**
+     * Override parameter to force main execution routing to a specific class name.
+     */
     public var mainClassOverride:String = null;
+
+    /**
+     * Contextual filename representing the active script execution path (used for error stack traces).
+     */
     public var currentFilename:String = null;
 
+    /**
+     * Instantiates a new Haxiom scripting engine instance and registers core HFFI bindings.
+     */
     public function new() {
         interp = new Interp();
         FFI.exposedModules.set("haxiom.AST", ["haxiom.ExprDef", "haxiom.TypeDecl"]);
@@ -47,6 +98,13 @@ class Haxiom implements common.IScriptEngine {
         FFI.registerEnum(this, "haxiom.TypeDecl", haxiom.AST.TypeDecl);
     }
 
+    /**
+     * Tokenizes, parses, expands macros, and optimizes a raw script string into a compiled Haxiom AST expression.
+     * 
+     * @param source The script source code string to compile.
+     * @param filename Optional filename path to associate with parsed symbols (used for error reporting).
+     * @return The optimized AST node root representation, or null if compilation failed.
+     */
     public function compile(source:String, ?filename:String):haxiom.AST.Expr {
         if (enableAstCache && astCache.exists(source)) {
             return astCache.get(source);
@@ -120,11 +178,25 @@ class Haxiom implements common.IScriptEngine {
         }
     }
 
+    /**
+     * Executes a pre-compiled Haxiom AST expression tree and returns the computed result.
+     * Runs in VM mode if `useVM = true`, or AST evaluation mode if `useVM = false`.
+     * 
+     * @param ast The root AST node representation of the script to execute.
+     * @return The computed return value from script execution.
+     */
     public function execute<T>(ast:haxiom.AST.Expr):T {
         var result = interp.execute(ast);
         return cast result;
     }
 
+    /**
+     * Compiles, parses, and evaluates a raw script string and returns the execution result.
+     * 
+     * @param source The raw script source code string to interpret.
+     * @param onDone Optional callback invoked with the execution result upon success.
+     * @return The computed execution result.
+     */
     public function interpret<T>(source:String, ?onDone:T->Void):T {
         var ast = compile(source, currentFilename);
         if (ast == null) return null;
@@ -133,6 +205,16 @@ class Haxiom implements common.IScriptEngine {
         return result;
     }
 
+    /**
+     * Compiles script source code into a serialized binary representation.
+     * Depending on `useVM`, generates either AST bytes or VM bytecode bytes.
+     * 
+     * @param source The script source code string.
+     * @param filename Optional filename path parameter.
+     * @param key Optional encryption key to obfuscate/secure the bytecode payload (VM mode only).
+     * @param debugMode If true, embeds variable symbol lifespan tables and positions (VM mode only).
+     * @return The serialized binary bytes representing the compiled output.
+     */
     public function compileToBytes(source:String, ?filename:String, ?key:HXBCKey, ?debugMode:Bool = false):haxe.io.Bytes {
         if (useVM) {
             return compileToBytecodeBytes(source, filename, key, debugMode);
@@ -140,6 +222,15 @@ class Haxiom implements common.IScriptEngine {
         return compileToASTBytes(source, filename);
     }
 
+    /**
+     * Deserializes and executes a pre-compiled binary script.
+     * Automatically routes to either VM execution or AST deserialization mode.
+     * 
+     * @param bytes The serialized binary bytes of the compiled script.
+     * @param sourceCode Optional original source code reference (used for displaying stack frames).
+     * @param key Optional key to decrypt the bytecode payload (must match compile key if compiled with encryption).
+     * @return The computed execution result.
+     */
     public function executeBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String, ?key:HXBCKey):T {
         if (useVM) {
             return executeBytecodeBytes(bytes, sourceCode, key);
@@ -147,12 +238,28 @@ class Haxiom implements common.IScriptEngine {
         return executeASTBytes(bytes, sourceCode);
     }
 
+    /**
+     * Compiles and serializes a script into AST-based binary bytes.
+     * 
+     * @param source The script source code string.
+     * @param filename Optional filename path context.
+     * @return Serialized AST bytes.
+     */
     public function compileToASTBytes(source:String, ?filename:String):haxe.io.Bytes {
         var ast = compile(source, filename);
         if (ast == null) return null;
         return Serializer.serializeToBytes(ast);
     }
 
+    /**
+     * Compiles and serializes a script into VM bytecode bytes (HXBC format).
+     * 
+     * @param source The script source code string.
+     * @param filename Optional filename path context.
+     * @param key Optional encryption key to obfuscate/secure the bytecode payload.
+     * @param debugMode If true, embeds debug symbols for local variables and positions.
+     * @return Serialized HXBC VM bytecode bytes.
+     */
     public function compileToBytecodeBytes(source:String, ?filename:String, ?key:HXBCKey, ?debugMode:Bool = false):haxe.io.Bytes {
         var ast = compile(source, filename);
         if (ast == null) return null;
@@ -160,6 +267,13 @@ class Haxiom implements common.IScriptEngine {
         return Serializer.serializeBytecode(chunk, key);
     }
 
+    /**
+     * Deserializes and executes AST-based binary bytes.
+     * 
+     * @param bytes Serialized AST bytes.
+     * @param sourceCode Optional original source code reference.
+     * @return The computed execution result.
+     */
     public function executeASTBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String):T {
         if (sourceCode != null) {
             interp.lastSource = sourceCode;
@@ -177,6 +291,14 @@ class Haxiom implements common.IScriptEngine {
         }
     }
 
+    /**
+     * Deserializes and executes VM bytecode bytes (HXBC format).
+     * 
+     * @param bytes Serialized VM bytecode bytes.
+     * @param sourceCode Optional original source code reference.
+     * @param key Optional key to decrypt the bytecode payload.
+     * @return The computed execution result.
+     */
     public function executeBytecodeBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String, ?key:HXBCKey):T {
         if (sourceCode != null) {
             interp.lastSource = sourceCode;
@@ -185,6 +307,12 @@ class Haxiom implements common.IScriptEngine {
         return cast interp.executeChunk(chunk);
     }
 
+    /**
+     * Exposes a host object or value as a global variable accessible to guest scripts.
+     * 
+     * @param name The global variable name to declare (e.g. `container`).
+     * @param value The host object reference or value.
+     */
     public function setGlobal(name:String, value:Dynamic):Void {
         interp.globals.declare(name, value);
     }
