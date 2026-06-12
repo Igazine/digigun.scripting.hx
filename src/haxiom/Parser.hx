@@ -7,6 +7,15 @@ class Parser {
     var pos:Int = 0;
     var compCounter:Int = 0;
     var file:String;
+    var definedTypes:Map<String, Pos> = new Map();
+
+    function registerType(name:String, pos:Pos) {
+        if (definedTypes.exists(name)) {
+            var prev = definedTypes.get(name);
+            throw new CompileException("Redefinition of class " + name + " (previously defined at line " + prev.line + ", col " + prev.col + ")", pos.line, pos.col, file);
+        }
+        definedTypes.set(name, pos);
+    }
 
     public function new(tokens:Array<Token>, ?file:String) {
         this.tokens = tokens;
@@ -268,6 +277,7 @@ class Parser {
     function parseClass(?meta:Array<{name:String, params:Array<Expr>}>):Expr {
         var t = expect(TClass);
         var name = expectIdent();
+        registerType(name, t.pos);
         var params = parseOptParams();
         var parent = null;
         if (match(TExtends)) {
@@ -1114,6 +1124,7 @@ class Parser {
     function parseInterface(?meta:Array<{name:String, params:Array<Expr>}>):Expr {
         var t = expect(TInterface);
         var name = expectIdent();
+        registerType(name, t.pos);
         var params = parseOptParams();
         var parents = [];
         if (match(TExtends)) {
@@ -1170,6 +1181,7 @@ class Parser {
     function parseEnum():Expr {
         var t = expect(TEnum);
         var name = expectIdent();
+        registerType(name, t.pos);
         expect(TBraceOpen);
         skipNewlines();
         var constructors = [];
@@ -1201,6 +1213,7 @@ class Parser {
     function parseTypedef():Expr {
         var t = expect(TTypedef);
         var name = expectIdent();
+        registerType(name, t.pos);
         var params = parseOptParams();
         expect(TAssign);
         var type = parseType();

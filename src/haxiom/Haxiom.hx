@@ -33,6 +33,9 @@ class Haxiom implements common.IScriptEngine {
     inline function get_debugMode() return interp.debugMode;
     inline function set_debugMode(v) return interp.debugMode = v;
 
+    public var mainClassOverride:String = null;
+    public var currentFilename:String = null;
+
     public function new() {
         interp = new Interp();
         FFI.exposedModules.set("haxiom.AST", ["haxiom.ExprDef", "haxiom.TypeDecl"]);
@@ -45,13 +48,29 @@ class Haxiom implements common.IScriptEngine {
             return astCache.get(source);
         }
         var fileInfo = filename != null ? filename : "script";
+        var fileBaseName:String = null;
+        if (filename != null && filename != "script") {
+            var idx = filename.lastIndexOf("/");
+            var idx2 = filename.lastIndexOf("\\");
+            var clean = filename;
+            if (idx != -1 || idx2 != -1) {
+                var maxIdx = idx > idx2 ? idx : idx2;
+                clean = filename.substring(maxIdx + 1);
+            }
+            var dotIdx = clean.indexOf(".");
+            if (dotIdx != -1) {
+                fileBaseName = clean.substring(0, dotIdx);
+            } else {
+                fileBaseName = clean;
+            }
+        }
         interp.lastSource = source;
         try {
             var lexer = new Lexer(source, fileInfo, interp.preprocessorFlags);
             var tokens = lexer.tokenize();
             var parser = new Parser(tokens, fileInfo);
             var ast = parser.parse();
-            ast = appendMainCallIfPresent(ast);
+            ast = appendMainCallIfPresent(ast, mainClassOverride != null ? mainClassOverride : fileBaseName);
             
             // Pass 1: Scan and register macro definitions in interpreter scope
             haxiom.MacroExpander.registerMacros(ast, interp);
@@ -103,7 +122,7 @@ class Haxiom implements common.IScriptEngine {
     }
 
     public function interpret<T>(source:String, ?onDone:T->Void):T {
-        var ast = compile(source);
+        var ast = compile(source, currentFilename);
         if (ast == null) return null;
         var result:T = execute(ast);
         if (onDone != null) onDone(result);
@@ -166,8 +185,8 @@ class Haxiom implements common.IScriptEngine {
         interp.globals.declare(name, value);
     }
 
-    static function appendMainCallIfPresent(expr:haxiom.AST.Expr):haxiom.AST.Expr {
-        var mainClass:String = null;
+    static function appendMainCallIfPresent(expr:haxiom.AST.Expr, ?fileBaseName:String):haxiom.AST.Expr {
+        var mainClasses:Array<String> = [];
         
         function checkExpr(e:haxiom.AST.Expr) {
             if (e == null) return;
@@ -175,62 +194,70 @@ class Haxiom implements common.IScriptEngine {
                 case EClass(name, _, methods, _, _, _, _):
                     for (m in methods) {
                         if (m.name == "main" && m.isStatic) {
-                            mainClass = name;
+                            mainClasses.push(name);
                             break;
                         }
                     }
                 case EBlock(exprs):
                     for (child in exprs) {
                         checkExpr(child);
-                        if (mainClass != null) break;
                     }
                 default:
             }
         }
         
         checkExpr(expr);
+        if (mainClasses.length == 0) return expr;
         
-        if (mainClass != null) {
-            var hasExistingCall = false;
-            function checkForCall(e:haxiom.AST.Expr) {
-                if (e == null) return;
-                switch (e.def) {
-                    case ECall(sub, _):
-                        switch (sub.def) {
-                            case EField(ident, field):
-                                if (field == "main") {
-                                    switch (ident.def) {
-                                        case EIdent(name):
-                                            if (name == mainClass) {
-                                                hasExistingCall = true;
-                                            }
-                                        default:
-                                    }
-                                }
-                            default:
-                        }
-                    case EBlock(exprs):
-                        for (child in exprs) {
-                            checkForCall(child);
-                        }
-                    default:
+        var mainClass = mainClasses[0];
+        if (fileBaseName != null) {
+            for (mc in mainClasses) {
+                if (mc == fileBaseName) {
+                    mainClass = mc;
+                    break;
                 }
             }
-            checkForCall(expr);
+        }
+        
+        var hasExistingCall = false;
+        function checkForCall(e:haxiom.AST.Expr) {
+            if (e == null) return;
+            switch (e.def) {
+                case ECall(sub, _):
+                    switch (sub.def) {
+                        case EField(ident, field):
+                            if (field == "main") {
+                                switch (ident.def) {
+                                    case EIdent(name):
+                                        if (name == mainClass) {
+                                            hasExistingCall = true;
+                                        }
+                                    default:
+                                }
+                            }
+                        default:
+                    }
+                case EBlock(exprs):
+                    for (child in exprs) {
+                        checkForCall(child);
+                    }
+                default:
+            }
+        }
+        checkForCall(expr);
+        
+        if (!hasExistingCall) {
+            var pos = expr.pos;
+            var identExpr:haxiom.AST.Expr = { def: EIdent(mainClass), pos: pos };
+            var fieldExpr:haxiom.AST.Expr = { def: EField(identExpr, "main"), pos: pos };
+            var callExpr:haxiom.AST.Expr = { def: ECall(fieldExpr, []), pos: pos };
             
-            if (!hasExistingCall) {
-                var pos = expr.pos;
-                var identExpr:haxiom.AST.Expr = { def: EIdent(mainClass), pos: pos };
-                var fieldExpr:haxiom.AST.Expr = { def: EField(identExpr, "main"), pos: pos };
-                var callExpr:haxiom.AST.Expr = { def: ECall(fieldExpr, []), pos: pos };
-                
-                switch (expr.def) {
-                    case EBlock(exprs):
-                        exprs.push(callExpr);
-                        return expr;
-                    default:
-                        return { def: EBlock([expr, callExpr]), pos: pos };
-                }
+            switch (expr.def) {
+                case EBlock(exprs):
+                    exprs.push(callExpr);
+                    return expr;
+                default:
+                    return { def: EBlock([expr, callExpr]), pos: pos };
             }
         }
         

@@ -15,6 +15,8 @@ class TestHXBCSecurityDebug {
         testEngineExposureBlockage();
         testAutoExecuteMain();
         testNativeClassCasting();
+        testClassRedefinitionBlockage();
+        testMainClassRouting();
         
         trace("SUCCESS: All HXBC Security and Debug Symbols tests passed!");
     }
@@ -262,5 +264,84 @@ class TestHXBCSecurityDebug {
         engineAST.interpret(script);
 
         trace("SUCCESS: Native class casting verified.");
+    }
+
+    static function testClassRedefinitionBlockage() {
+        var engine = new Haxiom();
+        var script = "
+            class RedefDemo {
+                static public function main() {}
+            }
+            class OtherCls {}
+            class RedefDemo {
+                static public function main() {}
+            }
+        ";
+        var caught = false;
+        try {
+            engine.compile(script);
+        } catch (e:ScriptException) {
+            if (StringTools.contains(e.message, "Redefinition of class RedefDemo")) {
+                caught = true;
+            } else {
+                throw "Unexpected redefinition compiler error: " + e.message;
+            }
+        } catch (e:Dynamic) {
+            throw "Unexpected exception type on redefinition: " + e;
+        }
+        if (!caught) {
+            throw "Class redefinition was not blocked!";
+        }
+        trace("SUCCESS: Class redefinition blockage verified.");
+    }
+
+    static function testMainClassRouting() {
+        var script = "
+            class AnotherClass {
+                static public var ran:Bool = false;
+                static public function main() {
+                    ran = true;
+                }
+            }
+            class Basic {
+                static public var ran:Bool = false;
+                static public function main() {
+                    ran = true;
+                }
+            }
+        ";
+
+        // Test 1: Prioritize Basic based on filename matching "Basic.hx"
+        var engine1 = new Haxiom();
+        engine1.useVM = true;
+        engine1.currentFilename = "Basic.hx";
+        engine1.interpret(script);
+        
+        var clsAnother1:haxiom.Interp.HaxiomClass = cast engine1.interp.globals.get("AnotherClass");
+        var clsBasic1:haxiom.Interp.HaxiomClass = cast engine1.interp.globals.get("Basic");
+        if (clsAnother1.staticFields.get("ran") == true) {
+            throw "Incorrectly executed AnotherClass.main instead of Basic.main when filename was Basic.hx";
+        }
+        if (clsBasic1.staticFields.get("ran") != true) {
+            throw "Failed to execute Basic.main when filename was Basic.hx";
+        }
+
+        // Test 2: Prioritize AnotherClass based on override flag
+        var engine2 = new Haxiom();
+        engine2.useVM = true;
+        engine2.mainClassOverride = "AnotherClass";
+        engine2.currentFilename = "Basic.hx";
+        engine2.interpret(script);
+
+        var clsAnother2:haxiom.Interp.HaxiomClass = cast engine2.interp.globals.get("AnotherClass");
+        var clsBasic2:haxiom.Interp.HaxiomClass = cast engine2.interp.globals.get("Basic");
+        if (clsAnother2.staticFields.get("ran") != true) {
+            throw "Failed to execute AnotherClass.main under explicit override";
+        }
+        if (clsBasic2.staticFields.get("ran") == true) {
+            throw "Incorrectly executed Basic.main under override AnotherClass";
+        }
+
+        trace("SUCCESS: Main class routing verified.");
     }
 }
