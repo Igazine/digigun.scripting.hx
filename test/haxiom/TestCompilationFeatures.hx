@@ -258,6 +258,17 @@ class TestCompilationFeatures {
         var resAST:Int = engineAST.interpret(script);
         if (resAST != 140) throw "testInline (AST) failed: expected 140, got " + resAST;
 
-        trace("SUCCESS: Inline modifier tests passed.");
+        // Test Modulo Assign %=
+        var pctScript = '
+            var x = 10;
+            x %= 3;
+            x;
+        ';
+        var resPct:Int = engine.interpret(pctScript);
+        if (resPct != 1) throw "testPercentAssign (VM) failed: expected 1, got " + resPct;
+        var resPctAST:Int = engineAST.interpret(pctScript);
+        if (resPctAST != 1) throw "testPercentAssign (AST) failed: expected 1, got " + resPctAST;
+
+        trace("SUCCESS: Inline modifier and Modulo Assign tests passed.");
     }
 }

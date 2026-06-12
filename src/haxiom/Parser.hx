@@ -601,6 +601,9 @@ class Parser {
         } else if (match(TSlashAssign)) {
             var rhs = parseAssign();
             return mk(EAssign(e, mk(EBinop("/", e, rhs), t.pos)), t.pos);
+        } else if (match(TPercentAssign)) {
+            var rhs = parseAssign();
+            return mk(EAssign(e, mk(EBinop("%", e, rhs), t.pos)), t.pos);
         }
         return e;
     }
