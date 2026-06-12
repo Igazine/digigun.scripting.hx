@@ -11,8 +11,9 @@ class TestCompilationFeatures {
         testOptionalFields();
         testMacros();
         testInline();
+        testInstructionLimit();
         
-        trace("SUCCESS: All Haxiom preprocessor, optional type, and macro tests passed!");
+        trace("SUCCESS: All Haxiom preprocessor, optional type, macro, and instruction limit tests passed!");
     }
 
     static function testPreprocessor() {
@@ -270,5 +271,50 @@ class TestCompilationFeatures {
         if (resPctAST != 1) throw "testPercentAssign (AST) failed: expected 1, got " + resPctAST;
 
         trace("SUCCESS: Inline modifier and Modulo Assign tests passed.");
+    }
+
+    static function testInstructionLimit() {
+        var infiniteLoopScript = '
+            var count = 0;
+            while (true) {
+                count++;
+            }
+        ';
+
+        // 1. Test VM Mode
+        var engineVM = new Haxiom();
+        engineVM.useVM = true;
+        engineVM.maxInstructions = 1000;
+        
+        var caughtVM = false;
+        try {
+            engineVM.interpret(infiniteLoopScript);
+        } catch (e:haxiom.ScriptException) {
+            if (StringTools.contains(e.message, "Instruction limit exceeded")) {
+                caughtVM = true;
+            } else {
+                trace("Unexpected exception VM: " + e);
+            }
+        }
+        if (!caughtVM) throw "testInstructionLimit (VM) failed: did not catch instruction limit exception";
+
+        // 2. Test AST Mode
+        var engineAST = new Haxiom();
+        engineAST.useVM = false;
+        engineAST.maxInstructions = 1000;
+        
+        var caughtAST = false;
+        try {
+            engineAST.interpret(infiniteLoopScript);
+        } catch (e:haxiom.ScriptException) {
+            if (StringTools.contains(e.message, "Instruction limit exceeded")) {
+                caughtAST = true;
+            } else {
+                trace("Unexpected exception AST: " + e);
+            }
+        }
+        if (!caughtAST) throw "testInstructionLimit (AST) failed: did not catch instruction limit exception";
+
+        trace("SUCCESS: Instruction limit safeguard tests passed.");
     }
 }

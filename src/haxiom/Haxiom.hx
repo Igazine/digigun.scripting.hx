@@ -33,6 +33,10 @@ class Haxiom implements common.IScriptEngine {
     inline function get_debugMode() return interp.debugMode;
     inline function set_debugMode(v) return interp.debugMode = v;
 
+    public var maxInstructions(get, set):Int;
+    inline function get_maxInstructions() return interp.maxInstructions;
+    inline function set_maxInstructions(v) return interp.maxInstructions = v;
+
     public var mainClassOverride:String = null;
     public var currentFilename:String = null;
 

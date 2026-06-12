@@ -235,6 +235,15 @@ class VM {
 
         try {
             while (fiber == null || !fiber.isSuspended) {
+                if (interp.maxInstructions > 0 && ++interp.instructionsCount > interp.maxInstructions) {
+                    var cp = currentPos();
+                    var fileInfo = cp.file != null ? cp.file : "script";
+                    var lineVal = cp.line;
+                    var colVal = cp.col;
+                    var locationStr = 'Runtime Error: Instruction limit exceeded (${interp.maxInstructions} ops) at ' + fileInfo + ':' + lineVal + ':' + colVal;
+                    var vmCallStack = [for (f in callFrames) { method: f.methodName != null ? f.methodName : "anonymous", pos: cp }];
+                    throw new haxiom.ScriptException("Instruction limit exceeded (possible infinite loop)", vmCallStack, locationStr, lineVal, colVal, fileInfo);
+                }
                 try {
                     if (fiber != null && fiber.hasError) {
                         fiber.hasError = false;

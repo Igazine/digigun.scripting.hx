@@ -592,8 +592,11 @@ class Interp {
 
     public var useVM:Bool = false;
     public var debugMode:Bool = true;
+    public var maxInstructions:Int = 0;
+    public var instructionsCount:Int = 0;
 
     public function execute(expr:Expr):Dynamic {
+        instructionsCount = 0;
         currentPackage = [];
         callStack = [];
         activeUsings = [];
@@ -654,6 +657,7 @@ class Interp {
     }
 
     public function executeChunk(chunk:haxiom.VM.BytecodeChunk):Dynamic {
+        instructionsCount = 0;
         currentPackage = [];
         callStack = [];
         activeUsings = [];
@@ -1489,6 +1493,13 @@ class Interp {
     function eval(e:Expr, scope:Scope):Dynamic {
         if (e != null && e.pos != null) lastEvalPos = e.pos;
         var pos = e.pos;
+        if (maxInstructions > 0 && ++instructionsCount > maxInstructions) {
+            var fileInfo = pos != null && pos.file != null ? pos.file : "script";
+            var lineVal = pos != null ? pos.line : 1;
+            var colVal = pos != null ? pos.col : 1;
+            var locationStr = 'Runtime Error: Instruction limit exceeded ($maxInstructions ops) at ' + fileInfo + ':' + lineVal + ':' + colVal;
+            throw new haxiom.ScriptException("Instruction limit exceeded (possible infinite loop)", callStack.copy(), locationStr, lineVal, colVal, fileInfo);
+        }
         switch (e.def) {
             case EValue(v):
                 return v;
