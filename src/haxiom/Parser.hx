@@ -37,6 +37,13 @@ class Parser {
         skipNewlines();
         var meta = parseMetadata();
         var t = peek();
+        if (t.def == TInline) {
+            next();
+            t = peek();
+            if (t.def != TFunction) {
+                throw new CompileException("Expected function after inline modifier", t.pos.line, t.pos.col, file);
+            }
+        }
         var expr:Expr = null;
         switch (t.def) {
             case TPackage:
@@ -308,6 +315,8 @@ class Parser {
                     isPublic = false;
                 } else if (match(TFinal)) {
                     isFinal = true;
+                } else if (match(TInline)) {
+                    // Ignore inline modifier
                 } else {
                     break;
                 }
@@ -385,6 +394,8 @@ class Parser {
                     isPublic = false;
                 } else if (match(TFinal)) {
                     isFinal = true;
+                } else if (match(TInline)) {
+                    // Ignore inline modifier
                 } else {
                     break;
                 }
@@ -1141,7 +1152,7 @@ class Parser {
         while (!is(TBraceClose) && !is(TEof)) {
             var fMeta = parseMetadata();
             // Interfaces are always public, but we allow modifiers to avoid parser syntax errors
-            while (match(TPublic) || match(TPrivate) || match(TStatic)) {}
+            while (match(TPublic) || match(TPrivate) || match(TStatic) || match(TInline)) {}
             
             skipNewlines();
             var memberT = peek();

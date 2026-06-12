@@ -53,6 +53,7 @@ enum TokenDef {
     TUsing;
     TAbstract;
     TTypedef;
+    TInline;
     
     // Operators
     TPlus;

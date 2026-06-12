@@ -10,6 +10,7 @@ class TestCompilationFeatures {
         testPreprocessor();
         testOptionalFields();
         testMacros();
+        testInline();
         
         trace("SUCCESS: All Haxiom preprocessor, optional type, and macro tests passed!");
     }
@@ -223,5 +224,40 @@ class TestCompilationFeatures {
         if (res != 52) throw "testMacros failed: expected 52, got " + res;
 
         trace("SUCCESS: Macro tests passed.");
+    }
+
+    static function testInline() {
+        var engine = new Haxiom();
+        engine.useVM = true;
+
+        var script = '
+            class InlineDemo {
+                static inline function getOffset():Int {
+                    return 100;
+                }
+                
+                public inline function add(a:Int, b:Int):Int {
+                    return a + b + getOffset();
+                }
+            }
+            
+            inline function localHelper(x:Int):Int {
+                return x * 2;
+            }
+
+            var inst = new InlineDemo();
+            inst.add(10, 20) + localHelper(5);
+        ';
+
+        var res:Int = engine.interpret(script);
+        if (res != 140) throw "testInline failed: expected 140, got " + res;
+
+        // Test AST mode too
+        var engineAST = new Haxiom();
+        engineAST.useVM = false;
+        var resAST:Int = engineAST.interpret(script);
+        if (resAST != 140) throw "testInline (AST) failed: expected 140, got " + resAST;
+
+        trace("SUCCESS: Inline modifier tests passed.");
     }
 }
