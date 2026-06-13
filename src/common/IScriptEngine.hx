@@ -7,7 +7,7 @@ interface IScriptEngine {
     /**
      * Interpret the given script source code and return the result.
      */
-    function interpret(source:String, ?onDone:Dynamic->Void):Dynamic;
+    function interpret<T>(source:String, ?onDone:T->Void):T;
 
     /**
      * Register a global variable or utility in the scripting environment.

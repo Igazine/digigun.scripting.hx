@@ -1652,12 +1652,12 @@ class Interp {
             case EBinop(op, e1, e2):
                 if (op == "&&") {
                     var v1 = eval(e1, scope);
-                    if (v1 == (false : Dynamic) || v1 == null) return v1;
+                    if (!isTruthy(v1)) return v1;
                     return eval(e2, scope);
                 }
                 if (op == "||") {
                     var v1 = eval(e1, scope);
-                    if (v1 != (false : Dynamic) && v1 != null) return v1;
+                    if (isTruthy(v1)) return v1;
                     return eval(e2, scope);
                 }
                 if (op == "?") {
@@ -1665,7 +1665,7 @@ class Interp {
                     var cond = eval(e1, scope);
                     switch (e2.def) {
                         case EBinop(":", left, right):
-                            if (cond != (false : Dynamic) && cond != null) return eval(left, scope);
+                            if (isTruthy(cond)) return eval(left, scope);
                             return eval(right, scope);
                         default: throw "Invalid ternary operator format";
                     }
@@ -3397,7 +3397,7 @@ class Interp {
 
             case EIf(cond, e1, e2):
                 var v = eval(cond, scope);
-                if (v != (false : Dynamic) && v != null) {
+                if (isTruthy(v)) {
                     return eval(e1, scope);
                 } else if (e2 != null) {
                     return eval(e2, scope);
@@ -3408,7 +3408,7 @@ class Interp {
                 var lastVal:Dynamic = null;
                 while (true) {
                     var c = eval(cond, scope);
-                    if (c == (false : Dynamic) || c == null) break;
+                    if (!isTruthy(c)) break;
                     try {
                         lastVal = eval(body, scope);
                     } catch (flow:ControlFlow) {
@@ -3434,7 +3434,7 @@ class Interp {
                         }
                     }
                     var c = eval(cond, scope);
-                    if (c == (false : Dynamic) || c == null) break;
+                    if (!isTruthy(c)) break;
                 }
                 return lastVal;
 
@@ -5212,6 +5212,10 @@ class Interp {
             }
         }
         return null;
+    }
+
+    inline function isTruthy(v:Dynamic):Bool {
+        return v != null && v != false;
     }
 
     function safeHasField(obj:Dynamic, field:String):Bool {

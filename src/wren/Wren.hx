@@ -791,7 +791,7 @@ class Wren implements common.IScriptEngine {
 
 
 
-    public function interpret(source:String, ?onDone:Dynamic->Void):Dynamic {
+    public function interpret<T>(source:String, ?onDone:T->Void):T {
         var lexer = new Lexer(source);
         var tokens = lexer.tokenize();
         var parser = new Parser(tokens);
@@ -800,10 +800,11 @@ class Wren implements common.IScriptEngine {
         interp.execute(ast, (r) -> {
             result = r;
             if (onDone != null) {
-                onDone(r);
+                var castedCallback:T->Void = cast onDone;
+                castedCallback(cast r);
             }
         });
-        return result;
+        return cast result;
     }
 
     public function setGlobal(name:String, value:Dynamic) {

@@ -185,9 +185,9 @@ class Haxiom implements common.IScriptEngine {
      * @param ast The root AST node representation of the script to execute.
      * @return The computed return value from script execution.
      */
-    public function execute(ast:haxiom.AST.Expr):Dynamic {
+    public function execute<T>(ast:haxiom.AST.Expr):T {
         var result = interp.execute(ast);
-        return result;
+        return cast result;
     }
 
     /**
@@ -197,10 +197,10 @@ class Haxiom implements common.IScriptEngine {
      * @param onDone Optional callback invoked with the execution result upon success.
      * @return The computed execution result.
      */
-    public function interpret(source:String, ?onDone:Dynamic->Void):Dynamic {
+    public function interpret<T>(source:String, ?onDone:T->Void):T {
         var ast = compile(source, currentFilename);
         if (ast == null) return null;
-        var result = execute(ast);
+        var result:T = execute(ast);
         if (onDone != null) onDone(result);
         return result;
     }
@@ -231,7 +231,7 @@ class Haxiom implements common.IScriptEngine {
      * @param key Optional key to decrypt the bytecode payload (must match compile key if compiled with encryption).
      * @return The computed execution result.
      */
-    public function executeBytes(bytes:haxe.io.Bytes, ?sourceCode:String, ?key:HXBCKey):Dynamic {
+    public function executeBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String, ?key:HXBCKey):T {
         if (useVM) {
             return executeBytecodeBytes(bytes, sourceCode, key);
         }
@@ -280,7 +280,7 @@ class Haxiom implements common.IScriptEngine {
      * @param sourceCode Optional original source code reference.
      * @return The computed execution result.
      */
-    public function executeASTBytes(bytes:haxe.io.Bytes, ?sourceCode:String):Dynamic {
+    public function executeASTBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String):T {
         if (sourceCode != null) {
             interp.lastSource = sourceCode;
         }
@@ -290,7 +290,7 @@ class Haxiom implements common.IScriptEngine {
         try {
             var result = execute(ast);
             interp.useVM = oldUseVM;
-            return result;
+            return cast result;
         } catch (e:Dynamic) {
             interp.useVM = oldUseVM;
             throw e;
@@ -305,12 +305,12 @@ class Haxiom implements common.IScriptEngine {
      * @param key Optional key to decrypt the bytecode payload.
      * @return The computed execution result.
      */
-    public function executeBytecodeBytes(bytes:haxe.io.Bytes, ?sourceCode:String, ?key:HXBCKey):Dynamic {
+    public function executeBytecodeBytes<T>(bytes:haxe.io.Bytes, ?sourceCode:String, ?key:HXBCKey):T {
         if (sourceCode != null) {
             interp.lastSource = sourceCode;
         }
         var chunk = Serializer.deserializeBytecode(bytes, key);
-        return interp.executeChunk(chunk);
+        return cast interp.executeChunk(chunk);
     }
 
     /**

@@ -148,6 +148,10 @@ class VM {
     public static var enablePooling:Bool = true;
     static var framePool:Array<VMCallFrame> = [];
 
+    public static inline function isTruthy(v:Dynamic):Bool {
+        return v != null && v != false;
+    }
+
     public static function obtainFrame(chunk:BytecodeChunk, ip:Int, scope:Scope, methodName:String):VMCallFrame {
         var frame:VMCallFrame = null;
         if (enablePooling && framePool.length > 0) {
@@ -508,21 +512,21 @@ class VM {
                     case OP_JUMP_IF_FALSE:
                         var targetIp = inst[frame.ip++];
                         var v = stack.pop();
-                        if (v == (false : Dynamic) || v == null) {
+                        if (!VM.isTruthy(v)) {
                             frame.ip = targetIp;
                         }
 
                     case OP_JUMP_IF_FALSE_PEEK:
                         var targetIp = inst[frame.ip++];
                         var v = stack[stack.length - 1];
-                        if (v == (false : Dynamic) || v == null) {
+                        if (!VM.isTruthy(v)) {
                             frame.ip = targetIp;
                         }
 
                     case OP_JUMP_IF_TRUE_PEEK:
                         var targetIp = inst[frame.ip++];
                         var v = stack[stack.length - 1];
-                        if (v != (false : Dynamic) && v != null) {
+                        if (VM.isTruthy(v)) {
                             frame.ip = targetIp;
                         }
 
