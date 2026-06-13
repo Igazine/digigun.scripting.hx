@@ -40,7 +40,6 @@ class CompileExample {
             });
             btn.trigger();
         ";
-
 		var engine = new Haxiom();
 		engine.useVM = true;
 		haxiom.FFI.registerClass(engine, "feathers.controls.Button", MockButton);

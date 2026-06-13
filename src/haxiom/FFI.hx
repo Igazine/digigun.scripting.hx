@@ -16,11 +16,65 @@ class FFI {
         memberAssigners.push(assigner);
     }
 
+    public static var nativeStaticFields = new Map<String, Map<String, Dynamic>>();
+
+    public static function registerStaticField(className:String, fieldName:String, value:Dynamic):Void {
+        var fields = nativeStaticFields.get(className);
+        if (fields == null) {
+            fields = new Map<String, Dynamic>();
+            nativeStaticFields.set(className, fields);
+        }
+        fields.set(fieldName, value);
+    }
+
+    public static macro function registerClass(haxiomExpr:haxe.macro.Expr, fqNameExpr:haxe.macro.Expr.ExprOf<String>, classExpr:haxe.macro.Expr) {
+        #if macro
+        var className = haxe.macro.ExprTools.toString(classExpr);
+        var t = null;
+        try {
+            t = haxe.macro.Context.getType(className);
+        } catch (e:Dynamic) {}
+        
+        var exprs:Array<haxe.macro.Expr> = [];
+        exprs.push(macro FFI.registerClassRuntime($haxiomExpr, $fqNameExpr, $classExpr));
+        
+        if (t != null) {
+            switch (t) {
+                case TInst(classRef, _):
+                    var c = classRef.get();
+                    for (field in c.statics.get()) {
+                        if (field.isPublic) {
+                            var isReadable = true;
+                            switch (field.kind) {
+                                case FVar(read, _):
+                                    switch (read) {
+                                        case AccNo | AccNever:
+                                            isReadable = false;
+                                        default:
+                                    }
+                                default:
+                            }
+                            if (isReadable) {
+                                var fieldName = field.name;
+                                exprs.push(macro FFI.registerStaticField($fqNameExpr, $v{fieldName}, $classExpr.$fieldName));
+                            }
+                        }
+                    }
+                default:
+            }
+        }
+        return macro { $a{exprs} };
+        #else
+        return macro null;
+        #end
+    }
+
+    #if !macro
     /**
      * Registers a native Haxe class to the Haxiom engine, making it available
      * both globally under its short name and at its fully qualified namespace path.
      */
-    public static function registerClass(haxiom:Haxiom, fqName:String, cls:Class<Dynamic>):Void {
+    public static function registerClassRuntime(haxiom:Haxiom, fqName:String, cls:Class<Dynamic>):Void {
         haxiom.interp.registerFullyQualified(fqName, cls, haxiom.interp.globals);
         if (haxiom.interp.importWhitelist != null && haxiom.interp.importWhitelist.indexOf(fqName) == -1) {
             haxiom.interp.importWhitelist.push(fqName);
@@ -131,5 +185,6 @@ class FFI {
         }
         #end
     }
+    #end
 
 }

@@ -1334,6 +1334,17 @@ class Interp {
             if (res != null) return res;
         }
 
+        // Native static field overrides (for static inline variables erased on target platforms)
+        if (Std.isOfType(obj, Class)) {
+            var className = Type.getClassName(cast obj);
+            if (className != null && haxiom.FFI.nativeStaticFields.exists(className)) {
+                var fields = haxiom.FFI.nativeStaticFields.get(className);
+                if (fields.exists(field)) {
+                    return fields.get(field);
+                }
+            }
+        }
+
         // Native Haxe reflection
         var f:Dynamic = null;
         try {

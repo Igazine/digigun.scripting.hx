@@ -18,8 +18,10 @@ import feathers.style.IDarkModeTheme;
 import feathers.style.Theme;
 import haxe.Timer;
 import haxe.io.Bytes;
+#if !macro
 import haxiom.FFI;
 import haxiom.Haxiom;
+#end
 import openfl.events.Event;
 import openfl.events.MouseEvent;
 
@@ -157,8 +159,6 @@ class TestOpenFL extends Application {
 	function onExecuteTrigger(e:TriggerEvent) {
 		container.removeChildren();
 		trace("Executing script...");
-		trace("DEBUG INSTANCE FIELDS OF BUTTON: " + Type.getInstanceFields(Button));
-		trace("DEBUG INSTANCE FIELDS OF EVENTDISPATCHER: " + Type.getInstanceFields(openfl.events.EventDispatcher));
 		final haxiom = new Haxiom();
 		haxiom.useVM = true;
 		registerFFI(haxiom);
@@ -194,7 +194,6 @@ class TestOpenFL extends Application {
 		} else {
 			trace("Script executed in " + d + " seconds");
 		}
-		// Sys.exit(0);
 	}
 }
 
