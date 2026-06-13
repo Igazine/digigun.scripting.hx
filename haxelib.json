@@ -9,7 +9,7 @@
   "description": "The Wren programming language on Haxe.",
   "version": "0.0.1",
   "classPath": "src",
-  "main": "haxiom.Compile",
+  "main": "haxiom.LibRun",
   "releasenote": "Initial release.",
   "contributors": [
     "Igazine"
