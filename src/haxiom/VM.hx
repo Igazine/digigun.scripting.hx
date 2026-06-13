@@ -508,21 +508,21 @@ class VM {
                     case OP_JUMP_IF_FALSE:
                         var targetIp = inst[frame.ip++];
                         var v = stack.pop();
-                        if (v == false || v == null) {
+                        if (v == (false : Dynamic) || v == null) {
                             frame.ip = targetIp;
                         }
 
                     case OP_JUMP_IF_FALSE_PEEK:
                         var targetIp = inst[frame.ip++];
                         var v = stack[stack.length - 1];
-                        if (v == false || v == null) {
+                        if (v == (false : Dynamic) || v == null) {
                             frame.ip = targetIp;
                         }
 
                     case OP_JUMP_IF_TRUE_PEEK:
                         var targetIp = inst[frame.ip++];
                         var v = stack[stack.length - 1];
-                        if (v != false && v != null) {
+                        if (v != (false : Dynamic) && v != null) {
                             frame.ip = targetIp;
                         }
 

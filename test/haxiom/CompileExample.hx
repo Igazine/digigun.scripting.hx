@@ -34,9 +34,9 @@ class CompileExample {
 		// File.saveBytes("example2.hxbc", bytes2);
 		trace("Saved example2.hxbc (" + bytes2.length + " bytes)");
 
-		var content = File.getBytes('./haxiom/openfl/scripts/Bytecode.hx');
+		var content = File.getBytes('./test/haxiom/openfl/scripts/Bytecode.hx');
 		var bytes3 = engine.compileToBytecodeBytes(content.toString(), null, null, false);
-		File.saveBytes("./haxiom/openfl/scripts/Bytecode.hxbc", bytes3);
+		File.saveBytes("./test/haxiom/openfl/scripts/Bytecode.hxbc", bytes3);
 		trace("Saved Bytecode.hxbc (" + bytes3.length + " bytes)");
 	}
 }

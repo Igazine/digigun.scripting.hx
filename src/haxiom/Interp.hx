@@ -1336,6 +1336,7 @@ class Interp {
         if (f == null) {
             f = safeField(obj, field);
         }
+
             // Check if this is an abstract method or property redirection closure/getter
             for (absName in haxiom.FFI.exposedAbstracts.keys()) {
                 var absInfo = haxiom.FFI.exposedAbstracts.get(absName);
@@ -1651,12 +1652,12 @@ class Interp {
             case EBinop(op, e1, e2):
                 if (op == "&&") {
                     var v1 = eval(e1, scope);
-                    if (v1 == false || v1 == null) return v1;
+                    if (v1 == (false : Dynamic) || v1 == null) return v1;
                     return eval(e2, scope);
                 }
                 if (op == "||") {
                     var v1 = eval(e1, scope);
-                    if (v1 != false && v1 != null) return v1;
+                    if (v1 != (false : Dynamic) && v1 != null) return v1;
                     return eval(e2, scope);
                 }
                 if (op == "?") {
@@ -1664,7 +1665,7 @@ class Interp {
                     var cond = eval(e1, scope);
                     switch (e2.def) {
                         case EBinop(":", left, right):
-                            if (cond != false && cond != null) return eval(left, scope);
+                            if (cond != (false : Dynamic) && cond != null) return eval(left, scope);
                             return eval(right, scope);
                         default: throw "Invalid ternary operator format";
                     }
@@ -3396,7 +3397,7 @@ class Interp {
 
             case EIf(cond, e1, e2):
                 var v = eval(cond, scope);
-                if (v != false && v != null) {
+                if (v != (false : Dynamic) && v != null) {
                     return eval(e1, scope);
                 } else if (e2 != null) {
                     return eval(e2, scope);
@@ -3407,7 +3408,7 @@ class Interp {
                 var lastVal:Dynamic = null;
                 while (true) {
                     var c = eval(cond, scope);
-                    if (c == false || c == null) break;
+                    if (c == (false : Dynamic) || c == null) break;
                     try {
                         lastVal = eval(body, scope);
                     } catch (flow:ControlFlow) {
@@ -3433,7 +3434,7 @@ class Interp {
                         }
                     }
                     var c = eval(cond, scope);
-                    if (c == false || c == null) break;
+                    if (c == (false : Dynamic) || c == null) break;
                 }
                 return lastVal;
 
