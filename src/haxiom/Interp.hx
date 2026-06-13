@@ -428,7 +428,7 @@ class Interp {
     public var moduleResolver:String->String = null;
     public var importWhitelist:Array<String> = defaultWhitelist.copy();
     public var importedModules:Map<String, Scope> = new Map();
-    public var functionSignatures:haxe.ds.ObjectMap<Dynamic, TypeDecl> = new haxe.ds.ObjectMap();
+    public var functionSignatures:FunctionSignatures = new FunctionSignatures();
     var currentConstructorInstance:Dynamic = null;
     var inAbstractMethod:Bool = false;
     public var activeUsings:Array<Dynamic> = [];
@@ -726,7 +726,7 @@ class Interp {
         if (Reflect.isFunction(v)) return "function";
         var cls = Type.getClass(v);
         if (cls != null) {
-            var name = Type.getClassName(cls);
+            var name = safeGetClassName(cls);
             if (name != null) return name;
         }
         return "Unknown";
@@ -2377,7 +2377,7 @@ class Interp {
                 var callee = eval(calleeExpr, scope);
                 var args = [for (a in argsExprs) eval(a, scope)];
                 
-                if (Reflect.isFunction(callee) && Type.getClassName(cast callee) == null) {
+                if (Reflect.isFunction(callee) && safeGetClassName(callee) == null) {
                     return Reflect.callMethod(null, callee, args);
                 }
                 
@@ -2448,9 +2448,9 @@ class Interp {
                     throw "Callee is null or undefined";
                 }
                 
-                if (Type.getClassName(cast callee) != null) {
-                    var className = Type.getClassName(cast callee);
-                    switch (className) {
+                var calleeClassName = safeGetClassName(callee);
+                if (calleeClassName != null) {
+                    switch (calleeClassName) {
                         case "haxe.ds.StringMap":
                             return new haxe.ds.StringMap<Dynamic>();
                         case "haxe.ds.IntMap":
@@ -2480,7 +2480,7 @@ class Interp {
                                         var resolvedParam = resolveTypePath(pPath, scope);
                                         if (resolvedParam != null) {
                                             if (Std.isOfType(resolvedParam, Class)) {
-                                                var className = Type.getClassName(resolvedParam);
+                                                var className = safeGetClassName(resolvedParam);
                                                 if (className != null) {
                                                     paramNames.push(className);
                                                 } else {
@@ -2657,9 +2657,9 @@ class Interp {
                             return inst;
                         }
                         
-                        if (Type.getClassName(cast callee) != null) {
-                            var className = Type.getClassName(cast callee);
-                            switch (className) {
+                        var calleeClassName = safeGetClassName(callee);
+                        if (calleeClassName != null) {
+                            switch (calleeClassName) {
                                 case "haxe.ds.StringMap":
                                     return new haxe.ds.StringMap<Dynamic>();
                                 case "haxe.ds.IntMap":
@@ -4354,7 +4354,11 @@ class Interp {
                     case "Void":
                         if (val != null) throw "Type mismatch: expected Void";
                     case "Int":
-                        if (!Std.isOfType(val, Int)) throw 'Type mismatch: expected Int but got ${val == null ? "null" : Type.getClassName(Type.getClass(val)) != null ? Type.getClassName(Type.getClass(val)) : Std.string(val)}';
+                        if (!Std.isOfType(val, Int)) {
+                            var valClass = Type.getClass(val);
+                            var valClassName = valClass != null ? safeGetClassName(valClass) : null;
+                            throw 'Type mismatch: expected Int but got ${val == null ? "null" : valClassName != null ? valClassName : Std.string(val)}';
+                        }
                     case "Float":
                         if (!Std.isOfType(val, Float) && !Std.isOfType(val, Int)) throw 'Type mismatch: expected Float but got ${val == null ? "null" : Std.string(val)}';
                     case "String":
@@ -4477,7 +4481,7 @@ class Interp {
                         if (haxiom.FFI.exposedAbstracts.exists(typeName)) {
                             fqAbstractName = typeName;
                         } else if (resolvedTypePathVal != null) {
-                            var resolvedClassName = Type.getClassName(cast resolvedTypePathVal);
+                            var resolvedClassName = safeGetClassName(resolvedTypePathVal);
                             if (resolvedClassName != null) {
                                 for (k in haxiom.FFI.exposedAbstracts.keys()) {
                                     if (haxiom.FFI.exposedAbstracts.get(k).implClass == resolvedClassName) {
@@ -4618,7 +4622,7 @@ class Interp {
             return (cast obj : HaxiomInstance).fields.get(key);
         } else {
             var cls = Type.getClass(obj);
-            var clsName = cls != null ? Type.getClassName(cls) : null;
+            var clsName = cls != null ? safeGetClassName(cls) : null;
             if (clsName == "haxe.ds.Vector" || clsName == "eval.Vector") {
                 return (cast obj : haxe.ds.Vector<Dynamic>).get(cast key);
             }
@@ -4635,7 +4639,7 @@ class Interp {
             (cast obj : HaxiomInstance).fields.set(key, val);
         } else {
             var cls = Type.getClass(obj);
-            var clsName = cls != null ? Type.getClassName(cls) : null;
+            var clsName = cls != null ? safeGetClassName(cls) : null;
             if (clsName == "haxe.ds.Vector" || clsName == "eval.Vector") {
                 (cast obj : haxe.ds.Vector<Dynamic>).set(cast key, val);
             } else {
@@ -5238,5 +5242,60 @@ class Interp {
         } catch (e:Dynamic) {
             return [];
         }
+    }
+
+    function safeGetClassName(cl:Dynamic):String {
+        if (cl == null) return null;
+        try {
+            return Type.getClassName(cast cl);
+        } catch (e:Dynamic) {
+            return null;
+        }
+    }
+}
+
+class FunctionSignatures {
+    #if neko
+    var pairs:Array<{k:Dynamic, v:haxiom.TypeDecl}> = [];
+    #else
+    var map:haxe.ds.ObjectMap<Dynamic, haxiom.TypeDecl> = new haxe.ds.ObjectMap();
+    #end
+
+    public function new() {}
+
+    public function set(k:Dynamic, v:haxiom.TypeDecl) {
+        #if neko
+        for (p in pairs) {
+            if (p.k == k) {
+                p.v = v;
+                return;
+            }
+        }
+        pairs.push({k: k, v: v});
+        #else
+        map.set(k, v);
+        #end
+    }
+
+    public function exists(k:Dynamic):Bool {
+        #if neko
+        for (p in pairs) {
+            if (p.k == k) return true;
+        }
+        return false;
+        #else
+        return map.exists(k);
+        #end
+    }
+
+    public function get(k:Dynamic):haxiom.TypeDecl {
+        #if neko
+        for (p in pairs) {
+            if (p.k == k) return p.v;
+        }
+        return null;
+        #else
+        return map.get(k);
+        #end
     }
 }
