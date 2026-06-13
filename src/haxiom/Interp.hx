@@ -1329,9 +1329,12 @@ class Interp {
         }
 
         // Native Haxe reflection
-        var f = Reflect.getProperty(obj, field);
+        var f:Dynamic = null;
+        try {
+            f = Reflect.getProperty(obj, field);
+        } catch (e:Dynamic) {}
         if (f == null) {
-            f = Reflect.field(obj, field);
+            f = safeField(obj, field);
         }
             // Check if this is an abstract method or property redirection closure/getter
             for (absName in haxiom.FFI.exposedAbstracts.keys()) {
@@ -3444,15 +3447,16 @@ class Interp {
                 // Dynamic Haxe Iterator protocol
                 if (iterable != null) {
                     var iterator:Dynamic = null;
-                    if (Reflect.field(iterable, "iterator") != null) {
-                        iterator = Reflect.callMethod(iterable, Reflect.field(iterable, "iterator"), []);
+                    var iterField = safeField(iterable, "iterator");
+                    if (iterField != null) {
+                        iterator = Reflect.callMethod(iterable, iterField, []);
                     } else if (Std.isOfType(iterable, Array)) {
                         iterator = (cast iterable : Array<Dynamic>).iterator();
                     } else if (Std.isOfType(iterable, haxe.Constraints.IMap)) {
                         iterator = (cast iterable : haxe.Constraints.IMap<Dynamic, Dynamic>).iterator();
                     } else if (Std.isOfType(iterable, IntIterator)) {
                         iterator = iterable;
-                    } else if (Reflect.field(iterable, "hasNext") != null && Reflect.field(iterable, "next") != null) {
+                    } else if (safeField(iterable, "hasNext") != null && safeField(iterable, "next") != null) {
                         iterator = iterable;
                     }
                     
@@ -3478,9 +3482,11 @@ class Interp {
                                     throw err;
                                 }
                             }
-                        } else if (Reflect.field(iterator, "hasNext") != null && Reflect.field(iterator, "next") != null) {
-                            while (Reflect.callMethod(iterator, Reflect.field(iterator, "hasNext"), [])) {
-                                var item = Reflect.callMethod(iterator, Reflect.field(iterator, "next"), []);
+                        } else if (safeField(iterator, "hasNext") != null && safeField(iterator, "next") != null) {
+                            var hasNextFn = safeField(iterator, "hasNext");
+                            var nextFn = safeField(iterator, "next");
+                            while (Reflect.callMethod(iterator, hasNextFn, [])) {
+                                var item = Reflect.callMethod(iterator, nextFn, []);
                                 var fScope = Scope.create(scope);
                                 fScope.declare(vName, item);
                                 try {
@@ -4671,7 +4677,7 @@ class Interp {
 
     function isPackageObject(val:Dynamic):Bool {
         if (val == null) return false;
-        return Reflect.field(val, "__isHaxiomPackage") == true;
+        return safeField(val, "__isHaxiomPackage") == true;
     }
 
     function isClassInScope(cls:Dynamic, scope:Scope):Bool {
@@ -4754,7 +4760,7 @@ class Interp {
                     if (current == null) {
                         return {success: true, value: null};
                     }
-                    current = Reflect.field(current, field);
+                    current = safeField(current, field);
                 }
                 return {success: true, value: current};
             }
@@ -4772,7 +4778,7 @@ class Interp {
             val = scope.get(name);
             for (i in 1...path.length) {
                 if (val == null) break;
-                val = Reflect.field(val, path[i]);
+                val = safeField(val, path[i]);
             }
         }
         
