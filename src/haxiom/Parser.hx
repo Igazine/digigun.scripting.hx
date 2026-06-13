@@ -584,7 +584,7 @@ class Parser {
     }
 
     function parseAssign():Expr {
-        var e = parseTernary();
+        var e = parseMapArrow();
         var t = peek();
         if (match(TAssign)) {
             var rhs = parseAssign();
@@ -604,6 +604,16 @@ class Parser {
         } else if (match(TPercentAssign)) {
             var rhs = parseAssign();
             return mk(EAssign(e, mk(EBinop("%", e, rhs), t.pos)), t.pos);
+        }
+        return e;
+    }
+
+    function parseMapArrow():Expr {
+        var e = parseTernary();
+        var t = peek();
+        if (match(TMapArrow)) {
+            var rhs = parseMapArrow();
+            return mk(EBinop("=>", e, rhs), t.pos);
         }
         return e;
     }
@@ -928,24 +938,27 @@ class Parser {
                     return desugarComprehension(compStmt, t.pos);
                 }
                 var first = parseExpr();
-                if (match(TMapArrow)) {
-                    var val = parseExpr();
-                    var pairs = [{ key: first, value: val }];
-                    while (match(TComma)) {
-                        var k = parseExpr();
-                        expect(TMapArrow);
-                        var v = parseExpr();
-                        pairs.push({ key: k, value: v });
-                    }
-                    expect(TBracketClose);
-                    return mk(EMapDecl(pairs), t.pos);
-                } else {
-                    var values = [first];
-                    while (match(TComma)) {
-                        values.push(parseExpr());
-                    }
-                    expect(TBracketClose);
-                    return mk(EArrayDecl(values), t.pos);
+                switch (first.def) {
+                    case EBinop("=>", key, value):
+                        var pairs = [{ key: key, value: value }];
+                        while (match(TComma)) {
+                            var k = parseExpr();
+                            switch (k.def) {
+                                case EBinop("=>", nextKey, nextValue):
+                                    pairs.push({ key: nextKey, value: nextValue });
+                                default:
+                                    throw new CompileException("Expected => in map declaration", k.pos.line, k.pos.col, file);
+                            }
+                        }
+                        expect(TBracketClose);
+                        return mk(EMapDecl(pairs), t.pos);
+                    default:
+                        var values = [first];
+                        while (match(TComma)) {
+                            values.push(parseExpr());
+                        }
+                        expect(TBracketClose);
+                        return mk(EArrayDecl(values), t.pos);
                 }
             case TBraceOpen:
                 next();
@@ -1235,50 +1248,94 @@ class Parser {
         return mk(ETypedef(name, type, params), t.pos);
     }
 
+    function isMapComprehension(expr:Expr):Bool {
+        if (expr == null) return false;
+        switch (expr.def) {
+            case EBlock(exprs):
+                if (exprs.length > 0) return isMapComprehension(exprs[exprs.length - 1]);
+                return false;
+            case EIf(_, e1, e2):
+                return isMapComprehension(e1) || (e2 != null && isMapComprehension(e2));
+            case EFor(_, _, body):
+                return isMapComprehension(body);
+            case EWhile(_, body):
+                return isMapComprehension(body);
+            case EDoWhile(_, body):
+                return isMapComprehension(body);
+            case ESwitch(_, cases, defExpr):
+                for (c in cases) {
+                    if (isMapComprehension(c.expr)) return true;
+                }
+                return defExpr != null && isMapComprehension(defExpr);
+            case ETry(tryExpr, catches):
+                if (isMapComprehension(tryExpr)) return true;
+                for (c in catches) {
+                    if (isMapComprehension(c.body)) return true;
+                }
+                return false;
+            case EBinop("=>", _, _):
+                return true;
+            default:
+                return false;
+        }
+    }
+
     function desugarComprehension(stmt:Expr, pos:Pos):Expr {
-        var arrName = "__comp_arr_" + (compCounter++);
-        var transformed = transformComprehension(stmt, arrName);
-        var varDecl = mk(EVar(arrName, null, mk(EArrayDecl([]), pos)), pos);
-        var retExpr = mk(EIdent(arrName), pos);
+        var isMap = isMapComprehension(stmt);
+        var compName = isMap ? "__comp_map_" + (compCounter++) : "__comp_arr_" + (compCounter++);
+        var transformed = transformComprehension(stmt, compName, isMap);
+        var initExpr = isMap ? mk(EMapDecl([]), pos) : mk(EArrayDecl([]), pos);
+        var varDecl = mk(EVar(compName, null, initExpr), pos);
+        var retExpr = mk(EIdent(compName), pos);
         return mk(EBlock([varDecl, transformed, retExpr]), pos);
     }
 
-    function transformComprehension(expr:Expr, arrName:String):Expr {
+    function transformComprehension(expr:Expr, compName:String, isMap:Bool):Expr {
         if (expr == null) return null;
         var pos = expr.pos;
         switch (expr.def) {
             case EBlock(exprs):
                 if (exprs.length > 0) {
                     var lastIdx = exprs.length - 1;
-                    exprs[lastIdx] = transformComprehension(exprs[lastIdx], arrName);
+                    exprs[lastIdx] = transformComprehension(exprs[lastIdx], compName, isMap);
                 }
                 return expr;
             case EIf(cond, e1, e2):
-                var newE1 = transformComprehension(e1, arrName);
-                var newE2 = e2 != null ? transformComprehension(e2, arrName) : null;
+                var newE1 = transformComprehension(e1, compName, isMap);
+                var newE2 = e2 != null ? transformComprehension(e2, compName, isMap) : null;
                 return mk(EIf(cond, newE1, newE2), pos);
             case EFor(v, it, body):
-                var newBody = transformComprehension(body, arrName);
+                var newBody = transformComprehension(body, compName, isMap);
                 return mk(EFor(v, it, newBody), pos);
             case EWhile(cond, body):
-                var newBody = transformComprehension(body, arrName);
+                var newBody = transformComprehension(body, compName, isMap);
                 return mk(EWhile(cond, newBody), pos);
             case EDoWhile(cond, body):
-                var newBody = transformComprehension(body, arrName);
+                var newBody = transformComprehension(body, compName, isMap);
                 return mk(EDoWhile(cond, newBody), pos);
             case ESwitch(switchExpr, cases, defExpr):
-                var newCases = [for (c in cases) { values: c.values, guard: c.guard, expr: transformComprehension(c.expr, arrName) }];
-                var newDefExpr = defExpr != null ? transformComprehension(defExpr, arrName) : null;
+                var newCases = [for (c in cases) { values: c.values, guard: c.guard, expr: transformComprehension(c.expr, compName, isMap) }];
+                var newDefExpr = defExpr != null ? transformComprehension(defExpr, compName, isMap) : null;
                 return mk(ESwitch(switchExpr, newCases, newDefExpr), pos);
             case ETry(tryExpr, catches):
-                var newTryExpr = transformComprehension(tryExpr, arrName);
-                var newCatches = [for (c in catches) { pattern: c.pattern, type: c.type, guard: c.guard, body: transformComprehension(c.body, arrName) }];
+                var newTryExpr = transformComprehension(tryExpr, compName, isMap);
+                var newCatches = [for (c in catches) { pattern: c.pattern, type: c.type, guard: c.guard, body: transformComprehension(c.body, compName, isMap) }];
                 return mk(ETry(newTryExpr, newCatches), pos);
             case EBreak, EContinue, EReturn(_), EThrow(_):
                 return expr;
             default:
-                var pushField = mk(EField(mk(EIdent(arrName), pos), "push"), pos);
-                return mk(ECall(pushField, [expr]), pos);
+                if (isMap) {
+                    switch (expr.def) {
+                        case EBinop("=>", key, value):
+                            var setField = mk(EField(mk(EIdent(compName), pos), "set"), pos);
+                            return mk(ECall(setField, [key, value]), pos);
+                        default:
+                            throw new CompileException("Map comprehension expected key => value expression", pos.line, pos.col, file);
+                    }
+                } else {
+                    var pushField = mk(EField(mk(EIdent(compName), pos), "push"), pos);
+                    return mk(ECall(pushField, [expr]), pos);
+                }
         }
     }
 }

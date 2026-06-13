@@ -12,8 +12,9 @@ class TestCompilationFeatures {
         testMacros();
         testInline();
         testInstructionLimit();
+        testComprehensionsAndInterpolation();
         
-        trace("SUCCESS: All Haxiom preprocessor, optional type, macro, and instruction limit tests passed!");
+        trace("SUCCESS: All Haxiom preprocessor, optional type, macro, instruction limit, and comprehension tests passed!");
     }
 
     static function testPreprocessor() {
@@ -316,5 +317,53 @@ class TestCompilationFeatures {
         if (!caughtAST) throw "testInstructionLimit (AST) failed: did not catch instruction limit exception";
 
         trace("SUCCESS: Instruction limit safeguard tests passed.");
+    }
+
+    static function testComprehensionsAndInterpolation() {
+        var engine = new Haxiom();
+        
+        for (useVM in [true, false]) {
+            engine.useVM = useVM;
+            var mode = useVM ? "VM" : "AST";
+            
+            // 1. String interpolation for single-quotes
+            var interpScript = "
+                var name = 'Tamas';
+                var person = {name: 'Tamas', age: 44};
+                var s1 = 'hello $name';
+                var s2 = 'hello ${person.name}';
+                s1 + '|' + s2;
+            ";
+            var resInterp:String = engine.interpret(interpScript);
+            if (resInterp != "hello Tamas|hello Tamas") {
+                throw "testComprehensionsAndInterpolation (" + mode + ") string interpolation failed: got " + resInterp;
+            }
+
+            // 2. Array comprehension
+            var arrayScript = "
+                var a = [for (i in 0...10) i];
+                var i = 0;
+                var b = [while (i < 10) i++];
+                a.join(',') + '|' + b.join(',');
+            ";
+            var resArray:String = engine.interpret(arrayScript);
+            if (resArray != "0,1,2,3,4,5,6,7,8,9|0,1,2,3,4,5,6,7,8,9") {
+                throw "testComprehensionsAndInterpolation (" + mode + ") array comprehension failed: got " + resArray;
+            }
+
+            // 3. Map comprehension
+            var mapScript = "
+                var a = [for (i in 0...5) i => 'number ${i}'];
+                var i = 0;
+                var b = [while (i < 5) i => 'number ${i++}'];
+                a.get(0) + '|' + a.get(4) + '|' + b.get(0) + '|' + b.get(4);
+            ";
+            var resMap:String = engine.interpret(mapScript);
+            if (resMap != "number 0|number 4|number 0|number 4") {
+                throw "testComprehensionsAndInterpolation (" + mode + ") map comprehension failed: got " + resMap;
+            }
+        }
+        
+        trace("SUCCESS: Comprehensions and interpolation tests passed.");
     }
 }

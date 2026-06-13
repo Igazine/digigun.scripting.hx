@@ -2510,13 +2510,15 @@ class Interp {
                                             return new haxe.ds.StringMap<Dynamic>();
                                         } else if (keyName == "Int") {
                                             return new haxe.ds.IntMap<Dynamic>();
+                                        } else if (keyName == "Dynamic") {
+                                            return new haxiom.DynamicMap();
                                         } else {
                                             return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
                                         }
                                     default:
                                 }
                             }
-                            return new haxe.ds.StringMap<Dynamic>();
+                            return new haxiom.DynamicMap();
                         }
                         
                         if (fqName == "Vector" || fqName == "haxe.ds.Vector") {
@@ -2679,6 +2681,9 @@ class Interp {
                 return obj;
 
             case EMapDecl(values):
+                if (values.length == 0) {
+                    return new haxiom.DynamicMap();
+                }
                 var evaluated = [];
                 var allString = true;
                 var allInt = true;

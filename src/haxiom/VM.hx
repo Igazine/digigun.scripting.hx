@@ -1032,28 +1032,32 @@ class VM {
 
                     case OP_NEW_MAP:
                         var size = inst[frame.ip++];
-                        var evaluated = [];
-                        for (i in 0...size) {
-                            var val = stack.pop();
-                            var key = stack.pop();
-                            evaluated.unshift({ key: key, value: val });
-                        }
-                        var allString = true;
-                        var allInt = true;
-                        for (kv in evaluated) {
-                            if (!Std.isOfType(kv.key, String)) allString = false;
-                            if (!Std.isOfType(kv.key, Int)) allInt = false;
-                        }
                         var map:haxe.Constraints.IMap<Dynamic, Dynamic> = null;
-                        if (allString) {
-                            map = new haxe.ds.StringMap<Dynamic>();
-                        } else if (allInt) {
-                            map = new haxe.ds.IntMap<Dynamic>();
+                        if (size == 0) {
+                            map = new haxiom.DynamicMap();
                         } else {
-                            map = new haxe.ds.ObjectMap<Dynamic, Dynamic>();
-                        }
-                        for (kv in evaluated) {
-                            map.set(kv.key, kv.value);
+                            var evaluated = [];
+                            for (i in 0...size) {
+                                var val = stack.pop();
+                                var key = stack.pop();
+                                evaluated.unshift({ key: key, value: val });
+                            }
+                            var allString = true;
+                            var allInt = true;
+                            for (kv in evaluated) {
+                                if (!Std.isOfType(kv.key, String)) allString = false;
+                                if (!Std.isOfType(kv.key, Int)) allInt = false;
+                            }
+                            if (allString) {
+                                map = new haxe.ds.StringMap<Dynamic>();
+                            } else if (allInt) {
+                                map = new haxe.ds.IntMap<Dynamic>();
+                            } else {
+                                map = new haxe.ds.ObjectMap<Dynamic, Dynamic>();
+                            }
+                            for (kv in evaluated) {
+                                map.set(kv.key, kv.value);
+                            }
                         }
                         stack.push(map);
 
