@@ -290,7 +290,7 @@ class VM {
                     case OP_SET_LOCAL:
                         var slot = inst[frame.ip++];
                         var val = stack[stack.length - 1];
-                        trace('OP_SET_LOCAL slot ' + slot + ' = ' + val);
+                        trace('OP_SET_LOCAL slot ' + slot + ' = ' + Std.string(val));
                         frame.locals[slot] = val;
 
                     case OP_GET_VAR:
@@ -325,7 +325,7 @@ class VM {
                             } else {
                                 val = frame.scope.get(name);
                             }
-                            trace('OP_GET_VAR: ' + name + ' = ' + val);
+                            trace('OP_GET_VAR: ' + name + ' = ' + Std.string(val));
                             stack.push(val);
                         }
 
@@ -390,7 +390,7 @@ class VM {
                         var name:String = consts[nameIdx];
                         var type:TypeDecl = typeIdx >= 0 ? consts[typeIdx] : null;
                         var val = stack.pop();
-                        trace('OP_DECLARE_VAR: ' + name + ' = ' + val);
+                        trace('OP_DECLARE_VAR: ' + name + ' = ' + Std.string(val));
                         if (type != null) {
                             interp.checkType(val, type, frame.scope);
                         }
@@ -727,6 +727,9 @@ class VM {
                             }
                         }
                         var boundFunc:Dynamic = null;
+                        #if (cpp || hl || java || cs)
+                        boundFunc = Reflect.makeVarArgs(func);
+                        #else
                         if (hasRest) {
                             boundFunc = Reflect.makeVarArgs(func);
                         } else {
@@ -739,6 +742,7 @@ class VM {
                                 default: (callArgs:Array<Dynamic>) -> func(callArgs);
                             };
                         }
+                        #end
                         
                         var signatureArgs = [];
                         for (arg in proto.args) {
@@ -1063,8 +1067,9 @@ class VM {
                         }
                         
                         // Fallback: resolve method as a field and invoke
-                        var resolvedField = interp.evalField(obj, fieldName, frame.scope, currentPos());
-                        var res = Reflect.callMethod(null, resolvedField, args);
+                        var resolvedField:Dynamic = interp.evalField(obj, fieldName, frame.scope, currentPos());
+                        trace("DEBUG VM FALLBACK: obj=" + Std.string(obj) + " fieldName=" + fieldName + " typeof(resolvedField)=" + Std.string(Type.typeof(resolvedField)) + " isFunction=" + Reflect.isFunction(resolvedField));
+                        var res = Reflect.callMethod(obj, cast resolvedField, args);
                         stack.push(res);
 
                     case OP_NEW_MAP:

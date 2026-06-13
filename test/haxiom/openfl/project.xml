@@ -17,5 +17,10 @@
 	<haxelib name="actuate"/>
 	<haxelib name="feathersui"/>
     <haxelib name="digigun.scripting.hx"/>
+    <haxeflag name="-dce" value="no" />
+    <haxeflag name="--macro" value="keep('openfl.events.EventDispatcher', null, true)" />
+    <haxeflag name="--macro" value="keep('openfl.display.DisplayObjectContainer', null, true)" />
+    <haxeflag name="--macro" value="keep('feathers.controls.Button', null, true)" />
+    <haxeflag name="--macro" value="keep('feathers.controls.LayoutGroup', null, true)" />
 
 </project>

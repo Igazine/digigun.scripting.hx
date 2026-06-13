@@ -183,7 +183,7 @@ class TypeSystem {
                             nativeClass = interp.resolveNativeClass(typeName);
                         }
                         if (nativeClass != null) {
-                            trace('checkType: typeName=' + typeName + ' nativeClass=' + nativeClass + ' val=' + val + ' isOfType=' + Std.isOfType(val, nativeClass));
+                            trace('checkType: typeName=' + typeName + ' nativeClass=' + nativeClass + ' val=' + Std.string(val) + ' isOfType=' + Std.isOfType(val, nativeClass));
                             if (val == null) return;
                             
                             #if cpp

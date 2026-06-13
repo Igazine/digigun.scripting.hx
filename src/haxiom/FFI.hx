@@ -5,6 +5,16 @@ class FFI {
     public static var exposedGenerics = new Map<String, String>();
     public static var abstractImpls = new Map<String, Dynamic>();
     public static var exposedModules = new Map<String, Array<String>>();
+    public static var memberResolvers:Array<(obj:Dynamic, field:String)->Dynamic> = [];
+    public static var memberAssigners:Array<(obj:Dynamic, field:String, val:Dynamic)->Bool> = [];
+
+    public static function registerMemberResolver(resolver:(obj:Dynamic, field:String)->Dynamic):Void {
+        memberResolvers.push(resolver);
+    }
+
+    public static function registerMemberAssigner(assigner:(obj:Dynamic, field:String, val:Dynamic)->Bool):Void {
+        memberAssigners.push(assigner);
+    }
 
     /**
      * Registers a native Haxe class to the Haxiom engine, making it available
@@ -121,4 +131,5 @@ class FFI {
         }
         #end
     }
+
 }

@@ -1328,13 +1328,25 @@ class Interp {
             throw 'Static method or field "$field" not found on class ${cls.name}';
         }
 
+        // Custom FFI member resolution overrides
+        for (resolver in haxiom.FFI.memberResolvers) {
+            var res = resolver(obj, field);
+            if (res != null) return res;
+        }
+
         // Native Haxe reflection
         var f:Dynamic = null;
         try {
             f = Reflect.getProperty(obj, field);
         } catch (e:Dynamic) {}
+        if (field == "addEventListener") {
+            trace("DEBUG evalField native addEventListener: getProperty=" + f);
+        }
         if (f == null) {
             f = safeField(obj, field);
+        }
+        if (field == "addEventListener") {
+            trace("DEBUG evalField native addEventListener end: f=" + f);
         }
 
             // Check if this is an abstract method or property redirection closure/getter
@@ -1488,7 +1500,16 @@ class Interp {
                     }
                 }
                 if (!setterResolved) {
-                    Reflect.setProperty(obj, field, val);
+                    var assigned = false;
+                    for (assigner in haxiom.FFI.memberAssigners) {
+                        if (assigner(obj, field, val)) {
+                            assigned = true;
+                            break;
+                        }
+                    }
+                    if (!assigned) {
+                        Reflect.setProperty(obj, field, val);
+                    }
                 }
             }
         }
@@ -3991,6 +4012,9 @@ class Interp {
             }
         }
         var boundFunc:Dynamic = null;
+        #if (cpp || hl || java || cs)
+        boundFunc = Reflect.makeVarArgs(func);
+        #else
         if (hasRest) {
             boundFunc = Reflect.makeVarArgs(func);
         } else {
@@ -4003,6 +4027,7 @@ class Interp {
                 default: (callArgs:Array<Dynamic>) -> func(callArgs);
             };
         }
+        #end
         var signatureArgs = [];
         for (arg in method.args) {
             var t = arg.type != null ? arg.type : TPath(["Dynamic"], []);
@@ -5021,8 +5046,15 @@ class Interp {
     function safeField(obj:Dynamic, field:String):Dynamic {
         if (obj == null) return null;
         try {
-            return Reflect.field(obj, field);
+            var res = Reflect.field(obj, field);
+            if (field == "addEventListener") {
+                trace("DEBUG safeField: obj=" + Std.string(obj) + " typeof(obj)=" + Std.string(Type.typeof(obj)) + " field=" + field + " res=" + res);
+            }
+            return res;
         } catch (e:Dynamic) {
+            if (field == "addEventListener") {
+                trace("DEBUG safeField error: " + Std.string(e));
+            }
             return null;
         }
     }

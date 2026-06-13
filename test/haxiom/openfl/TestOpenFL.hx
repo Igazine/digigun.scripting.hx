@@ -21,6 +21,7 @@ import haxe.io.Bytes;
 import haxiom.FFI;
 import haxiom.Haxiom;
 import openfl.events.Event;
+import openfl.events.MouseEvent;
 
 class TestOpenFL extends Application {
 	static final SCRIPTS:Array<ScriptDef> = [
@@ -121,6 +122,11 @@ class TestOpenFL extends Application {
 
 		selectedScript = SCRIPTS[0];
 		loadScript();
+		/*
+			haxe.Timer.delay(function() {
+				onExecuteTrigger(null);
+			}, 500);
+		 */
 	}
 
 	function registerFFI(haxiom:Haxiom) {
@@ -151,16 +157,36 @@ class TestOpenFL extends Application {
 	function onExecuteTrigger(e:TriggerEvent) {
 		container.removeChildren();
 		trace("Executing script...");
+		trace("DEBUG INSTANCE FIELDS OF BUTTON: " + Type.getInstanceFields(Button));
+		trace("DEBUG INSTANCE FIELDS OF EVENTDISPATCHER: " + Type.getInstanceFields(openfl.events.EventDispatcher));
 		final haxiom = new Haxiom();
 		haxiom.useVM = true;
 		registerFFI(haxiom);
 		registerGlobals(haxiom);
 		final t = Timer.stamp();
-		if (scriptArea.currentScript.isBytecode) {
-			haxiom.executeBytecodeBytes(scriptArea.currentScriptContent);
-		} else {
-			haxiom.currentFilename = scriptArea.currentScript.id;
-			haxiom.interpret(scriptArea.currentScriptContent.toString());
+		try {
+			if (scriptArea.currentScript.isBytecode) {
+				haxiom.executeBytecodeBytes(scriptArea.currentScriptContent);
+			} else {
+				haxiom.currentFilename = scriptArea.currentScript.id;
+				haxiom.interpret(scriptArea.currentScriptContent.toString());
+			}
+
+			// Simulate button click to verify guest event listener
+			/*
+				if (container.numChildren > 0) {
+					var child = container.getChildAt(0);
+					if (Std.isOfType(child, Button)) {
+						var btn:Button = cast child;
+						trace("Dynamically triggering button click event...");
+						TriggerEvent.dispatchFromMouseEvent(btn, new MouseEvent(MouseEvent.CLICK));
+						trace("Button click event dispatched successfully!");
+					}
+				}
+			 */
+		} catch (err:Dynamic) {
+			trace("CATCH ERROR: " + err);
+			trace("CATCH STACK: " + haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
 		}
 		final d = (Timer.stamp() - t);
 		if (d < 1) {
@@ -168,6 +194,7 @@ class TestOpenFL extends Application {
 		} else {
 			trace("Script executed in " + d + " seconds");
 		}
+		// Sys.exit(0);
 	}
 }
 
