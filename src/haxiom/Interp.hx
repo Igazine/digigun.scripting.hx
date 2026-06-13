@@ -1373,15 +1373,12 @@ class Interp {
                 }
             }
         if (Reflect.isFunction(f)) {
-            #if js
-            // On JS target, prototype methods returned by Reflect.getProperty are unbound.
-            // Wrap them to bind `this` to the receiver object.
+            // Wrap the method to bind `this` to the receiver object.
+            // This is required on targets like JavaScript and Neko where prototype/native methods
+            // returned by Reflect.getProperty/Reflect.field are unbound.
             return Reflect.makeVarArgs(function(args) {
                 return Reflect.callMethod(obj, f, args);
             });
-            #else
-            return f;
-            #end
         }
         if (f != null) return f;
         
