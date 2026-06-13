@@ -3075,8 +3075,8 @@ class Interp {
                     if (scope.exists(parts[0])) {
                         currentObj = scope.get(parts[0]);
                         for (i in 1...parts.length) {
-                            if (currentObj != null && Reflect.hasField(currentObj, parts[i])) {
-                                currentObj = Reflect.field(currentObj, parts[i]);
+                            if (currentObj != null && safeHasField(currentObj, parts[i])) {
+                                currentObj = safeField(currentObj, parts[i]);
                             } else {
                                 currentObj = null;
                                 break;
@@ -3084,9 +3084,9 @@ class Interp {
                         }
                     }
                     if (currentObj != null) {
-                        for (field in Reflect.fields(currentObj)) {
+                        for (field in safeFields(currentObj)) {
                             if (field != "__isHaxiomPackage") {
-                                scope.declare(field, Reflect.field(currentObj, field));
+                                scope.declare(field, safeField(currentObj, field));
                             }
                         }
                     }
@@ -3099,8 +3099,8 @@ class Interp {
                 if (scope.exists(parts[0])) {
                     currentObj = scope.get(parts[0]);
                     for (i in 1...parts.length) {
-                        if (currentObj != null && Reflect.hasField(currentObj, parts[i])) {
-                            currentObj = Reflect.field(currentObj, parts[i]);
+                        if (currentObj != null && safeHasField(currentObj, parts[i])) {
+                            currentObj = safeField(currentObj, parts[i]);
                         } else {
                             currentObj = null;
                             break;
@@ -4578,14 +4578,24 @@ class Interp {
             return {exists: false, val: null};
         }
         
-        if (Reflect.hasField(obj, fieldName)) {
-            return {exists: true, val: Reflect.field(obj, fieldName)};
+        var hasF = false;
+        try {
+            hasF = Reflect.isObject(obj) && Reflect.hasField(obj, fieldName);
+        } catch (e:Dynamic) {}
+        if (hasF) {
+            return {exists: true, val: safeField(obj, fieldName)};
         }
-        var prop = Reflect.getProperty(obj, fieldName);
+        var prop:Dynamic = null;
+        try {
+            prop = Reflect.getProperty(obj, fieldName);
+        } catch (e:Dynamic) {}
         if (prop != null) {
             return {exists: true, val: prop};
         }
-        var f = Reflect.field(obj, fieldName);
+        var f:Dynamic = null;
+        try {
+            f = Reflect.field(obj, fieldName);
+        } catch (e:Dynamic) {}
         if (f != null) {
             return {exists: true, val: f};
         }
@@ -5194,5 +5204,33 @@ class Interp {
             }
         }
         return null;
+    }
+
+    function safeHasField(obj:Dynamic, field:String):Bool {
+        if (obj == null) return false;
+        if (!Reflect.isObject(obj)) return false;
+        try {
+            return Reflect.hasField(obj, field);
+        } catch (e:Dynamic) {
+            return false;
+        }
+    }
+
+    function safeField(obj:Dynamic, field:String):Dynamic {
+        if (obj == null) return null;
+        try {
+            return Reflect.field(obj, field);
+        } catch (e:Dynamic) {
+            return null;
+        }
+    }
+
+    function safeFields(obj:Dynamic):Array<String> {
+        if (obj == null) return [];
+        try {
+            return Reflect.fields(obj);
+        } catch (e:Dynamic) {
+            return [];
+        }
     }
 }
