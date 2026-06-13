@@ -18,10 +18,8 @@ import feathers.style.IDarkModeTheme;
 import feathers.style.Theme;
 import haxe.Timer;
 import haxe.io.Bytes;
-#if !macro
 import haxiom.FFI;
 import haxiom.Haxiom;
-#end
 import openfl.events.Event;
 import openfl.events.MouseEvent;
 
