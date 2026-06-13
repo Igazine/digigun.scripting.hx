@@ -33,6 +33,14 @@ class Parser {
         return { def: EBlock(exprs), pos: { line: 1, col: 1 } };
     }
 
+    public function parseExprOnly():Expr {
+        skipNewlines();
+        var e = parseExpr();
+        skipNewlines();
+        expect(TEof);
+        return e;
+    }
+
     function parseStatement():Expr {
         skipNewlines();
         var meta = parseMetadata();
@@ -56,7 +64,7 @@ class Parser {
                         path.push(expectIdent());
                     }
                 }
-                match(TSemicolon);
+                expect(TSemicolon);
                 expr = mk(EPackage(path), t.pos);
             case TImport:
                 if (meta != null) throw new CompileException("Metadata cannot be attached to an import declaration", t.pos.line, t.pos.col, file);
@@ -82,7 +90,7 @@ class Parser {
                         alias = expectIdent();
                     default:
                 }
-                match(TSemicolon);
+                expect(TSemicolon);
                 expr = mk(EImport(path, alias), t.pos);
             case TUsing:
                 if (meta != null) throw new CompileException("Metadata cannot be attached to a using declaration", t.pos.line, t.pos.col, file);
@@ -92,12 +100,12 @@ class Parser {
                 while (match(TDot)) {
                     path.push(expectIdent());
                 }
-                match(TSemicolon);
+                expect(TSemicolon);
                 expr = mk(EUsing(path), t.pos);
             case TThrow:
                 next();
                 var e = parseExpr();
-                match(TSemicolon);
+                expect(TSemicolon);
                 expr = mk(EThrow(e), t.pos);
             case TTry:
                 next();
@@ -136,7 +144,7 @@ class Parser {
                 if (match(TAssign)) {
                     e = parseExpr();
                 }
-                match(TSemicolon);
+                expect(TSemicolon);
                 expr = mk(EVar(name, vType, e, true, meta), t.pos);
             case TClass:
                 expr = parseClass(meta);
@@ -166,21 +174,30 @@ class Parser {
                 if (!is(TSemicolon) && !is(TNewline) && !is(TBraceClose)) {
                     e = parseExpr();
                 }
-                match(TSemicolon);
+                expect(TSemicolon);
                 expr = mk(EReturn(e), t.pos);
             case TBreak:
                 next();
-                match(TSemicolon);
+                expect(TSemicolon);
                 expr = mk(EBreak, t.pos);
             case TContinue:
                 next();
-                match(TSemicolon);
+                expect(TSemicolon);
                 expr = mk(EContinue, t.pos);
             case TBraceOpen:
                 expr = parseBlock();
             default:
                 expr = parseExpr();
-                match(TSemicolon);
+                switch (expr.def) {
+                    case EFunction(_, _, _, _):
+                        match(TSemicolon);
+                    default:
+                        if (is(TBracketClose) || is(TElse) || is(TCatch) || is(TBraceClose)) {
+                            match(TSemicolon);
+                        } else {
+                            expect(TSemicolon);
+                        }
+                }
         }
         
         if (meta != null && expr != null) {
@@ -342,7 +359,7 @@ class Parser {
                 if (match(TAssign)) {
                     fExpr = parseExpr();
                 }
-                match(TSemicolon);
+                expect(TSemicolon);
                 fields.push({ name: fName, type: fType, expr: fExpr, isStatic: isStatic, isPublic: isPublic, isFinal: isFinal, property: prop, meta: fMeta });
             } else if (memberT.def == TFunction) {
                 next();
@@ -421,7 +438,7 @@ class Parser {
                 if (match(TAssign)) {
                     fExpr = parseExpr();
                 }
-                match(TSemicolon);
+                expect(TSemicolon);
                 fields.push({ name: fName, type: fType, expr: fExpr, isStatic: isStatic, isPublic: isPublic, isFinal: isFinal, property: prop, meta: fMeta });
             } else if (memberT.def == TFunction) {
                 next();
@@ -452,7 +469,7 @@ class Parser {
         if (match(TAssign)) {
             expr = parseExpr();
         }
-        match(TSemicolon);
+        expect(TSemicolon);
         return mk(EVar(name, vType, expr, false, meta), t.pos);
     }
 
@@ -487,7 +504,7 @@ class Parser {
         expect(TParenOpen);
         var cond = parseExpr();
         expect(TParenClose);
-        match(TSemicolon);
+        expect(TSemicolon);
         return mk(EDoWhile(cond, body), t.pos);
     }
 
@@ -551,17 +568,19 @@ class Parser {
         return mk(ESwitch(expr, cases, defExpr), t.pos);
     }
 
-    function parseArgs():Array<{name:String, type:Null<TypeDecl>}> {
+    function parseArgs():Array<FunctionArg> {
         expect(TParenOpen);
         var args = [];
         if (!is(TParenClose)) {
+            var isRest = match(TDotDotDot);
             var name = expectIdent();
             var type = parseOptType();
-            args.push({ name: name, type: type });
+            args.push({ name: name, type: type, isRest: isRest });
             while (match(TComma)) {
+                var nextIsRest = match(TDotDotDot);
                 var argName = expectIdent();
                 var argType = parseOptType();
-                args.push({ name: argName, type: argType });
+                args.push({ name: argName, type: argType, isRest: nextIsRest });
             }
         }
         expect(TParenClose);
@@ -1184,7 +1203,7 @@ class Parser {
                     prop = { get: getM, set: setM };
                 }
                 var fType = parseOptType();
-                match(TSemicolon);
+                expect(TSemicolon);
                 fields.push({ name: fName, type: fType, property: prop, meta: fMeta });
             } else {
                 expect(TFunction);
@@ -1195,7 +1214,7 @@ class Parser {
                 if (is(TBraceOpen)) {
                     mBody = parseStatement();
                 } else {
-                    match(TSemicolon);
+                    expect(TSemicolon);
                 }
                 methods.push({ name: mName, args: mArgs, retType: mRetType, body: mBody, meta: fMeta });
             }
@@ -1230,7 +1249,7 @@ class Parser {
                 expect(TParenClose);
             }
             constructors.push({ name: cName, args: cArgs });
-            match(TSemicolon);
+            expect(TSemicolon);
             skipNewlines();
         }
         expect(TBraceClose);

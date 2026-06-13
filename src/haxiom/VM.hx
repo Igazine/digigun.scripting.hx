@@ -356,6 +356,9 @@ class VM {
                                                 Reflect.callMethod(null, interp.bindMethod(interp.currentThis, m), [val]);
                                             }
                                         } else {
+                                            if (fDef.isFinal) {
+                                                throw 'Cannot reassign static final field $name';
+                                            }
                                             if (fDef.type != null) {
                                                 interp.checkType(val, fDef.type, frame.scope);
                                             }
@@ -654,16 +657,28 @@ class VM {
                         
                         var func = (callArgs:Array<Dynamic>) -> {
                             var fScope = Scope.create(closureScope);
+                            var mappedArgs = [];
                             for (i in 0...proto.args.length) {
                                 var arg = proto.args[i];
-                                var val = i < callArgs.length ? callArgs[i] : null;
-                                interp.checkType(val, arg.type, fScope);
+                                var val:Dynamic = null;
+                                if (arg.isRest) {
+                                    val = callArgs.slice(i);
+                                    if (arg.type != null) {
+                                        for (v in (cast val : Array<Dynamic>)) {
+                                            interp.checkType(v, arg.type, fScope);
+                                        }
+                                    }
+                                } else {
+                                    val = i < callArgs.length ? callArgs[i] : null;
+                                    interp.checkType(val, arg.type, fScope);
+                                }
                                 fScope.declare(arg.name, val, arg.type);
+                                mappedArgs.push(val);
                             }
                             
                             interp.pushFrame(proto.name != null ? proto.name : "anonymous", creationPos);
                             try {
-                                var res = VM.runChunk(interp, proto.bodyChunk, fScope, interp.currentThis, proto.name != null ? proto.name : "anonymous", callArgs);
+                                var res = VM.runChunk(interp, proto.bodyChunk, fScope, interp.currentThis, proto.name != null ? proto.name : "anonymous", mappedArgs);
                                 if (proto.retType != null && interp.typeToString(proto.retType) == "Void") {
                                     res = null;
                                 } else {
@@ -694,14 +709,26 @@ class VM {
                             }
                         };
                         
-                        var boundFunc:Dynamic = switch (proto.args.length) {
-                            case 0: () -> func([]);
-                            case 1: (a) -> func([a]);
-                            case 2: (a, b) -> func([a, b]);
-                            case 3: (a, b, c) -> func([a, b, c]);
-                            case 4: (a, b, c, d) -> func([a, b, c, d]);
-                            default: (callArgs:Array<Dynamic>) -> func(callArgs);
-                        };
+                        var hasRest = false;
+                        for (arg in proto.args) {
+                            if (arg.isRest) {
+                                hasRest = true;
+                                break;
+                            }
+                        }
+                        var boundFunc:Dynamic = null;
+                        if (hasRest) {
+                            boundFunc = Reflect.makeVarArgs(func);
+                        } else {
+                            boundFunc = switch (proto.args.length) {
+                                case 0: () -> func([]);
+                                case 1: (a) -> func([a]);
+                                case 2: (a, b) -> func([a, b]);
+                                case 3: (a, b, c) -> func([a, b, c]);
+                                case 4: (a, b, c, d) -> func([a, b, c, d]);
+                                default: (callArgs:Array<Dynamic>) -> func(callArgs);
+                            };
+                        }
                         
                         var signatureArgs = [];
                         for (arg in proto.args) {

@@ -104,7 +104,7 @@ class HaxiomClass {
     public var parentType:TypeDecl;
     public var parent:HaxiomClass;
     public var fields:Map<String, {name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
-    public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
+    public var methods:Map<String, {name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
     public var staticFields:Map<String, Dynamic> = new Map();
     public var interfaces:Array<TypeDecl> = [];
     public var meta:Array<{name:String, params:Array<Dynamic>}> = [];
@@ -119,7 +119,7 @@ class HaxiomInterface {
     public var name:String;
     public var params:Array<String> = [];
     public var fields:Map<String, {name:String, type:Null<TypeDecl>, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
-    public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
+    public var methods:Map<String, {name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, ?body:Null<Expr>, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
     public var parents:Array<TypeDecl> = [];
     public var meta:Array<{name:String, params:Array<Dynamic>}> = [];
 
@@ -170,7 +170,7 @@ class HaxiomAbstract {
     public var params:Array<String> = [];
     public var underlyingType:TypeDecl;
     public var fields:Map<String, {name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
-    public var methods:Map<String, {name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
+    public var methods:Map<String, {name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
     public var staticFields:Map<String, Dynamic> = new Map();
     public var meta:Array<{name:String, params:Array<Dynamic>}> = [];
 
@@ -1597,6 +1597,9 @@ class Interp {
                                         var m = findStaticMethod(cls, "set_" + name);
                                         if (m != null) return Reflect.callMethod(null, bindMethod(currentThis, m), [val]);
                                     }
+                                    if (fDef.isFinal) {
+                                        throw 'Cannot reassign static final field $name';
+                                    }
                                     if (fDef.type != null) {
                                         checkType(val, fDef.type, scope);
                                     }
@@ -2775,7 +2778,7 @@ class Interp {
                                     }
                                 }
                                 
-                                var allItfMethods = new Map<String, {method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, ?body:Null<Expr>, ?meta:Array<{name:String, params:Array<Dynamic>}>}, bindings:Map<String, TypeDecl>}>();
+                                var allItfMethods = new Map<String, {method:{name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, ?body:Null<Expr>, ?meta:Array<{name:String, params:Array<Dynamic>}>}, bindings:Map<String, TypeDecl>}>();
                                 var allItfFields = new Map<String, {field:{name:String, type:Null<TypeDecl>, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Dynamic>}>}, bindings:Map<String, TypeDecl>}>();
                                 var visitedItf = new Map();
                                 function collectMethodsAndFields(currItf:HaxiomInterface, currentItfBindings:Map<String, TypeDecl>) {
@@ -3090,6 +3093,25 @@ class Interp {
                     return null;
                 }
                 
+                // Check if the FQ name resolves to a Haxiom-defined class/interface/enum/abstract in the globals/scope package namespaces
+                var parts = path;
+                var currentObj:Dynamic = null;
+                if (scope.exists(parts[0])) {
+                    currentObj = scope.get(parts[0]);
+                    for (i in 1...parts.length) {
+                        if (currentObj != null && Reflect.hasField(currentObj, parts[i])) {
+                            currentObj = Reflect.field(currentObj, parts[i]);
+                        } else {
+                            currentObj = null;
+                            break;
+                        }
+                    }
+                }
+                if (currentObj != null) {
+                    scope.declare(shortName, currentObj);
+                    return null;
+                }
+
                 if (isImportWhitelisted(fqName)) {
                     if (haxiom.FFI.exposedAbstracts.exists(fqName)) {
                         var absInfo = haxiom.FFI.exposedAbstracts.get(fqName);
@@ -3272,8 +3294,18 @@ class Interp {
                     var fScope = Scope.create(closure);
                     for (i in 0...args.length) {
                         var arg = args[i];
-                        var val = i < callArgs.length ? callArgs[i] : null;
-                        checkType(val, arg.type, fScope);
+                        var val:Dynamic = null;
+                        if (arg.isRest) {
+                            val = callArgs.slice(i);
+                            if (arg.type != null) {
+                                for (v in (cast val : Array<Dynamic>)) {
+                                    checkType(v, arg.type, fScope);
+                                }
+                            }
+                        } else {
+                            val = i < callArgs.length ? callArgs[i] : null;
+                            checkType(val, arg.type, fScope);
+                        }
                         fScope.declare(arg.name, val, arg.type);
                     }
                     var funcName = name != null ? name : "anonymous";
@@ -3314,14 +3346,26 @@ class Interp {
                         throw err;
                     }
                 };
-                var haxeFunc:Dynamic = switch (args.length) {
-                    case 0: () -> func([]);
-                    case 1: (a) -> func([a]);
-                    case 2: (a, b) -> func([a, b]);
-                    case 3: (a, b, c) -> func([a, b, c]);
-                    case 4: (a, b, c, d) -> func([a, b, c, d]);
-                    default: (callArgs:Array<Dynamic>) -> func(callArgs);
-                };
+                var hasRest = false;
+                for (a in args) {
+                    if (a.isRest) {
+                        hasRest = true;
+                        break;
+                    }
+                }
+                var haxeFunc:Dynamic = null;
+                if (hasRest) {
+                    haxeFunc = Reflect.makeVarArgs(func);
+                } else {
+                    haxeFunc = switch (args.length) {
+                        case 0: () -> func([]);
+                        case 1: (a) -> func([a]);
+                        case 2: (a, b) -> func([a, b]);
+                        case 3: (a, b, c) -> func([a, b, c]);
+                        case 4: (a, b, c, d) -> func([a, b, c, d]);
+                        default: (callArgs:Array<Dynamic>) -> func(callArgs);
+                    };
+                }
                 var signatureArgs = [];
                 for (arg in args) {
                     var t = arg.type != null ? arg.type : TPath(["Dynamic"], []);
@@ -3821,16 +3865,28 @@ class Interp {
         return findStaticMethod(cls.parent, name);
     }
 
-    function bindMethod(obj:Dynamic, method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}):Dynamic {
+    function bindMethod(obj:Dynamic, method:{name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}):Dynamic {
         var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
         var func = (callArgs:Array<Dynamic>) -> {
             var fScope = Scope.create(globals);
             fScope.declare("this", obj);
+            var mappedArgs = [];
             for (i in 0...method.args.length) {
                 var arg = method.args[i];
-                var val = i < callArgs.length ? callArgs[i] : null;
-                checkType(val, arg.type, fScope, bindings);
+                var val:Dynamic = null;
+                if (arg.isRest) {
+                    val = callArgs.slice(i);
+                    if (arg.type != null) {
+                        for (v in (cast val : Array<Dynamic>)) {
+                            checkType(v, arg.type, fScope, bindings);
+                        }
+                    }
+                } else {
+                    val = i < callArgs.length ? callArgs[i] : null;
+                    checkType(val, arg.type, fScope, bindings);
+                }
                 fScope.declare(arg.name, val, arg.type);
+                mappedArgs.push(val);
             }
             var oldThis = currentThis;
             currentThis = obj;
@@ -3868,7 +3924,7 @@ class Interp {
                         if (mDyn.bytecodeChunk == null) {
                             mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, isMethodAsync, debugMode);
                         }
-                        res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, obj, className + "." + method.name, callArgs);
+                        res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, obj, className + "." + method.name, mappedArgs);
                     } else {
                         res = eval(method.body, fScope);
                     }
@@ -3916,14 +3972,26 @@ class Interp {
                 throw e;
             }
         };
-        var boundFunc:Dynamic = switch (method.args.length) {
-            case 0: () -> func([]);
-            case 1: (a) -> func([a]);
-            case 2: (a, b) -> func([a, b]);
-            case 3: (a, b, c) -> func([a, b, c]);
-            case 4: (a, b, c, d) -> func([a, b, c, d]);
-            default: (callArgs:Array<Dynamic>) -> func(callArgs);
-        };
+        var hasRest = false;
+        for (arg in method.args) {
+            if (arg.isRest) {
+                hasRest = true;
+                break;
+            }
+        }
+        var boundFunc:Dynamic = null;
+        if (hasRest) {
+            boundFunc = Reflect.makeVarArgs(func);
+        } else {
+            boundFunc = switch (method.args.length) {
+                case 0: () -> func([]);
+                case 1: (a) -> func([a]);
+                case 2: (a, b) -> func([a, b]);
+                case 3: (a, b, c) -> func([a, b, c]);
+                case 4: (a, b, c, d) -> func([a, b, c, d]);
+                default: (callArgs:Array<Dynamic>) -> func(callArgs);
+            };
+        }
         var signatureArgs = [];
         for (arg in method.args) {
             var t = arg.type != null ? arg.type : TPath(["Dynamic"], []);
@@ -3936,15 +4004,25 @@ class Interp {
         return boundFunc;
     }
 
-    function bindStaticExtensionMethod(obj:Dynamic, method:{name:String, args:Array<{name:String, type:Null<TypeDecl>}>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}):Dynamic {
+    function bindStaticExtensionMethod(obj:Dynamic, method:{name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool}):Dynamic {
         var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
         var func = (callArgs:Array<Dynamic>) -> {
             var fScope = Scope.create(globals);
             var fullArgs = [obj].concat(callArgs);
             for (i in 0...method.args.length) {
                 var arg = method.args[i];
-                var val = i < fullArgs.length ? fullArgs[i] : null;
-                checkType(val, arg.type, fScope, bindings);
+                var val:Dynamic = null;
+                if (arg.isRest) {
+                    val = fullArgs.slice(i);
+                    if (arg.type != null) {
+                        for (v in (cast val : Array<Dynamic>)) {
+                            checkType(v, arg.type, fScope, bindings);
+                        }
+                    }
+                } else {
+                    val = i < fullArgs.length ? fullArgs[i] : null;
+                    checkType(val, arg.type, fScope, bindings);
+                }
                 fScope.declare(arg.name, val, arg.type);
             }
             var oldThis = currentThis;
@@ -3990,16 +4068,28 @@ class Interp {
                 throw e;
             }
         };
-        var arity = method.args.length - 1;
-        if (arity < 0) arity = 0;
-        var boundFunc:Dynamic = switch (arity) {
-            case 0: () -> func([]);
-            case 1: (a) -> func([a]);
-            case 2: (a, b) -> func([a, b]);
-            case 3: (a, b, c) -> func([a, b, c]);
-            case 4: (a, b, c, d) -> func([a, b, c, d]);
-            default: (callArgs:Array<Dynamic>) -> func(callArgs);
-        };
+        var hasRest = false;
+        for (i in 1...method.args.length) {
+            if (method.args[i].isRest) {
+                hasRest = true;
+                break;
+            }
+        }
+        var boundFunc:Dynamic = null;
+        if (hasRest) {
+            boundFunc = Reflect.makeVarArgs(func);
+        } else {
+            var arity = method.args.length - 1;
+            if (arity < 0) arity = 0;
+            boundFunc = switch (arity) {
+                case 0: () -> func([]);
+                case 1: (a) -> func([a]);
+                case 2: (a, b) -> func([a, b]);
+                case 3: (a, b, c) -> func([a, b, c]);
+                case 4: (a, b, c, d) -> func([a, b, c, d]);
+                default: (callArgs:Array<Dynamic>) -> func(callArgs);
+            };
+        }
         var signatureArgs = [];
         for (i in 1...method.args.length) {
             var arg = method.args[i];

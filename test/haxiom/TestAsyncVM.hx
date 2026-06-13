@@ -133,7 +133,7 @@ class TestAsyncVM {
         ';
         engine.interpret(script);
 
-        var runFunc:Dynamic = engine.interpret("ConcurrentClass.run");
+        var runFunc:Dynamic = engine.interpret("ConcurrentClass.run;");
         var p1:Future = runFunc(30, 100);
         var p2:Future = runFunc(10, 200);
 

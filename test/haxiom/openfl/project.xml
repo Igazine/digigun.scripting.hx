@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<project>
+	<meta title="TestOpenFL" package="net.digigun.haxiom.TestOpenFL" version="1.0.0" company="Digigun.net"/>
+	<meta title="TestOpenFL" if="html5"/>
+	<app main="TestOpenFL" file="TestOpenFL"/>
+
+	<window allow-high-dpi="true"/>
+	<window fps="60"/>
+	<window fps="0" if="html5"/>
+    <window background="#222222" />
+	
+	<source path="."/>
+
+    <assets path="scripts" include="*" />
+	
+	<haxelib name="openfl"/>
+	<haxelib name="actuate"/>
+	<haxelib name="feathersui"/>
+    <haxelib name="digigun.scripting.hx"/>
+
+</project>

@@ -267,6 +267,12 @@ class Haxiom implements common.IScriptEngine {
         return Serializer.serializeBytecode(chunk, key);
     }
 
+    public function compileASTToBytecodeBytes(ast:haxiom.AST.Expr, ?key:HXBCKey, ?debugMode:Bool = false):haxe.io.Bytes {
+        if (ast == null) return null;
+        var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode);
+        return Serializer.serializeBytecode(chunk, key);
+    }
+
     /**
      * Deserializes and executes AST-based binary bytes.
      * 
@@ -317,7 +323,7 @@ class Haxiom implements common.IScriptEngine {
         interp.globals.declare(name, value);
     }
 
-    static function appendMainCallIfPresent(expr:haxiom.AST.Expr, ?fileBaseName:String):haxiom.AST.Expr {
+    public static function appendMainCallIfPresent(expr:haxiom.AST.Expr, ?fileBaseName:String):haxiom.AST.Expr {
         var mainClasses:Array<String> = [];
         
         function checkExpr(e:haxiom.AST.Expr) {

@@ -9,14 +9,8 @@ class Preprocessor {
             var lexer = new Lexer(exprStr, "preprocessor");
             var tokens = lexer.tokenize();
             var parser = new Parser(tokens, "preprocessor");
-            var ast = parser.parse();
-            switch (ast.def) {
-                case EBlock(exprs):
-                    if (exprs.length > 0) {
-                        return evalExpr(exprs[0], flags);
-                    }
-                default:
-            }
+            var ast = parser.parseExprOnly();
+            return evalExpr(ast, flags);
         } catch (e:Dynamic) {
             throw 'Preprocessor error parsing "$exprStr": ' + Std.string(e);
         }

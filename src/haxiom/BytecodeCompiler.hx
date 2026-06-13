@@ -16,6 +16,7 @@ typedef LocalVar = {
     var slot:Int;
     var depth:Int;
     var type:Null<TypeDecl>;
+    var ?isFinal:Bool;
 }
 
 class BytecodeCompiler {
@@ -35,7 +36,7 @@ class BytecodeCompiler {
     var debugSymbols:Array<DebugSymbol> = [];
     var activeLocals:Array<{name:String, slot:Int, startIp:Int}> = [];
 
-    public function new(?args:Array<{name:String, type:Null<TypeDecl>}>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false) {
+    public function new(?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false) {
         this.isTopLevel = isTopLevel;
         this.isAsync = isAsync;
         this.debugMode = debugMode;
@@ -46,7 +47,7 @@ class BytecodeCompiler {
         }
     }
 
-    public static function compile(expr:Expr, ?args:Array<{name:String, type:Null<TypeDecl>}>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false):BytecodeChunk {
+    public static function compile(expr:Expr, ?args:Array<FunctionArg>, ?isTopLevel:Bool = true, ?isAsync:Bool = false, ?debugMode:Bool = false):BytecodeChunk {
         var compiler = new BytecodeCompiler(args, isTopLevel, isAsync, debugMode);
         if (!isTopLevel) {
             compiler.findCapturedVars(expr, new Map<String, Bool>(), compiler.capturedVars);
@@ -58,9 +59,9 @@ class BytecodeCompiler {
         return new BytecodeChunk(compiler.instructions, compiler.constants, compiler.debugMode ? compiler.positions : [], compiler.maxSlots, compiler.isAsync, compiler.debugMode ? compiler.debugSymbols : null);
     }
 
-    function declareLocal(name:String, type:Null<TypeDecl>):LocalVar {
+    function declareLocal(name:String, type:Null<TypeDecl>, ?isFinal:Bool = false):LocalVar {
         var slot = locals.length;
-        var loc:LocalVar = { name: name, slot: slot, depth: currentScopeDepth, type: type };
+        var loc:LocalVar = { name: name, slot: slot, depth: currentScopeDepth, type: type, isFinal: isFinal };
         locals.push(loc);
         if (slot + 1 > maxSlots) {
             maxSlots = slot + 1;
@@ -297,7 +298,7 @@ class BytecodeCompiler {
                         emit(OP_CHECK_TYPE, e.pos);
                         emitInt(addConst(type), e.pos);
                     }
-                    var loc = declareLocal(name, type);
+                    var loc = declareLocal(name, type, isFinal);
                     emit(OP_SET_LOCAL, e.pos);
                     emitInt(loc.slot, e.pos);
                 } else {
@@ -313,14 +314,23 @@ class BytecodeCompiler {
                 switch (target.def) {
                     case EIdent(name):
                         var loc = !isTopLevel ? resolveLocal(name) : null;
-                        if (loc != null && !capturedVars.exists(name)) {
-                            compileExpr(expr);
-                            if (loc.type != null) {
-                                emit(OP_CHECK_TYPE, e.pos);
-                                emitInt(addConst(loc.type), e.pos);
+                        if (loc != null) {
+                            if (loc.isFinal == true) {
+                                throw new CompileException('Cannot reassign final variable $name', target.pos.line, target.pos.col, target.pos.file);
                             }
-                            emit(OP_SET_LOCAL, e.pos);
-                            emitInt(loc.slot, e.pos);
+                            if (!capturedVars.exists(name)) {
+                                compileExpr(expr);
+                                if (loc.type != null) {
+                                    emit(OP_CHECK_TYPE, e.pos);
+                                    emitInt(addConst(loc.type), e.pos);
+                                }
+                                emit(OP_SET_LOCAL, e.pos);
+                                emitInt(loc.slot, e.pos);
+                            } else {
+                                compileExpr(expr);
+                                emit(OP_SET_VAR, e.pos);
+                                emitInt(addConst(name), e.pos);
+                            }
                         } else {
                             compileExpr(expr);
                             emit(OP_SET_VAR, e.pos);
@@ -425,6 +435,14 @@ class BytecodeCompiler {
 
             case EUnop(op, expr):
                 if (op == "++" || op == "--" || op == "post++" || op == "post--") {
+                    switch (expr.def) {
+                        case EIdent(name):
+                            var loc = !isTopLevel ? resolveLocal(name) : null;
+                            if (loc != null && loc.isFinal == true) {
+                                throw new CompileException('Cannot reassign final variable $name', expr.pos.line, expr.pos.col, expr.pos.file);
+                            }
+                        default:
+                    }
                     emit(OP_UNOP_MUTATE, e.pos);
                     emitInt(addConst(op), e.pos);
                     emitInt(addConst(expr), e.pos);

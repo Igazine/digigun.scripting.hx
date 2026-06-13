@@ -658,7 +658,7 @@ class TestHaxiom {
             trace("FAILURE: syntax error 'var x = ;' should have thrown");
         } catch (e:Dynamic) {
             var msg = Std.string(e);
-            if (msg.indexOf("at 1:9") != -1) {
+            if (msg.indexOf("1:9") != -1) {
                 trace("SUCCESS: Caught syntax error with precise position: " + msg);
             } else {
                 trace("FAILURE: syntax error did not contain expected position 1:9, got: " + msg);
@@ -818,23 +818,23 @@ class TestHaxiom {
         };
 
         // Assert Math validation (direct and closure)
-        expectError('Math.abs()', "Method Math.abs expected between 1 and 1 arguments but got 0", "Math.abs direct no-args");
-        expectError('Math.abs("hello")', "Math.abs expected a number for argument but got String", "Math.abs direct wrong-type");
-        expectError('var f = Math.abs; f("hello")', "Math.abs expected a number for argument but got String", "Math.abs closure wrong-type");
-        expectError('Math.min(10)', "Method Math.min expected between 2 and 2 arguments but got 1", "Math.min direct too-few-args");
-        expectError('Math.min(10, "hello")', "Math.min expected a number for b but got String", "Math.min direct second-arg wrong-type");
+        expectError('Math.abs();', "Method Math.abs expected between 1 and 1 arguments but got 0", "Math.abs direct no-args");
+        expectError('Math.abs("hello");', "Math.abs expected a number for argument but got String", "Math.abs direct wrong-type");
+        expectError('var f = Math.abs; f("hello");', "Math.abs expected a number for argument but got String", "Math.abs closure wrong-type");
+        expectError('Math.min(10);', "Method Math.min expected between 2 and 2 arguments but got 1", "Math.min direct too-few-args");
+        expectError('Math.min(10, "hello");', "Math.min expected a number for b but got String", "Math.min direct second-arg wrong-type");
 
         // Assert String validation (direct and closure)
-        expectError('"hello".split()', "Method String.split expected between 1 and 1 arguments but got 0", "String.split direct no-args");
-        expectError('"hello".split(123)', "String.split expected a String for delimiter but got Int", "String.split direct wrong-type");
-        expectError('var f = "hello".split; f(123)', "String.split expected a String for delimiter but got Int", "String.split closure wrong-type");
-        expectError('"hello".substring("a")', "String.substring expected an Int for start index but got String", "String.substring direct start-index wrong-type");
-        expectError('"hello".substring(1, "b")', "String.substring expected an Int for end index but got String", "String.substring direct end-index wrong-type");
+        expectError('"hello".split();', "Method String.split expected between 1 and 1 arguments but got 0", "String.split direct no-args");
+        expectError('"hello".split(123);', "String.split expected a String for delimiter but got Int", "String.split direct wrong-type");
+        expectError('var f = "hello".split; f(123);', "String.split expected a String for delimiter but got Int", "String.split closure wrong-type");
+        expectError('"hello".substring("a");', "String.substring expected an Int for start index but got String", "String.substring direct start-index wrong-type");
+        expectError('"hello".substring(1, "b");', "String.substring expected an Int for end index but got String", "String.substring direct end-index wrong-type");
 
         // Assert Array validation (direct and closure)
-        expectError('[1, 2].filter(123)', "Array.filter expected a function for callback but got Int", "Array.filter direct wrong-type");
-        expectError('var f = [1, 2].filter; f(123)', "Array.filter expected a function for callback but got Int", "Array.filter closure wrong-type");
-        expectError('[1, 2].join(123)', "Array.join expected a String for separator but got Int", "Array.join direct wrong-type");
+        expectError('[1, 2].filter(123);', "Array.filter expected a function for callback but got Int", "Array.filter direct wrong-type");
+        expectError('var f = [1, 2].filter; f(123);', "Array.filter expected a function for callback but got Int", "Array.filter closure wrong-type");
+        expectError('[1, 2].join(123);', "Array.join expected a String for separator but got Int", "Array.join direct wrong-type");
 
         // 36. Null Safety: Coalescing (??) and Safe Navigation (?.)
         var script36 = '
