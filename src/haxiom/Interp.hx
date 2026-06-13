@@ -1374,12 +1374,16 @@ class Interp {
                 }
             }
         if (Reflect.isFunction(f)) {
+            #if (cpp || hl || java || cs)
+            return f;
+            #else
             // Wrap the method to bind `this` to the receiver object.
             // This is required on targets like JavaScript and Neko where prototype/native methods
             // returned by Reflect.getProperty/Reflect.field are unbound.
             return Reflect.makeVarArgs(function(args) {
                 return Reflect.callMethod(obj, f, args);
             });
+            #end
         }
         if (f != null) return f;
         
@@ -1803,7 +1807,7 @@ class Interp {
                             if (parentCls != null) {
                                 var constr = findMethod(parentCls, "new");
                                 if (constr != null) {
-                                    var args = [for (a in argsExprs) eval(a, scope)];
+                                    var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
                                     var cScope = Scope.create(scope);
                                     cScope.declare("this", currentThis);
                                     for (i in 0...constr.args.length) {
@@ -2338,7 +2342,7 @@ class Interp {
                             method = Reflect.getProperty(obj, field);
                         }
                         if (method != null && Reflect.isFunction(method)) {
-                            var args = [for (a in argsExprs) eval(a, scope)];
+                            var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
                             return Reflect.callMethod(obj, method, args);
                         }
                         
@@ -2362,7 +2366,7 @@ class Interp {
                                     if (implCls != null) {
                                         var m = Reflect.field(implCls, field);
                                         if (m != null) {
-                                            var args = [for (a in argsExprs) eval(a, scope)];
+                                            var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
                                             return Reflect.callMethod(null, m, [obj].concat(args));
                                         }
                                     }
@@ -2373,7 +2377,7 @@ class Interp {
                 }
                 
                 var callee = eval(calleeExpr, scope);
-                var args = [for (a in argsExprs) eval(a, scope)];
+                var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
                 
                 if (Reflect.isFunction(callee) && safeGetClassName(callee) == null) {
                     return Reflect.callMethod(null, callee, args);
@@ -2463,7 +2467,7 @@ class Interp {
                 throw "Callee is not a callable function or constructor";
 
             case ENew(typeDecl, argsExprs):
-                var args = [for (a in argsExprs) eval(a, scope)];
+                var args:Array<Dynamic> = [for (a in argsExprs) eval(a, scope)];
                 switch (typeDecl) {
                     case TPath(path, params):
                         var fqName = path.join(".");
@@ -2665,6 +2669,7 @@ class Interp {
                                 case "haxe.ds.ObjectMap":
                                     return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
                                 default:
+                                    trace('Type.createInstance: ' + calleeClassName + ' with args: ' + args);
                                     return Type.createInstance(cast callee, args);
                             }
                         }
@@ -3292,6 +3297,7 @@ class Interp {
                 var closure = Scope.create(scope);
                 closure.markCaptured();
                 var func = (callArgs:Array<Dynamic>) -> {
+                    trace('Interp guest function invoked! callArgs=' + callArgs);
                     var fScope = Scope.create(closure);
                     for (i in 0...args.length) {
                         var arg = args[i];
@@ -3872,6 +3878,7 @@ class Interp {
     function bindMethod(obj:Dynamic, method:{name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}):Dynamic {
         var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
         var func = (callArgs:Array<Dynamic>) -> {
+            trace('Interp bindMethod guest function invoked! callArgs=' + callArgs);
             var fScope = Scope.create(globals);
             fScope.declare("this", obj);
             var mappedArgs = [];

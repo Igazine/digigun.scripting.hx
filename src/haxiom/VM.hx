@@ -290,6 +290,7 @@ class VM {
                     case OP_SET_LOCAL:
                         var slot = inst[frame.ip++];
                         var val = stack[stack.length - 1];
+                        trace('OP_SET_LOCAL slot ' + slot + ' = ' + val);
                         frame.locals[slot] = val;
 
                     case OP_GET_VAR:
@@ -304,25 +305,28 @@ class VM {
                                 throw "Cannot use 'super' outside of a class instance constructor or method";
                             }
                         } else {
+                            var val:Dynamic = null;
                             if (!frame.scope.exists(name) && interp.currentThis != null) {
                                 if (Std.isOfType(interp.currentThis, HaxiomInstance)) {
-                                    stack.push(interp.evalField(interp.currentThis, name, frame.scope, currentPos()));
+                                    val = interp.evalField(interp.currentThis, name, frame.scope, currentPos());
                                 } else if (Std.isOfType(interp.currentThis, HaxiomClass)) {
                                     var cls:HaxiomClass = cast interp.currentThis;
                                     var fDef = interp.findFieldDef(cls, name);
                                     var isStaticField = fDef != null && fDef.isStatic;
                                     var isStaticMethod = interp.findStaticMethod(cls, name) != null;
                                     if (isStaticField || isStaticMethod) {
-                                        stack.push(interp.evalField(interp.currentThis, name, frame.scope, currentPos()));
+                                        val = interp.evalField(interp.currentThis, name, frame.scope, currentPos());
                                     } else {
-                                        stack.push(frame.scope.get(name));
+                                        val = frame.scope.get(name);
                                     }
                                 } else {
-                                    stack.push(frame.scope.get(name));
+                                    val = frame.scope.get(name);
                                 }
                             } else {
-                                stack.push(frame.scope.get(name));
+                                val = frame.scope.get(name);
                             }
+                            trace('OP_GET_VAR: ' + name + ' = ' + val);
+                            stack.push(val);
                         }
 
                     case OP_SET_VAR:
@@ -386,6 +390,7 @@ class VM {
                         var name:String = consts[nameIdx];
                         var type:TypeDecl = typeIdx >= 0 ? consts[typeIdx] : null;
                         var val = stack.pop();
+                        trace('OP_DECLARE_VAR: ' + name + ' = ' + val);
                         if (type != null) {
                             interp.checkType(val, type, frame.scope);
                         }
@@ -540,7 +545,7 @@ class VM {
                     case OP_CALL:
                         var argCount = inst[frame.ip++];
                         var func = stack.pop();
-                        var args = [];
+                        var args:Array<Dynamic> = [];
                         for (i in 0...argCount) {
                             args.unshift(stack.pop());
                         }
@@ -660,6 +665,7 @@ class VM {
                         var creationPos = currentPos();
                         
                         var func = (callArgs:Array<Dynamic>) -> {
+                            trace('VM guest function invoked! callArgs=' + callArgs);
                             var fScope = Scope.create(closureScope);
                             var mappedArgs = [];
                             for (i in 0...proto.args.length) {
@@ -952,7 +958,7 @@ class VM {
                         var typeIdx = inst[frame.ip++];
                         var argCount = inst[frame.ip++];
                         var type:TypeDecl = consts[typeIdx];
-                        var args = [];
+                        var args:Array<Dynamic> = [];
                         for (i in 0...argCount) {
                             args.unshift(stack.pop());
                         }
@@ -1025,7 +1031,7 @@ class VM {
                         var fieldName:String = consts[fieldIdx];
                         var obj = stack.pop();
                         
-                        var args = [];
+                        var args:Array<Dynamic> = [];
                         for (i in 0...argCount) {
                             args.unshift(stack.pop());
                         }
