@@ -10,14 +10,14 @@ class RunBundle {
 		engine.importWhitelist = null; // Disable sandboxing for standard outputs
 
 		trace("Loading test bundle bytecode...");
-		var bytes = File.getBytes("test/haxiom/bundle/Main.hxbc");
+		var bytes = File.getBytes("test/haxiom/bundle/StupidLogic.hxbc");
 		
 		trace("Executing test bundle...");
 		engine.executeBytes(bytes);
 		
-		var mainClass:Dynamic = engine.interp.globals.get("Main");
+		var mainClass:Dynamic = engine.interp.globals.get("StupidLogic");
 		if (mainClass == null) {
-			throw "Main class was not registered in globals!";
+			throw "StupidLogic class was not registered in globals!";
 		}
 		
 		var resMessage:Dynamic = mainClass.staticFields.get("outputMessage");

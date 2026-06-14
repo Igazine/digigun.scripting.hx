@@ -3,7 +3,7 @@ package;
 import mypackage.sub.MyClass;
 import other.Helper;
 
-class Main {
+class StupidLogic {
 	public static var outputMessage:String = "";
 	public static var outputValue:Int = 0;
 
