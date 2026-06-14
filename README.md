@@ -398,7 +398,14 @@ To use third-party libraries (like `openfl`) inside Haxiom scripts, you must ens
    spr.addEventListener(MouseEvent.CLICK, onClick);
    ```
 
----
+### Host Integration Best Practices
+
+For complex, IDE-assisted, and visual environments (such as OpenFL and Feathers UI), follow these established integration design patterns:
+
+1. **IDE-Friendly Host Interop (`#if !haxiom` Dummy Scope)**: Declare dummy classes inside `#if !haxiom ... #end` blocks in guest scripts to prevent IDE red squiggles on host-provided API variables (like a global `ScriptContext.container`), while retaining dynamic execution at runtime.
+2. **Automatic Entry Point Execution (`main()`)**: Haxiom automatically detects class declarations containing `static public function main()` and appends execution calls dynamically to the end of compiled AST blocks, ensuring scripts remain fully valid Haxe files.
+3. **Host Object Sandboxing (Proxy/Wrapper Pattern)**: Avoid passing raw native framework instances directly to scripts. Expose minimal, whitelisted proxy structures (e.g. `addChild: function(c) { nativeContainer.addChild(c); }`) from the host. This prevents guest scripts from reflective parent traversal.
+4. **Compile-Time FFI Registration**: Use `FFI.registerClass` at runtime; under the hood, it utilizes compile-time macros to extract erased static constant fields (such as `MouseEvent.CLICK`), making them available dynamically to runtime scripts.
 
 ## Testing
 
