@@ -323,6 +323,27 @@ class Haxiom implements common.IScriptEngine {
         interp.globals.declare(name, value);
     }
 
+    /**
+     * Retrieves a global variable or class reference by its name.
+     * 
+     * @param name The global variable or class name.
+     * @return The global value, class definition, or null if not found.
+     */
+    public function getGlobal(name:String):Dynamic {
+        return interp.globals.get(name);
+    }
+
+    /**
+     * Resolves a field or method closure on any object reference (class, instance, or host object).
+     * 
+     * @param target The target object or class metadata.
+     * @param field The field or method name to resolve.
+     * @return The resolved value or method closure.
+     */
+    public function resolveField(target:Dynamic, field:String):Dynamic {
+        return interp.evalField(target, field, interp.globals, {line: 1, col: 1, file: "host"});
+    }
+
     public static function appendMainCallIfPresent(expr:haxiom.AST.Expr, ?fileBaseName:String):haxiom.AST.Expr {
         var mainClasses:Array<String> = [];
         

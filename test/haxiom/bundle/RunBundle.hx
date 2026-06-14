@@ -15,10 +15,15 @@ class RunBundle {
 		trace("Executing library test bundle...");
 		engine.executeBytes(bytes);
 		
-		trace("Resolving MyLib.doSomething closure from host...");
-		var doSomething:Dynamic = engine.interpret("MyLib.doSomething;");
+		trace("Resolving MyLib.doSomething closure using engine APIs...");
+		var myLibClass:Dynamic = engine.getGlobal("MyLib");
+		if (myLibClass == null) {
+			throw "MyLib class was not registered in globals!";
+		}
+		
+		var doSomething:Dynamic = engine.resolveField(myLibClass, "doSomething");
 		if (doSomething == null) {
-			throw "Failed to resolve MyLib.doSomething static method!";
+			throw "Failed to resolve doSomething static method!";
 		}
 		
 		var result:String = doSomething();

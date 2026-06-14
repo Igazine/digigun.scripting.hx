@@ -762,7 +762,7 @@ class Interp {
         }
     }
 
-    function evalField(obj:Dynamic, field:String, scope:Scope, pos:Pos):Dynamic {
+    public function evalField(obj:Dynamic, field:String, scope:Scope, pos:Pos):Dynamic {
         if (obj == null) throw 'Cannot read field "$field" of null';
         
         if (Std.isOfType(obj, String)) {
