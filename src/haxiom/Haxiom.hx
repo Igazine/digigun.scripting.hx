@@ -347,7 +347,7 @@ class Haxiom implements common.IScriptEngine {
         checkExpr(expr);
         if (mainClasses.length == 0) return expr;
         
-        var mainClass = mainClasses[0];
+        var mainClass:String = null;
         if (fileBaseName != null) {
             for (mc in mainClasses) {
                 if (mc == fileBaseName) {
@@ -355,7 +355,11 @@ class Haxiom implements common.IScriptEngine {
                     break;
                 }
             }
+        } else {
+            mainClass = mainClasses[0];
         }
+        
+        if (mainClass == null) return expr;
         
         var hasExistingCall = false;
         function checkForCall(e:haxiom.AST.Expr) {
