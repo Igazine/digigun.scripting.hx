@@ -290,7 +290,9 @@ class VM {
                     case OP_SET_LOCAL:
                         var slot = inst[frame.ip++];
                         var val = stack[stack.length - 1];
+                        #if haxiom_debug
                         trace('OP_SET_LOCAL slot ' + slot + ' = ' + Std.string(val));
+                        #end
                         frame.locals[slot] = val;
 
                     case OP_GET_VAR:
@@ -325,7 +327,9 @@ class VM {
                             } else {
                                 val = frame.scope.get(name);
                             }
+                            #if haxiom_debug
                             trace('OP_GET_VAR: ' + name + ' = ' + Std.string(val));
+                            #end
                             stack.push(val);
                         }
 
@@ -390,7 +394,9 @@ class VM {
                         var name:String = consts[nameIdx];
                         var type:TypeDecl = typeIdx >= 0 ? consts[typeIdx] : null;
                         var val = stack.pop();
+                        #if haxiom_debug
                         trace('OP_DECLARE_VAR: ' + name + ' = ' + Std.string(val));
+                        #end
                         if (type != null) {
                             interp.checkType(val, type, frame.scope);
                         }
@@ -400,7 +406,13 @@ class VM {
                         var v2 = stack.pop();
                         var v1 = stack.pop();
                         var overloadRes = interp.findAbstractBinopOverload("+", v1, v2);
-                        stack.push(overloadRes.success ? overloadRes.value : (v1 + v2 : Dynamic));
+                        if (overloadRes.success) {
+                            stack.push(overloadRes.value);
+                        } else if (TypeSystem.isString(v1) || TypeSystem.isString(v2)) {
+                            stack.push(Std.string(v1) + Std.string(v2));
+                        } else {
+                            stack.push((v1 + v2 : Dynamic));
+                        }
 
                     case OP_SUB:
                         var v2 = stack.pop();
@@ -665,7 +677,9 @@ class VM {
                         var creationPos = currentPos();
                         
                         var func = (callArgs:Array<Dynamic>) -> {
+                            #if haxiom_debug
                             trace('VM guest function invoked! callArgs=' + callArgs);
+                            #end
                             var fScope = Scope.create(closureScope);
                             var mappedArgs = [];
                             for (i in 0...proto.args.length) {
@@ -772,20 +786,23 @@ class VM {
                         frame.scope = s.parent;
                         Scope.recycle(s);
 
-                    case OP_GET_ITERATOR:
+                     case OP_GET_ITERATOR:
                         var iterable = stack.pop();
                         var iterator:Dynamic = null;
                         if (iterable != null) {
-                            if (Reflect.field(iterable, "iterator") != null) {
-                                iterator = Reflect.callMethod(iterable, Reflect.field(iterable, "iterator"), []);
-                            } else if (Std.isOfType(iterable, Array)) {
+                            if (Std.isOfType(iterable, Array)) {
                                 iterator = (cast iterable : Array<Dynamic>).iterator();
                             } else if (Std.isOfType(iterable, haxe.Constraints.IMap)) {
                                 iterator = (cast iterable : haxe.Constraints.IMap<Dynamic, Dynamic>).iterator();
                             } else if (Std.isOfType(iterable, IntIterator)) {
                                 iterator = iterable;
-                            } else if (Reflect.field(iterable, "hasNext") != null && Reflect.field(iterable, "next") != null) {
-                                iterator = iterable;
+                            } else {
+                                var iterField = Reflect.field(iterable, "iterator");
+                                if (iterField != null) {
+                                    iterator = Reflect.callMethod(iterable, iterField, []);
+                                } else if (Reflect.field(iterable, "hasNext") != null && Reflect.field(iterable, "next") != null) {
+                                    iterator = iterable;
+                                }
                             }
                         }
                         stack.push(iterator);
@@ -1068,7 +1085,9 @@ class VM {
                         
                         // Fallback: resolve method as a field and invoke
                         var resolvedField:Dynamic = interp.evalField(obj, fieldName, frame.scope, currentPos());
+                        #if haxiom_debug
                         trace("DEBUG VM FALLBACK: obj=" + Std.string(obj) + " fieldName=" + fieldName + " typeof(resolvedField)=" + Std.string(Type.typeof(resolvedField)) + " isFunction=" + Reflect.isFunction(resolvedField));
+                        #end
                         var res = Reflect.callMethod(obj, cast resolvedField, args);
                         stack.push(res);
 

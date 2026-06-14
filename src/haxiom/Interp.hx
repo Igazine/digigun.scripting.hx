@@ -1350,15 +1350,19 @@ class Interp {
         try {
             f = Reflect.getProperty(obj, field);
         } catch (e:Dynamic) {}
+        #if haxiom_debug
         if (field == "addEventListener") {
             trace("DEBUG evalField native addEventListener: getProperty=" + f);
         }
+        #end
         if (f == null) {
             f = safeField(obj, field);
         }
+        #if haxiom_debug
         if (field == "addEventListener") {
             trace("DEBUG evalField native addEventListener end: f=" + f);
         }
+        #end
 
             // Check if this is an abstract method or property redirection closure/getter
             for (absName in haxiom.FFI.exposedAbstracts.keys()) {
@@ -1537,8 +1541,14 @@ class Interp {
             var locationStr = 'Runtime Error: Instruction limit exceeded ($maxInstructions ops) at ' + fileInfo + ':' + lineVal + ':' + colVal;
             throw new haxiom.ScriptException("Instruction limit exceeded (possible infinite loop)", callStack.copy(), locationStr, lineVal, colVal, fileInfo);
         }
+        #if haxiom_debug
+        trace("AST eval: " + Std.string(e.def));
+        #end
         switch (e.def) {
             case EValue(v):
+                #if haxiom_debug
+                trace("AST eval EValue: val=" + Std.string(v) + " typeof=" + Std.string(Type.typeof(v)));
+                #end
                 return v;
 
             case EIdent(name):
@@ -1725,30 +1735,35 @@ class Interp {
                     return new IntIterator(cast v1, cast v2);
                 }
 
-                var v1 = eval(e1, scope);
-                var v2 = eval(e2, scope);
-                var overloadRes = findAbstractBinopOverload(op, v1, v2);
+                var val1:Dynamic = eval(e1, scope);
+                var val2:Dynamic = eval(e2, scope);
+                var overloadRes = findAbstractBinopOverload(op, val1, val2);
                 if (overloadRes.success) return overloadRes.value;
                 
                 var binopRes:Dynamic = null;
                 switch (op) {
-                    case "+": binopRes = (v1 + v2 : Dynamic);
-                    case "-": binopRes = (v1 - v2 : Dynamic);
-                    case "*": binopRes = (v1 * v2 : Dynamic);
-                    case "/": binopRes = (v1 / v2 : Dynamic);
-                    case "%": binopRes = (v1 % v2 : Dynamic);
-                    case "==": binopRes = (v1 == v2 : Dynamic);
-                    case "!=": binopRes = (v1 != v2 : Dynamic);
-                    case "<": binopRes = (v1 < v2 : Dynamic);
-                    case "<=": binopRes = (v1 <= v2 : Dynamic);
-                    case ">": binopRes = (v1 > v2 : Dynamic);
-                    case ">=": binopRes = (v1 >= v2 : Dynamic);
-                    case "&": binopRes = ((cast v1 : Int) & (cast v2 : Int) : Dynamic);
-                    case "|": binopRes = ((cast v1 : Int) | (cast v2 : Int) : Dynamic);
-                    case "^": binopRes = ((cast v1 : Int) ^ (cast v2 : Int) : Dynamic);
-                    case "<<": binopRes = ((cast v1 : Int) << (cast v2 : Int) : Dynamic);
-                    case ">>": binopRes = ((cast v1 : Int) >> (cast v2 : Int) : Dynamic);
-                    case ">>>": binopRes = ((cast v1 : Int) >>> (cast v2 : Int) : Dynamic);
+                    case "+":
+                        if (TypeSystem.isString(val1) || TypeSystem.isString(val2)) {
+                            binopRes = Std.string(val1) + Std.string(val2);
+                        } else {
+                            binopRes = (val1 + val2 : Dynamic);
+                        }
+                    case "-": binopRes = (val1 - val2 : Dynamic);
+                    case "*": binopRes = (val1 * val2 : Dynamic);
+                    case "/": binopRes = (val1 / val2 : Dynamic);
+                    case "%": binopRes = (val1 % val2 : Dynamic);
+                    case "==": binopRes = (val1 == val2 : Dynamic);
+                    case "!=": binopRes = (val1 != val2 : Dynamic);
+                    case "<": binopRes = (val1 < val2 : Dynamic);
+                    case "<=": binopRes = (val1 <= val2 : Dynamic);
+                    case ">": binopRes = (val1 > val2 : Dynamic);
+                    case ">=": binopRes = (val1 >= val2 : Dynamic);
+                    case "&": binopRes = ((cast val1 : Int) & (cast val2 : Int) : Dynamic);
+                    case "|": binopRes = ((cast val1 : Int) | (cast val2 : Int) : Dynamic);
+                    case "^": binopRes = ((cast val1 : Int) ^ (cast val2 : Int) : Dynamic);
+                    case "<<": binopRes = ((cast val1 : Int) << (cast val2 : Int) : Dynamic);
+                    case ">>": binopRes = ((cast val1 : Int) >> (cast val2 : Int) : Dynamic);
+                    case ">>>": binopRes = ((cast val1 : Int) >>> (cast val2 : Int) : Dynamic);
                     default: throw 'Unknown operator "$op"';
                 }
                 return binopRes;
@@ -2701,7 +2716,9 @@ class Interp {
                                 case "haxe.ds.ObjectMap":
                                     return new haxe.ds.ObjectMap<Dynamic, Dynamic>();
                                 default:
+                                    #if haxiom_debug
                                     trace('Type.createInstance: ' + calleeClassName + ' with args: ' + args);
+                                    #end
                                     return Type.createInstance(cast callee, args);
                             }
                         }
@@ -3329,7 +3346,9 @@ class Interp {
                 var closure = Scope.create(scope);
                 closure.markCaptured();
                 var func = (callArgs:Array<Dynamic>) -> {
+                    #if haxiom_debug
                     trace('Interp guest function invoked! callArgs=' + callArgs);
+                    #end
                     var fScope = Scope.create(closure);
                     for (i in 0...args.length) {
                         var arg = args[i];
@@ -3483,17 +3502,19 @@ class Interp {
                 // Dynamic Haxe Iterator protocol
                 if (iterable != null) {
                     var iterator:Dynamic = null;
-                    var iterField = safeField(iterable, "iterator");
-                    if (iterField != null) {
-                        iterator = Reflect.callMethod(iterable, iterField, []);
-                    } else if (Std.isOfType(iterable, Array)) {
+                    if (Std.isOfType(iterable, Array)) {
                         iterator = (cast iterable : Array<Dynamic>).iterator();
                     } else if (Std.isOfType(iterable, haxe.Constraints.IMap)) {
                         iterator = (cast iterable : haxe.Constraints.IMap<Dynamic, Dynamic>).iterator();
                     } else if (Std.isOfType(iterable, IntIterator)) {
                         iterator = iterable;
-                    } else if (safeField(iterable, "hasNext") != null && safeField(iterable, "next") != null) {
-                        iterator = iterable;
+                    } else {
+                        var iterField = safeField(iterable, "iterator");
+                        if (iterField != null) {
+                            iterator = Reflect.callMethod(iterable, iterField, []);
+                        } else if (safeField(iterable, "hasNext") != null && safeField(iterable, "next") != null) {
+                            iterator = iterable;
+                        }
                     }
                     
                     if (iterator != null) {
@@ -3910,7 +3931,9 @@ class Interp {
     function bindMethod(obj:Dynamic, method:{name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}):Dynamic {
         var bindings = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast obj : HaxiomInstance).genericBindings : null;
         var func = (callArgs:Array<Dynamic>) -> {
+            #if haxiom_debug
             trace('Interp bindMethod guest function invoked! callArgs=' + callArgs);
+            #end
             var fScope = Scope.create(globals);
             fScope.declare("this", obj);
             var mappedArgs = [];
@@ -5058,14 +5081,18 @@ class Interp {
         if (obj == null) return null;
         try {
             var res = Reflect.field(obj, field);
+            #if haxiom_debug
             if (field == "addEventListener") {
                 trace("DEBUG safeField: obj=" + Std.string(obj) + " typeof(obj)=" + Std.string(Type.typeof(obj)) + " field=" + field + " res=" + res);
             }
+            #end
             return res;
         } catch (e:Dynamic) {
+            #if haxiom_debug
             if (field == "addEventListener") {
                 trace("DEBUG safeField error: " + Std.string(e));
             }
+            #end
             return null;
         }
     }

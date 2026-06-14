@@ -13,9 +13,12 @@ class DynamicMap implements IMap<Dynamic, Dynamic> {
     public function new() {}
 
     public function get(k:Dynamic):Dynamic {
-        if (Std.isOfType(k, String)) {
+        #if haxiom_debug
+        trace("DynamicMap.get key=" + Std.string(k) + " type=" + Std.string(Type.typeof(k)) + " isString=" + TypeSystem.isString(k) + " isInt=" + TypeSystem.isInt(k));
+        #end
+        if (TypeSystem.isString(k)) {
             return stringMap != null ? stringMap.get(k) : null;
-        } else if (Std.isOfType(k, Int)) {
+        } else if (TypeSystem.isInt(k)) {
             return intMap != null ? intMap.get(k) : null;
         } else {
             return objectMap != null ? objectMap.get(k) : null;
@@ -23,10 +26,13 @@ class DynamicMap implements IMap<Dynamic, Dynamic> {
     }
 
     public function set(k:Dynamic, v:Dynamic):Void {
-        if (Std.isOfType(k, String)) {
+        #if haxiom_debug
+        trace("DynamicMap.set key=" + Std.string(k) + " value=" + Std.string(v) + " type=" + Std.string(Type.typeof(k)) + " isString=" + TypeSystem.isString(k) + " isInt=" + TypeSystem.isInt(k));
+        #end
+        if (TypeSystem.isString(k)) {
             if (stringMap == null) stringMap = new StringMap<Dynamic>();
             stringMap.set(k, v);
-        } else if (Std.isOfType(k, Int)) {
+        } else if (TypeSystem.isInt(k)) {
             if (intMap == null) intMap = new IntMap<Dynamic>();
             intMap.set(k, v);
         } else {
@@ -36,9 +42,9 @@ class DynamicMap implements IMap<Dynamic, Dynamic> {
     }
 
     public function exists(k:Dynamic):Bool {
-        if (Std.isOfType(k, String)) {
+        if (TypeSystem.isString(k)) {
             return stringMap != null && stringMap.exists(k);
-        } else if (Std.isOfType(k, Int)) {
+        } else if (TypeSystem.isInt(k)) {
             return intMap != null && intMap.exists(k);
         } else {
             return objectMap != null && objectMap.exists(k);
@@ -46,9 +52,9 @@ class DynamicMap implements IMap<Dynamic, Dynamic> {
     }
 
     public function remove(k:Dynamic):Bool {
-        if (Std.isOfType(k, String)) {
+        if (TypeSystem.isString(k)) {
             return stringMap != null && stringMap.remove(k);
-        } else if (Std.isOfType(k, Int)) {
+        } else if (TypeSystem.isInt(k)) {
             return intMap != null && intMap.remove(k);
         } else {
             return objectMap != null && objectMap.remove(k);

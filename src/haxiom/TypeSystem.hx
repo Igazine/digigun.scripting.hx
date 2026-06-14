@@ -11,6 +11,63 @@ import haxiom.Interp.HaxiomAbstract;
 import haxiom.Interp.HaxiomAbstractInstance;
 
 class TypeSystem {
+    public static function isString(v:Dynamic):Bool {
+        if (v == null) return false;
+        var isOf = Std.isOfType(v, String);
+        var t = Type.typeof(v);
+        var isCls = false;
+        switch (t) {
+            case TClass(c):
+                isCls = (c == String || Type.getClassName(c) == "String");
+            default:
+        }
+        #if haxiom_debug
+        trace("DEBUG isString val=" + Std.string(v) + " isOf=" + isOf + " type=" + Std.string(t) + " isCls=" + isCls);
+        #end
+        return isOf || isCls;
+    }
+
+    public static function isInt(v:Dynamic):Bool {
+        if (v == null) return false;
+        #if haxiom_debug
+        trace("DEBUG isInt val=" + Std.string(v) + " typeof=" + Std.string(Type.typeof(v)) + " isOfType=" + Std.isOfType(v, Int));
+        #end
+        if (Std.isOfType(v, Int)) return true;
+        var t = Type.typeof(v);
+        switch (t) {
+            case TInt: return true;
+            default:
+        }
+        if (isString(v)) {
+            return ~/^-?[0-9]+$/.match(cast v);
+        }
+        return false;
+    }
+
+    public static function isFloat(v:Dynamic):Bool {
+        if (v == null) return false;
+        if (Std.isOfType(v, Float)) return true;
+        var t = Type.typeof(v);
+        switch (t) {
+            case TInt | TFloat: return true;
+            default:
+        }
+        if (isString(v)) {
+            return ~/^-?[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?$/.match(cast v);
+        }
+        return false;
+    }
+
+    public static function isBool(v:Dynamic):Bool {
+        if (v == null) return false;
+        if (Std.isOfType(v, Bool)) return true;
+        var t = Type.typeof(v);
+        switch (t) {
+            case TBool: return true;
+            default: return false;
+        }
+    }
+
     public static function checkType(interp:Interp, val:Dynamic, type:TypeDecl, scope:Scope, ?genericBindings:Map<String, TypeDecl>):Void {
         if (type == null) return;
         var resolvedType = interp.resolveGenericType(type, genericBindings, scope);
@@ -24,17 +81,17 @@ class TypeSystem {
                     case "Void":
                         if (val != null) throw "Type mismatch: expected Void";
                     case "Int":
-                        if (!Std.isOfType(val, Int)) {
+                        if (!isInt(val)) {
                             var valClass = Type.getClass(val);
                             var valClassName = valClass != null ? Type.getClassName(valClass) : null;
                             throw 'Type mismatch: expected Int but got ${val == null ? "null" : valClassName != null ? valClassName : Std.string(val)}';
                         }
                     case "Float":
-                        if (!Std.isOfType(val, Float) && !Std.isOfType(val, Int)) throw 'Type mismatch: expected Float but got ${val == null ? "null" : Std.string(val)}';
+                        if (!isFloat(val)) throw 'Type mismatch: expected Float but got ${val == null ? "null" : Std.string(val)}';
                     case "String":
-                        if (!Std.isOfType(val, String)) throw 'Type mismatch: expected String but got ${val == null ? "null" : Std.string(val)}';
+                        if (!isString(val)) throw 'Type mismatch: expected String but got ${val == null ? "null" : Std.string(val)}';
                     case "Bool":
-                        if (!Std.isOfType(val, Bool)) throw 'Type mismatch: expected Bool but got ${val == null ? "null" : Std.string(val)}';
+                        if (!isBool(val)) throw 'Type mismatch: expected Bool but got ${val == null ? "null" : Std.string(val)}';
                     case "Array":
                         if (val == null) return;
                         if (!Std.isOfType(val, Array)) throw 'Type mismatch: expected Array but got ${val == null ? "null" : Std.string(val)}';
@@ -183,7 +240,9 @@ class TypeSystem {
                             nativeClass = interp.resolveNativeClass(typeName);
                         }
                         if (nativeClass != null) {
+                            #if haxiom_debug
                             trace('checkType: typeName=' + typeName + ' nativeClass=' + nativeClass + ' val=' + Std.string(val) + ' isOfType=' + Std.isOfType(val, nativeClass));
+                            #end
                             if (val == null) return;
                             
                             #if cpp

@@ -117,7 +117,7 @@ class Interp {
                     frame.step = 1;
                     currentFiber.stack.push(Frame.get(e1, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == 1) {
-                    var v1 = frame.results[frame.results.length - 1];
+                    var v1:Dynamic = frame.results[frame.results.length - 1];
                     if (v1 == false || v1 == null) {
                         popAndReturn(frame.results.pop());
                     } else {
@@ -135,7 +135,7 @@ class Interp {
                     frame.step = 1;
                     currentFiber.stack.push(Frame.get(e1, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == 1) {
-                    var v1 = frame.results[frame.results.length - 1];
+                    var v1:Dynamic = frame.results[frame.results.length - 1];
                     if (v1 != false && v1 != null) {
                         popAndReturn(frame.results.pop());
                     } else {
@@ -153,7 +153,7 @@ class Interp {
                     frame.step = 1;
                     currentFiber.stack.push(Frame.get(cond, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == 1) {
-                    var v = frame.results.pop();
+                    var v:Dynamic = frame.results.pop();
                     frame.step = 2;
                     if (v != false && v != null) {
                         currentFiber.stack.push(Frame.get(e1, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
@@ -526,7 +526,7 @@ class Interp {
                     frame.step = 1;
                     currentFiber.stack.push(Frame.get(cond, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == 1) {
-                    var v = frame.results.pop();
+                    var v:Dynamic = frame.results.pop();
                     frame.step = 2;
                     if (v != false && v != null) currentFiber.stack.push(Frame.get(e1, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                     else if (e2 != null) currentFiber.stack.push(Frame.get(e2, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
@@ -540,7 +540,7 @@ class Interp {
                     frame.step = 1;
                     currentFiber.stack.push(Frame.get(cond, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
                 } else if (frame.step == 1) {
-                    var v = frame.results.pop();
+                    var v:Dynamic = frame.results.pop();
                     if (v != false && v != null) {
                         frame.step = 2;
                         currentFiber.stack.push(Frame.get(body, frame.locals, false, false, false, frame.methodName, frame.methodClass, frame.globals));
@@ -597,7 +597,7 @@ class Interp {
                 } else if (frame.step == 2) {
                     if (frame.results.length < 2) return;
                     var iterable = frame.results[0];
-                    var iterator = frame.results[1];
+                    var iterator:Dynamic = frame.results[1];
                     if (iterator == null || iterator == false) {
                         popAndReturn(null);
                     } else {

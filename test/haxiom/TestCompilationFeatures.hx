@@ -4,6 +4,10 @@ import haxiom.Haxiom;
 import haxiom.AST;
 
 class TestCompilationFeatures {
+    public static function main() {
+        runTests();
+    }
+
     public static function runTests() {
         trace("Starting Haxiom Preprocessor, Optional Types, and Macros Verification Suite...");
         
@@ -16,9 +20,11 @@ class TestCompilationFeatures {
         testRestArguments();
         testFinals();
         testStrictSemicolons();
+        #if sys
         testModularity();
+        #end
         
-        trace("SUCCESS: All Haxiom preprocessor, optional type, macro, instruction limit, comprehension, rest argument, final, strict semicolon, and modularity tests passed!");
+        trace("SUCCESS: All Haxiom preprocessor, optional type, macro, instruction limit, comprehension, rest argument, final, and strict semicolon" + #if sys ", and modularity" + #end " tests passed!");
     }
 
     static function testPreprocessor() {
@@ -712,6 +718,7 @@ class TestCompilationFeatures {
         trace("SUCCESS: Strict semicolons tests passed.");
     }
 
+    #if sys
     static function deleteDirRecursive(path:String) {
         if (sys.FileSystem.exists(path)) {
             if (sys.FileSystem.isDirectory(path)) {
@@ -910,5 +917,6 @@ class TestCompilationFeatures {
         
         trace("SUCCESS: Modularity and dependency bundling tests passed.");
     }
+    #end
 }
 
