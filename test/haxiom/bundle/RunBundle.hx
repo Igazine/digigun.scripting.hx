@@ -9,28 +9,25 @@ class RunBundle {
 		engine.useVM = true;
 		engine.importWhitelist = null; // Disable sandboxing for standard outputs
 
-		trace("Loading test bundle bytecode...");
-		var bytes = File.getBytes("test/haxiom/bundle/StupidLogic.hxbc");
+		trace("Loading library test bundle bytecode...");
+		var bytes = File.getBytes("test/haxiom/bundle/MyLib.hxbc");
 		
-		trace("Executing test bundle...");
+		trace("Executing library test bundle...");
 		engine.executeBytes(bytes);
 		
-		var mainClass:Dynamic = engine.interp.globals.get("StupidLogic");
-		if (mainClass == null) {
-			throw "StupidLogic class was not registered in globals!";
+		trace("Resolving MyLib.doSomething closure from host...");
+		var doSomething:Dynamic = engine.interpret("MyLib.doSomething;");
+		if (doSomething == null) {
+			throw "Failed to resolve MyLib.doSomething static method!";
 		}
 		
-		var resMessage:Dynamic = mainClass.staticFields.get("outputMessage");
-		var resValue:Dynamic = mainClass.staticFields.get("outputValue");
+		var result:String = doSomething();
+		trace("MyLib.doSomething() result: " + result);
 		
-		trace("Bundle Execution Verification:");
-		trace("outputMessage: " + resMessage);
-		trace("outputValue: " + resValue);
-		
-		if (resMessage == "Hello from bundled MyClass!" && resValue == 40) {
-			trace("SUCCESS: Single-module bytecode bundle executed and verified successfully!");
+		if (result == "Hello from MyLib!") {
+			trace("SUCCESS: Library bytecode bundle loaded and executed successfully from host!");
 		} else {
-			throw "Verification failed: outputMessage or outputValue did not match expected values.";
+			throw "Verification failed: MyLib.doSomething() returned: " + result;
 		}
 	}
 }
