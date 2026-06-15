@@ -256,7 +256,14 @@ class BytecodeCompiler {
     function addConst(v:Dynamic):Int {
         if (v == null || Std.isOfType(v, String) || Std.isOfType(v, Int) || Std.isOfType(v, Float) || Std.isOfType(v, Bool)) {
             for (i in 0...constants.length) {
-                if (constants[i] == v) return i;
+                var c = constants[i];
+                if (c == v) {
+                    if (Std.isOfType(c, String) && !Std.isOfType(v, String)) continue;
+                    if (Std.isOfType(c, Bool) && !Std.isOfType(v, Bool)) continue;
+                    if (Std.isOfType(c, Int) && !Std.isOfType(v, Int)) continue;
+                    if (Std.isOfType(c, Float) && !Std.isOfType(v, Float)) continue;
+                    return i;
+                }
             }
         }
         constants.push(v);

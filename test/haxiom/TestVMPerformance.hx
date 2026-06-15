@@ -43,9 +43,27 @@ class TestVMPerformance {
             count;
         ";
 
+        var methodCallScript = "
+            class Helper {
+                public var val:Int = 0;
+                public function new() {}
+                public function add(x:Int) {
+                    val += x;
+                }
+            }
+            var h = new Helper();
+            var i = 0;
+            while (i < 5000) {
+                h.add(1);
+                i++;
+            }
+            h.val;
+        ";
+
         runBenchmark("Recursive Fibonacci (fib(12))", fibScript, 200);
         runBenchmark("Inner Closure Iterations (2000 steps)", loopScript, 100);
         runBenchmark("Try/Catch Resolution (1000 steps)", tryCatchScript, 100);
+        runBenchmark("Instance Method Calls (5000 steps)", methodCallScript, 50);
     }
 
     static function runBenchmark(name:String, script:String, iterations:Int) {

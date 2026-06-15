@@ -90,7 +90,18 @@ typedef DebugSymbol = {
 }
 
 @:keep
+class InlineCacheEntry {
+    public var lastObject:Dynamic = null;
+    public var lastClass:Dynamic = null;
+    public var cachedValue:Dynamic = null;
+    public var cachedMethodDef:Dynamic = null;
+    public var isMethod:Bool = false;
+    public function new() {}
+}
+
+@:keep
 class BytecodeChunk {
+    public var inlineCaches:Map<Int, InlineCacheEntry> = new Map();
     public var instructions:Array<Int>;
     public var constants:Array<Dynamic>;
     public var positions:Array<Pos>;
@@ -601,7 +612,47 @@ class VM {
                                 throw 'Parent method or field "$fieldName" not found on class ${superInst.inst.cls.name}';
                             }
                         } else {
-                            stack.push(interp.evalField(obj, fieldName, frame.scope, currentPos()));
+                            var cacheKey = frame.ip - 2;
+                            var cache = frame.chunk.inlineCaches.get(cacheKey);
+                            var resolved:Dynamic = null;
+                            var cacheHit = false;
+                            
+                            if (cache != null && cache.isMethod) {
+                                if (obj == cache.lastObject) {
+                                    resolved = cache.cachedValue;
+                                    cacheHit = true;
+                                } else if (Std.isOfType(obj, HaxiomInstance)) {
+                                    var instObj:HaxiomInstance = cast obj;
+                                    if (instObj.cls == cache.lastClass) {
+                                        resolved = interp.bindMethod(instObj, cache.cachedMethodDef);
+                                        cache.lastObject = instObj;
+                                        cache.cachedValue = resolved;
+                                        cacheHit = true;
+                                    }
+                                }
+                            }
+                            
+                            if (cacheHit) {
+                                stack.push(resolved);
+                            } else {
+                                var val = interp.evalField(obj, fieldName, frame.scope, currentPos());
+                                stack.push(val);
+                                
+                                if (val != null && Reflect.isFunction(val)) {
+                                    var newCache = new InlineCacheEntry();
+                                    newCache.lastObject = obj;
+                                    newCache.cachedValue = val;
+                                    newCache.isMethod = true;
+                                    if (Std.isOfType(obj, HaxiomInstance)) {
+                                        var instObj:HaxiomInstance = cast obj;
+                                        newCache.lastClass = instObj.cls;
+                                        newCache.cachedMethodDef = interp.findMethod(instObj.cls, fieldName);
+                                    } else {
+                                        newCache.lastClass = Type.getClass(obj);
+                                    }
+                                    frame.chunk.inlineCaches.set(cacheKey, newCache);
+                                }
+                            }
                         }
 
                     case OP_SET_FIELD:
@@ -625,7 +676,47 @@ class VM {
                         if (obj == null) {
                             stack.push(null);
                         } else {
-                            stack.push(interp.evalField(obj, fieldName, frame.scope, currentPos()));
+                            var cacheKey = frame.ip - 2;
+                            var cache = frame.chunk.inlineCaches.get(cacheKey);
+                            var resolved:Dynamic = null;
+                            var cacheHit = false;
+                            
+                            if (cache != null && cache.isMethod) {
+                                if (obj == cache.lastObject) {
+                                    resolved = cache.cachedValue;
+                                    cacheHit = true;
+                                } else if (Std.isOfType(obj, HaxiomInstance)) {
+                                    var instObj:HaxiomInstance = cast obj;
+                                    if (instObj.cls == cache.lastClass) {
+                                        resolved = interp.bindMethod(instObj, cache.cachedMethodDef);
+                                        cache.lastObject = instObj;
+                                        cache.cachedValue = resolved;
+                                        cacheHit = true;
+                                    }
+                                }
+                            }
+                            
+                            if (cacheHit) {
+                                stack.push(resolved);
+                            } else {
+                                var val = interp.evalField(obj, fieldName, frame.scope, currentPos());
+                                stack.push(val);
+                                
+                                if (val != null && Reflect.isFunction(val)) {
+                                    var newCache = new InlineCacheEntry();
+                                    newCache.lastObject = obj;
+                                    newCache.cachedValue = val;
+                                    newCache.isMethod = true;
+                                    if (Std.isOfType(obj, HaxiomInstance)) {
+                                        var instObj:HaxiomInstance = cast obj;
+                                        newCache.lastClass = instObj.cls;
+                                        newCache.cachedMethodDef = interp.findMethod(instObj.cls, fieldName);
+                                    } else {
+                                        newCache.lastClass = Type.getClass(obj);
+                                    }
+                                    frame.chunk.inlineCaches.set(cacheKey, newCache);
+                                }
+                            }
                         }
 
                     case OP_SAFE_SET_FIELD:
@@ -1057,39 +1148,89 @@ class VM {
                             args.unshift(stack.pop());
                         }
 
-                        if (obj != null && Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
-                            var superInst:haxiom.HaxiomSuperInstance = cast obj;
-                            var parentCls = superInst.inst.cls.parent;
-                            var m = interp.findMethod(parentCls, fieldName);
-                            if (m != null) {
-                                var boundMethod = interp.bindMethod(superInst.inst, m);
-                                var res = Reflect.callMethod(null, boundMethod, args);
-                                stack.push(res);
-                                continue;
-                            } else {
-                                throw 'Parent method or field "$fieldName" not found on class ${superInst.inst.cls.name}';
+                        var cacheKey = frame.ip - 3;
+                        var cache = frame.chunk.inlineCaches.get(cacheKey);
+                        var boundMethod:Dynamic = null;
+                        var cacheHit = false;
+
+                        if (cache != null && cache.isMethod) {
+                            if (obj == cache.lastObject) {
+                                boundMethod = cache.cachedValue;
+                                cacheHit = true;
+                            } else if (Std.isOfType(obj, HaxiomInstance)) {
+                                var instObj:HaxiomInstance = cast obj;
+                                if (instObj.cls == cache.lastClass) {
+                                    if (cache.cachedMethodDef != null) {
+                                        boundMethod = interp.bindMethod(instObj, cache.cachedMethodDef);
+                                        cache.lastObject = instObj;
+                                        cache.cachedValue = boundMethod;
+                                        cacheHit = true;
+                                    }
+                                }
                             }
                         }
 
-                        if (obj != null && Std.isOfType(obj, HaxiomInstance)) {
-                            var instObj:HaxiomInstance = cast obj;
-                            var m = interp.findMethod(instObj.cls, fieldName);
-                            if (m != null) {
-                                // Dynamic execution wrapper for script-defined methods
-                                var boundMethod = interp.bindMethod(obj, m);
-                                var res = Reflect.callMethod(null, boundMethod, args);
-                                stack.push(res);
-                                continue;
+                        if (cacheHit) {
+                            var receiver = (cache.cachedMethodDef != null || Std.isOfType(obj, HaxiomInstance)) ? null : obj;
+                            var res = Reflect.callMethod(receiver, boundMethod, args);
+                            stack.push(res);
+                        } else {
+                            if (obj != null && Std.isOfType(obj, haxiom.HaxiomSuperInstance)) {
+                                var superInst:haxiom.HaxiomSuperInstance = cast obj;
+                                var parentCls = superInst.inst.cls.parent;
+                                var m = interp.findMethod(parentCls, fieldName);
+                                if (m != null) {
+                                    var bm = interp.bindMethod(superInst.inst, m);
+                                    
+                                    var newCache = new InlineCacheEntry();
+                                    newCache.lastObject = superInst;
+                                    newCache.lastClass = parentCls;
+                                    newCache.cachedMethodDef = m;
+                                    newCache.cachedValue = bm;
+                                    newCache.isMethod = true;
+                                    frame.chunk.inlineCaches.set(cacheKey, newCache);
+                                    
+                                    var res = Reflect.callMethod(null, bm, args);
+                                    stack.push(res);
+                                    continue;
+                                } else {
+                                    throw 'Parent method or field "$fieldName" not found on class ${superInst.inst.cls.name}';
+                                }
                             }
+
+                            if (obj != null && Std.isOfType(obj, HaxiomInstance)) {
+                                var instObj:HaxiomInstance = cast obj;
+                                var m = interp.findMethod(instObj.cls, fieldName);
+                                if (m != null) {
+                                    boundMethod = interp.bindMethod(instObj, m);
+                                    
+                                    var newCache = new InlineCacheEntry();
+                                    newCache.lastObject = instObj;
+                                    newCache.lastClass = instObj.cls;
+                                    newCache.cachedMethodDef = m;
+                                    newCache.cachedValue = boundMethod;
+                                    newCache.isMethod = true;
+                                    frame.chunk.inlineCaches.set(cacheKey, newCache);
+                                    
+                                    var res = Reflect.callMethod(null, boundMethod, args);
+                                    stack.push(res);
+                                    continue;
+                                }
+                            }
+                            
+                            // Fallback: resolve method as a field and invoke
+                            var resolvedField:Dynamic = interp.evalField(obj, fieldName, frame.scope, currentPos());
+                            if (resolvedField != null && Reflect.isFunction(resolvedField)) {
+                                var newCache = new InlineCacheEntry();
+                                newCache.lastObject = obj;
+                                newCache.lastClass = Type.getClass(obj);
+                                newCache.cachedValue = resolvedField;
+                                newCache.isMethod = true;
+                                frame.chunk.inlineCaches.set(cacheKey, newCache);
+                            }
+                            var res = Reflect.callMethod(obj, cast resolvedField, args);
+                            stack.push(res);
                         }
-                        
-                        // Fallback: resolve method as a field and invoke
-                        var resolvedField:Dynamic = interp.evalField(obj, fieldName, frame.scope, currentPos());
-                        #if haxiom_debug
-                        trace("DEBUG VM FALLBACK: obj=" + Std.string(obj) + " fieldName=" + fieldName + " typeof(resolvedField)=" + Std.string(Type.typeof(resolvedField)) + " isFunction=" + Reflect.isFunction(resolvedField));
-                        #end
-                        var res = Reflect.callMethod(obj, cast resolvedField, args);
-                        stack.push(res);
 
                     case OP_NEW_MAP:
                         var size = inst[frame.ip++];
