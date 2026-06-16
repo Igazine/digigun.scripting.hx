@@ -269,8 +269,8 @@ class Optimizer {
                 });
                 EInterface(name, foldedFields, foldedMethods, parents, params, meta);
                 
-            case EEnum(name, constructors):
-                EEnum(name, constructors);
+            case EEnum(name, constructors, params):
+                EEnum(name, constructors, params);
                 
             case ESafeField(e, field):
                 ESafeField(foldConstants(e), field);

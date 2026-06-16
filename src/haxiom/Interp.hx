@@ -142,6 +142,7 @@ class HaxiomInstance {
 class HaxiomEnum {
     public var name:String;
     public var constructors:Map<String, Array<{name:String, type:Null<TypeDecl>}>> = new Map();
+    public var params:Array<String> = [];
 
     public function new(name:String) {
         this.name = name;
@@ -3030,10 +3031,13 @@ class Interp {
                 }
                 return abs;
 
-            case EEnum(name, constructors):
+            case EEnum(name, constructors, params):
                 var fqName = currentPackage.length > 0 ? currentPackage.join(".") + "." + name : name;
                 var haxiomEnum = new HaxiomEnum(name);
                 haxiomEnum.name = fqName;
+                if (params != null) {
+                    haxiomEnum.params = params;
+                }
                 for (c in constructors) {
                     haxiomEnum.constructors.set(c.name, c.args != null ? c.args : []);
                 }
