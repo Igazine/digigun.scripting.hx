@@ -11,6 +11,7 @@ import feathers.events.TriggerEvent;
 import feathers.layout.HorizontalAlign;
 import feathers.layout.HorizontalLayout;
 import feathers.layout.HorizontalLayoutData;
+import feathers.layout.VerticalAlign;
 import feathers.layout.VerticalLayout;
 import feathers.layout.VerticalLayoutData;
 import feathers.skins.RectangleSkin;
@@ -21,7 +22,6 @@ import haxe.io.Bytes;
 import haxiom.FFI;
 import haxiom.Haxiom;
 import openfl.events.Event;
-import openfl.events.MouseEvent;
 
 class TestOpenFL extends Application {
 	static final SCRIPTS:Array<ScriptDef> = [
@@ -118,6 +118,11 @@ class TestOpenFL extends Application {
 		container = new LayoutGroup();
 		container.backgroundSkin = new RectangleSkin(FillStyle.SolidColor(0x181818), LineStyle.SolidColor(1, 0));
 		container.layoutData = new VerticalLayoutData(100, 100);
+		var containerLayout = new VerticalLayout();
+		containerLayout.gap = 10;
+		containerLayout.horizontalAlign = HorizontalAlign.CENTER;
+		containerLayout.verticalAlign = VerticalAlign.MIDDLE;
+		container.layout = containerLayout;
 		right.addChild(container);
 
 		selectedScript = SCRIPTS[0];
