@@ -166,7 +166,7 @@ enum ExprDef {
     ETry(tryExpr:Expr, catches:Array<{pattern:Expr, ?type:TypeDecl, ?guard:Expr, body:Expr}>);
     ECast(expr:Expr, ?type:TypeDecl);
     EInterface(name:String, fields:Array<{name:String, type:Null<TypeDecl>, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Expr>}>}>, methods:Array<{name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, ?body:Null<Expr>, ?meta:Array<{name:String, params:Array<Expr>}>}>, ?parents:Array<TypeDecl>, ?params:Array<String>, ?meta:Array<{name:String, params:Array<Expr>}>);
-    EEnum(name:String, constructors:Array<{name:String, args:Null<Array<FunctionArg>>}>);
+    EEnum(name:String, constructors:Array<{name:String, args:Null<Array<FunctionArg>>}>, ?params:Array<String>);
     ESafeField(e:Expr, field:String);
     ENew(type:TypeDecl, args:Array<Expr>);
     EAbstract(name:String, underlyingType:TypeDecl, fields:Array<{name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Expr>}>}>, methods:Array<{name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Expr>}>}>, ?params:Array<String>, ?meta:Array<{name:String, params:Array<Expr>}>);

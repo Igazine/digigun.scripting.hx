@@ -105,9 +105,13 @@ class Haxiom implements common.IScriptEngine {
      * @param filename Optional filename path to associate with parsed symbols (used for error reporting).
      * @return The optimized AST node root representation, or null if compilation failed.
      */
-    public function compile(source:String, ?filename:String):haxiom.AST.Expr {
+    public function compile(source:String, ?filename:String, ?staticTypes:Bool = false):haxiom.AST.Expr {
         if (enableAstCache && astCache.exists(source)) {
-            return astCache.get(source);
+            var folded = astCache.get(source);
+            if (staticTypes) {
+                haxiom.StaticTypeChecker.check(folded, interp);
+            }
+            return folded;
         }
         var fileInfo = filename != null ? filename : "script";
         var fileBaseName:String = null;
@@ -141,6 +145,11 @@ class Haxiom implements common.IScriptEngine {
             ast = haxiom.MacroExpander.expand(ast, interp);
             
             var folded = Optimizer.foldConstants(ast);
+            
+            if (staticTypes) {
+                haxiom.StaticTypeChecker.check(folded, interp);
+            }
+            
             if (enableAstCache) {
                 if (astCacheSize >= 1000) {
                     astCache = new Map();
@@ -197,8 +206,8 @@ class Haxiom implements common.IScriptEngine {
      * @param onDone Optional callback invoked with the execution result upon success.
      * @return The computed execution result.
      */
-    public function interpret<T>(source:String, ?onDone:T->Void):T {
-        var ast = compile(source, currentFilename);
+    public function interpret<T>(source:String, ?onDone:T->Void, ?staticTypes:Bool = false):T {
+        var ast = compile(source, currentFilename, staticTypes);
         if (ast == null) return null;
         var result:T = execute(ast);
         if (onDone != null) onDone(result);

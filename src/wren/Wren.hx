@@ -791,7 +791,7 @@ class Wren implements common.IScriptEngine {
 
 
 
-    public function interpret<T>(source:String, ?onDone:T->Void):T {
+    public function interpret<T>(source:String, ?onDone:T->Void, ?staticTypes:Bool = false):T {
         var lexer = new Lexer(source);
         var tokens = lexer.tokenize();
         var parser = new Parser(tokens);

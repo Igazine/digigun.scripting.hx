@@ -16,7 +16,7 @@ class MacroExpander {
                 for (e in exprs) {
                     registerMacros(e, interp);
                 }
-            case EClass(_, _, _, _, _, _, _) | EInterface(_, _, _, _, _, _) | EEnum(_, _) | EAbstract(_, _, _, _, _, _) | ETypedef(_, _, _) | EPackage(_) | EImport(_, _) | EUsing(_):
+            case EClass(_, _, _, _, _, _, _) | EInterface(_, _, _, _, _, _) | EEnum(_, _, _) | EAbstract(_, _, _, _, _, _) | ETypedef(_, _, _) | EPackage(_) | EImport(_, _) | EUsing(_):
                 interp.eval(expr, interp.globals);
             default:
                 // No-op for other expressions during macro registration phase
@@ -198,8 +198,8 @@ class MacroExpander {
             case EInterface(name, fields, methods, parents, params, meta):
                 EInterface(name, fields, methods, parents, params, meta);
 
-            case EEnum(name, constructors):
-                EEnum(name, constructors);
+            case EEnum(name, constructors, params):
+                EEnum(name, constructors, params);
 
             case ESafeField(e, field):
                 ESafeField(expand(e, interp), field);

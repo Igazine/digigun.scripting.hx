@@ -573,11 +573,13 @@ class Parser {
         var args = [];
         if (!is(TParenClose)) {
             var isRest = match(TDotDotDot);
+            match(TQuestion); // skip optional marker
             var name = expectIdent();
             var type = parseOptType();
             args.push({ name: name, type: type, isRest: isRest });
             while (match(TComma)) {
                 var nextIsRest = match(TDotDotDot);
+                match(TQuestion); // skip optional marker
                 var argName = expectIdent();
                 var argType = parseOptType();
                 args.push({ name: argName, type: argType, isRest: nextIsRest });
@@ -1228,6 +1230,7 @@ class Parser {
         var t = expect(TEnum);
         var name = expectIdent();
         registerType(name, t.pos);
+        var params = parseOptParams();
         expect(TBraceOpen);
         skipNewlines();
         var constructors = [];
@@ -1253,7 +1256,7 @@ class Parser {
             skipNewlines();
         }
         expect(TBraceClose);
-        return mk(EEnum(name, constructors), t.pos);
+        return mk(EEnum(name, constructors, params), t.pos);
     }
 
     function parseTypedef():Expr {

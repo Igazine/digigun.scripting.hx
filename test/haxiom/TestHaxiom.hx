@@ -2727,6 +2727,7 @@ class TestHaxiom {
         TestAsyncVM.runTests(() -> {
             TestCompilationFeatures.runTests();
             TestHXBCSecurityDebug.runTests();
+            TestStaticTypeChecker.runTests();
             trace("ALL TESTS COMPLETED SUCCESSFULLY!");
         });
     }

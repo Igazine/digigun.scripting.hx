@@ -124,7 +124,7 @@ class BytecodeCompiler {
     function iterExpr(e:Expr, cb:Expr->Void) {
         if (e == null) return;
         switch (e.def) {
-            case EValue(_), EIdent(_), EBreak, EContinue, EPackage(_), EImport(_, _), EUsing(_), EEnum(_, _), ETypedef(_, _, _):
+            case EValue(_), EIdent(_), EBreak, EContinue, EPackage(_), EImport(_, _), EUsing(_), EEnum(_, _, _), ETypedef(_, _, _):
                 // No sub-expressions
             case EVar(_, _, expr, _, _), EUnop(_, expr), EField(expr, _), ESafeField(expr, _), EReturn(expr), EThrow(expr), ECast(expr, _), EMeta(_, expr):
                 if (expr != null) cb(expr);
@@ -885,7 +885,7 @@ class BytecodeCompiler {
                 emit(OP_DECLARE_INTERFACE, e.pos);
                 emitInt(addConst(e), e.pos);
 
-            case EEnum(name, constructors):
+            case EEnum(name, constructors, _):
                 emit(OP_DECLARE_ENUM, e.pos);
                 emitInt(addConst(e), e.pos);
 
