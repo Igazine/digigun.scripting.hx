@@ -21,6 +21,13 @@ class Haxiom implements common.IScriptEngine {
     public var enableAstCache:Bool = true;
 
     /**
+     * If true, applies a Dead Code Elimination (DCE) pass after constant folding during compilation.
+     * Removes unreachable statements, unused pure locals, and dead private methods.
+     * Enabled by default.
+     */
+    public var enableDCE:Bool = true;
+
+    /**
      * Internal cache storing compiled AST nodes by their raw source code key.
      */
     public var astCache:Map<String, haxiom.AST.Expr> = new Map();
@@ -145,7 +152,11 @@ class Haxiom implements common.IScriptEngine {
             ast = haxiom.MacroExpander.expand(ast, interp);
             
             var folded = Optimizer.foldConstants(ast);
-            
+
+            if (enableDCE) {
+                folded = Optimizer.eliminateDeadCode(folded);
+            }
+
             if (staticTypes) {
                 haxiom.StaticTypeChecker.check(folded, interp);
             }
@@ -270,7 +281,17 @@ class Haxiom implements common.IScriptEngine {
      * @return Serialized HXBC VM bytecode bytes.
      */
     public function compileToBytecodeBytes(source:String, ?filename:String, ?key:HXBCKey, ?debugMode:Bool = false):haxe.io.Bytes {
+        // In debug mode, disable DCE and the AST cache so all local variables are preserved
+        // for debug symbol capture. The DCE'd (release) AST must not bleed through the cache.
+        var prevDCE = enableDCE;
+        var prevCache = enableAstCache;
+        if (debugMode) {
+            enableDCE = false;
+            enableAstCache = false;
+        }
         var ast = compile(source, filename);
+        enableDCE = prevDCE;
+        enableAstCache = prevCache;
         if (ast == null) return null;
         var chunk = BytecodeCompiler.compile(ast, null, true, false, debugMode);
         return Serializer.serializeBytecode(chunk, key);

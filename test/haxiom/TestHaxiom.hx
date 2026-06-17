@@ -1465,7 +1465,7 @@ class TestHaxiom {
         }
 
         // 55. Constant Folding and Scope Pooling Verification
-        var ast = haxiom.compile("var a = 2 + 3 * 4;");
+        var ast = haxiom.compile("var a = 2 + 3 * 4; trace(a);");
         switch (ast.def) {
             case EBlock(exprs):
                 var first = exprs[0];
@@ -2728,6 +2728,7 @@ class TestHaxiom {
             TestCompilationFeatures.runTests();
             TestHXBCSecurityDebug.runTests();
             TestStaticTypeChecker.runTests();
+            TestDCE.runTests();
             trace("ALL TESTS COMPLETED SUCCESSFULLY!");
         });
     }
