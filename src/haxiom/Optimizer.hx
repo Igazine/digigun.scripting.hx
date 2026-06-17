@@ -346,7 +346,7 @@ class Optimizer {
                 return modified ? { def: EBlock(mapped), pos: expr.pos } : expr;
 
             case EClass(name, fields, methods, parent, interfaces, params, meta):
-                // Collect all method names referenced anywhere in the class body
+                // Collect all names referenced anywhere in the class body
                 var usages = new Map<String, Int>();
                 for (m in methods) {
                     if (m.body != null) collectUsages(m.body, usages);
@@ -360,7 +360,12 @@ class Optimizer {
                     if (m.name == "new") return true;
                     return usages.exists(m.name);
                 });
-                var modified = prunedMethods.length != methods.length;
+                // Keep a field if: public, or its name appears in usages (read/written anywhere)
+                var prunedFields = fields.filter(f -> {
+                    if (f.isPublic) return true;
+                    return usages.exists(f.name);
+                });
+                var modified = prunedMethods.length != methods.length || prunedFields.length != fields.length;
                 var finalMethods = prunedMethods.map(m -> {
                     var newBody = dceExpr(m.body);
                     if (newBody != m.body) {
@@ -370,7 +375,7 @@ class Optimizer {
                     }
                     return m;
                 });
-                var finalFields = fields.map(f -> {
+                var finalFieldsMapped = prunedFields.map(f -> {
                     if (f.expr == null) return f;
                     var newExpr = dceExpr(f.expr);
                     if (newExpr != f.expr) {
@@ -381,7 +386,7 @@ class Optimizer {
                     return f;
                 });
                 return modified
-                    ? { def: EClass(name, finalFields, finalMethods, parent, interfaces, params, meta), pos: expr.pos }
+                    ? { def: EClass(name, finalFieldsMapped, finalMethods, parent, interfaces, params, meta), pos: expr.pos }
                     : expr;
 
             case EFunction(name, args, retType, body):
@@ -582,7 +587,14 @@ class Optimizer {
                 collectUsages(e, usages);
                 for (a in args) collectUsages(a, usages);
 
-            case ENew(_, args):
+            case ENew(type, args):
+                // Mark the instantiated class name as used so it isn't eliminated as dead
+                switch (type) {
+                    case TPath(path, _) if (path.length > 0):
+                        var name = path[path.length - 1];
+                        usages.set(name, (usages.exists(name) ? usages.get(name) : 0) + 1);
+                    default:
+                }
                 for (a in args) collectUsages(a, usages);
 
             case EIf(cond, e1, e2):
@@ -717,6 +729,28 @@ class Optimizer {
                     var initIsPure = initExpr == null || isPure(initExpr);
                     if (useCount == 0 && !isTyped && initIsPure) {
                         // Eliminated — untyped, unused, pure init
+                    } else {
+                        result.push(expr);
+                    }
+
+                // Named type declarations (class/typedef/enum/interface): eliminate if never
+                // referenced from any other code in this block.
+                // Exception: a class with a static public main() is an entry point — always keep.
+                // Note: unlike EVar, the isLast guard does NOT apply — type declarations are never
+                // used as block return values.
+                case EClass(name, _, methods, _, _, _, _):
+                    var useCount = usages.exists(name) ? usages.get(name) : 0;
+                    var hasMain = methods.filter(m -> m.name == "main" && m.isPublic && m.isStatic).length > 0;
+                    if (useCount == 0 && !hasMain) {
+                        // Eliminated — class never instantiated, extended, or referenced
+                    } else {
+                        result.push(expr);
+                    }
+
+                case ETypedef(name, _, _) | EEnum(name, _, _) | EInterface(name, _, _, _, _, _):
+                    var useCount = usages.exists(name) ? usages.get(name) : 0;
+                    if (useCount == 0) {
+                        // Eliminated — type never referenced
                     } else {
                         result.push(expr);
                     }

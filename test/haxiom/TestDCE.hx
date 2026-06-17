@@ -260,9 +260,10 @@ class TestDCE {
             class Util {
                 static private function helper() { return 7; }
                 static public function compute() { return helper(); }
+                static public function main() { compute(); }
             }
         ';
-        var ast11 = h11.compile(src11, "t11");
+        var ast11 = h11.compile(src11, "Util");
         var mc11 = -1;
         switch (ast11.def) {
             case EBlock(exprs):
@@ -272,8 +273,9 @@ class TestDCE {
                 }
             default:
         }
-        if (mc11 == 2) ok("11. Private method used internally is NOT eliminated (2 methods kept)");
-        else fail("11. Private method used internally is NOT eliminated", '$mc11 methods, expected 2');
+        // main + compute + helper = 3; but helper is used by compute so kept — all 3 remain
+        if (mc11 == 3) ok("11. Private method used internally is NOT eliminated (3 methods kept)");
+        else fail("11. Private method used internally is NOT eliminated", '$mc11 methods, expected 3');
 
         // ---------------------------------------------------------------
         // Test 12: Constructor is always kept
@@ -284,9 +286,10 @@ class TestDCE {
                 var val:Int;
                 public function new(v:Int) { val = v; }
                 private function unused() { return 0; }
+                static public function main() { var w = new Widget(1); }
             }
         ';
-        var ast12 = h12.compile(src12, "t12");
+        var ast12 = h12.compile(src12, "Widget");
         var mc12 = -1;
         switch (ast12.def) {
             case EBlock(exprs):
@@ -296,8 +299,9 @@ class TestDCE {
                 }
             default:
         }
-        if (mc12 == 1) ok("12. Constructor kept, unused private eliminated (1 method: new)");
-        else fail("12. Constructor kept, unused private eliminated", '$mc12 methods, expected 1');
+        // new + main kept; unused eliminated
+        if (mc12 == 2) ok("12. Constructor kept, unused private eliminated (2 methods: new + main)");
+        else fail("12. Constructor kept, unused private eliminated", '$mc12 methods, expected 2');
 
         // ---------------------------------------------------------------
         // Test 13: DCE disabled via enableDCE = false
@@ -330,6 +334,86 @@ class TestDCE {
             ok('14. Byte size reduced by DCE ($sizeOff bytes → $sizeOn bytes)');
         else
             fail("14. Byte size reduced", 'on=$sizeOn off=$sizeOff (no reduction)');
+
+        // ---------------------------------------------------------------
+        // Test 15: Dead top-level class eliminated entirely
+        // ---------------------------------------------------------------
+        var h15 = new Haxiom(); h15.enableDCE = true;
+        // DCE class is never instantiated or referenced — entire class should be eliminated
+        var src15 = '
+            class Main {
+                static public function main() { return 42; }
+            }
+            class Dead {
+                public function new() {}
+                public function go() { return 1; }
+            }
+        ';
+        var ast15 = h15.compile(src15, "t15");
+        var classCount15 = 0;
+        switch (ast15.def) {
+            case EBlock(exprs):
+                for (e in exprs) switch (e.def) {
+                    case EClass(_, _, _, _, _, _, _): classCount15++;
+                    default:
+                }
+            default:
+        }
+        if (classCount15 == 1) ok("15. Dead top-level class eliminated (1 class remains: Main)");
+        else fail("15. Dead top-level class eliminated", '$classCount15 classes remain, expected 1');
+
+        // ---------------------------------------------------------------
+        // Test 16: Instantiated class is NOT eliminated (ENew protection)
+        // ---------------------------------------------------------------
+        var h16 = new Haxiom(); h16.enableDCE = true;
+        var src16 = '
+            class Main {
+                static public function main() { var w = new Widget(); return w; }
+            }
+            class Widget {
+                public function new() {}
+                public function value() { return 99; }
+            }
+        ';
+        var ast16 = h16.compile(src16, "t16");
+        var classCount16 = 0;
+        switch (ast16.def) {
+            case EBlock(exprs):
+                for (e in exprs) switch (e.def) {
+                    case EClass(_, _, _, _, _, _, _): classCount16++;
+                    default:
+                }
+            default:
+        }
+        if (classCount16 == 2) ok("16. Instantiated class not eliminated (both classes kept)");
+        else fail("16. Instantiated class not eliminated", '$classCount16 classes remain, expected 2');
+
+        // ---------------------------------------------------------------
+        // Test 17: Unused private field eliminated from class
+        // ---------------------------------------------------------------
+        var h17 = new Haxiom(); h17.enableDCE = true;
+        var src17 = '
+            class Counter {
+                var count:Int = 0;
+                var unusedField:String;
+                public function new() { count = 0; }
+                public function increment() { count++; }
+                public function get():Int { return count; }
+                static public function main() { var c = new Counter(); c.increment(); }
+            }
+        ';
+        var ast17 = h17.compile(src17, "Counter");
+        var fieldCount17 = -1;
+        switch (ast17.def) {
+            case EBlock(exprs):
+                for (e in exprs) switch (e.def) {
+                    case EClass(_, fields, _, _, _, _, _): fieldCount17 = fields.length;
+                    default:
+                }
+            default:
+        }
+        if (fieldCount17 == 1) ok("17. Unused private field eliminated (1 field remains: count)");
+        else fail("17. Unused private field eliminated", '$fieldCount17 fields remain, expected 1');
 
         // ---------------------------------------------------------------
         // Summary
