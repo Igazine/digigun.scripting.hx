@@ -327,14 +327,23 @@ class Optimizer {
 
     static function dceExpr(expr:Expr):Expr {
         if (expr == null) return null;
-        var def = switch (expr.def) {
+        switch (expr.def) {
 
             case EBlock(exprs):
                 // Collect usages across the entire block first, then prune
                 var usages = new Map<String, Int>();
                 for (e in exprs) collectUsages(e, usages);
                 var pruned = pruneBlock(exprs, usages);
-                EBlock(pruned.map(dceExpr));
+                // Map children; if nothing changed, return expr unchanged
+                var mapped = pruned.map(dceExpr);
+                // Check if the block was modified (different length or any child changed)
+                var modified = pruned.length != exprs.length;
+                if (!modified) {
+                    for (i in 0...pruned.length) {
+                        if (mapped[i] != exprs[i]) { modified = true; break; }
+                    }
+                }
+                return modified ? { def: EBlock(mapped), pos: expr.pos } : expr;
 
             case EClass(name, fields, methods, parent, interfaces, params, meta):
                 // Collect all method names referenced anywhere in the class body
@@ -350,125 +359,190 @@ class Optimizer {
                     if (m.isPublic) return true;
                     if (m.name == "new") return true;
                     return usages.exists(m.name);
-                }).map(m -> {
-                    name: m.name,
-                    args: m.args,
-                    retType: m.retType,
-                    body: dceExpr(m.body),
-                    isStatic: m.isStatic,
-                    isPublic: m.isPublic,
-                    meta: m.meta
                 });
-                var prunedFields = fields.map(f -> {
-                    name: f.name,
-                    type: f.type,
-                    expr: f.expr == null ? null : dceExpr(f.expr),
-                    isStatic: f.isStatic,
-                    isPublic: f.isPublic,
-                    isFinal: f.isFinal,
-                    property: f.property,
-                    meta: f.meta
+                var modified = prunedMethods.length != methods.length;
+                var finalMethods = prunedMethods.map(m -> {
+                    var newBody = dceExpr(m.body);
+                    if (newBody != m.body) {
+                        modified = true;
+                        return { name: m.name, args: m.args, retType: m.retType, body: newBody,
+                                 isStatic: m.isStatic, isPublic: m.isPublic, meta: m.meta };
+                    }
+                    return m;
                 });
-                EClass(name, prunedFields, prunedMethods, parent, interfaces, params, meta);
+                var finalFields = fields.map(f -> {
+                    if (f.expr == null) return f;
+                    var newExpr = dceExpr(f.expr);
+                    if (newExpr != f.expr) {
+                        modified = true;
+                        return { name: f.name, type: f.type, expr: newExpr, isStatic: f.isStatic,
+                                 isPublic: f.isPublic, isFinal: f.isFinal, property: f.property, meta: f.meta };
+                    }
+                    return f;
+                });
+                return modified
+                    ? { def: EClass(name, finalFields, finalMethods, parent, interfaces, params, meta), pos: expr.pos }
+                    : expr;
 
             case EFunction(name, args, retType, body):
-                EFunction(name, args, retType, dceExpr(body));
+                var newBody = dceExpr(body);
+                return newBody != body
+                    ? { def: EFunction(name, args, retType, newBody), pos: expr.pos }
+                    : expr;
 
             case EIf(cond, e1, e2):
-                EIf(dceExpr(cond), dceExpr(e1), e2 == null ? null : dceExpr(e2));
+                var nc = dceExpr(cond); var n1 = dceExpr(e1); var n2 = e2 == null ? null : dceExpr(e2);
+                return (nc != cond || n1 != e1 || n2 != e2)
+                    ? { def: EIf(nc, n1, n2), pos: expr.pos } : expr;
 
             case EWhile(cond, e):
-                EWhile(dceExpr(cond), dceExpr(e));
+                var nc = dceExpr(cond); var ne = dceExpr(e);
+                return (nc != cond || ne != e) ? { def: EWhile(nc, ne), pos: expr.pos } : expr;
 
             case EDoWhile(cond, e):
-                EDoWhile(dceExpr(cond), dceExpr(e));
+                var nc = dceExpr(cond); var ne = dceExpr(e);
+                return (nc != cond || ne != e) ? { def: EDoWhile(nc, ne), pos: expr.pos } : expr;
 
             case EFor(v, it, e):
-                EFor(v, dceExpr(it), dceExpr(e));
+                var ni = dceExpr(it); var ne = dceExpr(e);
+                return (ni != it || ne != e) ? { def: EFor(v, ni, ne), pos: expr.pos } : expr;
 
             case ESwitch(e, cases, defExpr):
-                var dceCases = cases.map(c -> {
-                    values: c.values.map(dceExpr),
-                    guard: c.guard == null ? null : dceExpr(c.guard),
-                    expr: dceExpr(c.expr)
+                var ne = dceExpr(e);
+                var modified = ne != e;
+                var newCases = cases.map(c -> {
+                    var nv = c.values.map(dceExpr);
+                    var ng = c.guard == null ? null : dceExpr(c.guard);
+                    var nx = dceExpr(c.expr);
+                    var caseChanged = ng != c.guard || nx != c.expr;
+                    if (!caseChanged) for (i in 0...c.values.length) if (nv[i] != c.values[i]) { caseChanged = true; break; }
+                    if (caseChanged) { modified = true; return { values: nv, guard: ng, expr: nx }; }
+                    return c;
                 });
-                ESwitch(dceExpr(e), dceCases, defExpr == null ? null : dceExpr(defExpr));
+                var nd = defExpr == null ? null : dceExpr(defExpr);
+                if (nd != defExpr) modified = true;
+                return modified ? { def: ESwitch(ne, newCases, nd), pos: expr.pos } : expr;
 
             case EReturn(e):
-                EReturn(e == null ? null : dceExpr(e));
+                if (e == null) return expr;
+                var ne = dceExpr(e);
+                return ne != e ? { def: EReturn(ne), pos: expr.pos } : expr;
 
             case EThrow(e):
-                EThrow(dceExpr(e));
+                var ne = dceExpr(e);
+                return ne != e ? { def: EThrow(ne), pos: expr.pos } : expr;
 
             case ETry(tryExpr, catches):
-                var dceCatches = catches.map(c -> {
-                    pattern: dceExpr(c.pattern),
-                    type: c.type,
-                    guard: c.guard == null ? null : dceExpr(c.guard),
-                    body: dceExpr(c.body)
+                var nt = dceExpr(tryExpr);
+                var modified = nt != tryExpr;
+                var newCatches = catches.map(c -> {
+                    var np = dceExpr(c.pattern);
+                    var ng = c.guard == null ? null : dceExpr(c.guard);
+                    var nb = dceExpr(c.body);
+                    if (np != c.pattern || ng != c.guard || nb != c.body) {
+                        modified = true;
+                        return { pattern: np, type: c.type, guard: ng, body: nb };
+                    }
+                    return c;
                 });
-                ETry(dceExpr(tryExpr), dceCatches);
+                return modified ? { def: ETry(nt, newCatches), pos: expr.pos } : expr;
 
             case EVar(name, type, initExpr, isFinal, meta):
-                EVar(name, type, initExpr == null ? null : dceExpr(initExpr), isFinal, meta);
+                if (initExpr == null) return expr;
+                var ni = dceExpr(initExpr);
+                return ni != initExpr ? { def: EVar(name, type, ni, isFinal, meta), pos: expr.pos } : expr;
 
             case EAssign(target, e):
-                EAssign(dceExpr(target), dceExpr(e));
+                var nt = dceExpr(target); var ne = dceExpr(e);
+                return (nt != target || ne != e) ? { def: EAssign(nt, ne), pos: expr.pos } : expr;
 
             case EBinop(op, e1, e2):
-                EBinop(op, dceExpr(e1), dceExpr(e2));
+                var n1 = dceExpr(e1); var n2 = dceExpr(e2);
+                return (n1 != e1 || n2 != e2) ? { def: EBinop(op, n1, n2), pos: expr.pos } : expr;
 
             case EUnop(op, e):
-                EUnop(op, dceExpr(e));
+                var ne = dceExpr(e);
+                return ne != e ? { def: EUnop(op, ne), pos: expr.pos } : expr;
 
             case EField(e, field):
-                EField(dceExpr(e), field);
+                var ne = dceExpr(e);
+                return ne != e ? { def: EField(ne, field), pos: expr.pos } : expr;
 
             case ESafeField(e, field):
-                ESafeField(dceExpr(e), field);
+                var ne = dceExpr(e);
+                return ne != e ? { def: ESafeField(ne, field), pos: expr.pos } : expr;
 
             case ECall(e, args):
-                ECall(dceExpr(e), args.map(dceExpr));
+                var ne = dceExpr(e);
+                var modified = ne != e;
+                var na = args.map(a -> { var x = dceExpr(a); if (x != a) modified = true; return x; });
+                return modified ? { def: ECall(ne, na), pos: expr.pos } : expr;
 
             case ENew(type, args):
-                ENew(type, args.map(dceExpr));
+                var modified = false;
+                var na = args.map(a -> { var x = dceExpr(a); if (x != a) modified = true; return x; });
+                return modified ? { def: ENew(type, na), pos: expr.pos } : expr;
 
             case EArrayDecl(values):
-                EArrayDecl(values.map(dceExpr));
+                var modified = false;
+                var nv = values.map(v -> { var x = dceExpr(v); if (x != v) modified = true; return x; });
+                return modified ? { def: EArrayDecl(nv), pos: expr.pos } : expr;
 
             case EObjectDecl(fields):
-                EObjectDecl(fields.map(f -> {name: f.name, expr: dceExpr(f.expr)}));
+                var modified = false;
+                var nf = fields.map(f -> {
+                    var nx = dceExpr(f.expr);
+                    if (nx != f.expr) { modified = true; return { name: f.name, expr: nx }; }
+                    return f;
+                });
+                return modified ? { def: EObjectDecl(nf), pos: expr.pos } : expr;
 
             case EMapDecl(values):
-                EMapDecl(values.map(v -> {key: dceExpr(v.key), value: dceExpr(v.value)}));
+                var modified = false;
+                var nv = values.map(v -> {
+                    var nk = dceExpr(v.key); var nx = dceExpr(v.value);
+                    if (nk != v.key || nx != v.value) { modified = true; return { key: nk, value: nx }; }
+                    return v;
+                });
+                return modified ? { def: EMapDecl(nv), pos: expr.pos } : expr;
 
             case ECast(e, type):
-                ECast(dceExpr(e), type);
+                var ne = dceExpr(e);
+                return ne != e ? { def: ECast(ne, type), pos: expr.pos } : expr;
 
             case EMeta(meta, e):
-                EMeta(meta, dceExpr(e));
+                var ne = dceExpr(e);
+                return ne != e ? { def: EMeta(meta, ne), pos: expr.pos } : expr;
 
             case EAbstract(name, underlyingType, fields, methods, params, meta):
-                var dceFields = fields.map(f -> {
-                    name: f.name, type: f.type,
-                    expr: f.expr == null ? null : dceExpr(f.expr),
-                    isStatic: f.isStatic, isPublic: f.isPublic, isFinal: f.isFinal,
-                    property: f.property, meta: f.meta
+                var modified = false;
+                var nf = fields.map(f -> {
+                    if (f.expr == null) return f;
+                    var nx = dceExpr(f.expr);
+                    if (nx != f.expr) {
+                        modified = true;
+                        return { name: f.name, type: f.type, expr: nx, isStatic: f.isStatic,
+                                 isPublic: f.isPublic, isFinal: f.isFinal, property: f.property, meta: f.meta };
+                    }
+                    return f;
                 });
-                var dceMethods = methods.map(m -> {
-                    name: m.name, args: m.args, retType: m.retType,
-                    body: dceExpr(m.body),
-                    isStatic: m.isStatic, isPublic: m.isPublic, meta: m.meta
+                var nm = methods.map(m -> {
+                    var nb = dceExpr(m.body);
+                    if (nb != m.body) {
+                        modified = true;
+                        return { name: m.name, args: m.args, retType: m.retType, body: nb,
+                                 isStatic: m.isStatic, isPublic: m.isPublic, meta: m.meta };
+                    }
+                    return m;
                 });
-                EAbstract(name, underlyingType, dceFields, dceMethods, params, meta);
+                return modified
+                    ? { def: EAbstract(name, underlyingType, nf, nm, params, meta), pos: expr.pos }
+                    : expr;
 
-            // Leaf / structural nodes — pass through unchanged
-            case EValue(_) | EIdent(_) | EBreak | EContinue |
-                 EPackage(_) | EImport(_, _) | EUsing(_) |
-                 EEnum(_, _, _) | EInterface(_, _, _, _, _, _) | ETypedef(_, _, _):
-                expr.def;
-        };
-        return { def: def, pos: expr.pos };
+            // Leaf / structural nodes — always unchanged, return original
+            default:
+                return expr;
+        }
     }
 
     /**
