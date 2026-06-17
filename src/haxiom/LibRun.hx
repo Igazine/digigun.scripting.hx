@@ -264,8 +264,12 @@ class LibRun {
 		// Append main() execution trigger if present in the main module
 		combinedAst = Haxiom.appendMainCallIfPresent(combinedAst, mainModuleName);
 		
-		// Compile and serialize
-		final bytes = haxiom.compileASTToBytecodeBytes(combinedAst, key != null ? new HXBCKey(key) : null);
+		// Apply the full optimization pipeline (constant folding + DCE) before serializing
+		var optimizedAst = Optimizer.foldConstants(combinedAst);
+		if (haxiom.enableDCE) {
+			optimizedAst = Optimizer.eliminateDeadCode(optimizedAst);
+		}
+		final bytes = haxiom.compileASTToBytecodeBytes(optimizedAst, key != null ? new HXBCKey(key) : null);
 		
 		final output = haxe.io.Path.withoutExtension(input) + '.hxbc';
 		File.saveBytes(workingDir + output, bytes);
