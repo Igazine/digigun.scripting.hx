@@ -1374,6 +1374,7 @@ class VM {
             }
             return res;
         } catch (e:Dynamic) {
+            trace("VM EXECUTION ERROR: " + e + "\nVM CALLSTACK: " + haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
             #if js
             // haxe.Log.trace("executeLoop caught exception: " + e + ", stack: " + js.Syntax.code("({0} && {0}.stack ? {0}.stack : null)", e), null);
             #end

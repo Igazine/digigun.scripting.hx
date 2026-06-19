@@ -56,7 +56,11 @@ class BytecodeCompiler {
         if (compiler.debugMode) {
             compiler.closeAllActiveLocals();
         }
-        return new BytecodeChunk(compiler.instructions, compiler.constants, compiler.debugMode ? compiler.positions : [], compiler.maxSlots, compiler.isAsync, compiler.debugMode ? compiler.debugSymbols : null);
+        var chunk = new BytecodeChunk(compiler.instructions, compiler.constants, compiler.debugMode ? compiler.positions : [], compiler.maxSlots, compiler.isAsync, compiler.debugMode ? compiler.debugSymbols : null);
+        if (!debugMode) {
+            stripPositionsFromChunk(chunk);
+        }
+        return chunk;
     }
 
     function declareLocal(name:String, type:Null<TypeDecl>, ?isFinal:Bool = false):LocalVar {
@@ -878,6 +882,24 @@ class BytecodeCompiler {
                 emitInt(type != null ? addConst(type) : -1, e.pos);
 
             case EClass(name, fields, methods, parent, interfaces, params, meta):
+                for (m in methods) {
+                    if (m.body != null) {
+                        var isMethodAsync = false;
+                        if (m.meta != null) {
+                            for (meta in m.meta) {
+                                if (meta.name == ":haxiom.async") {
+                                    isMethodAsync = true;
+                                    break;
+                                }
+                            }
+                        }
+                        var mDyn:Dynamic = m;
+                        mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode);
+                        if (!debugMode) {
+                            m.body = null;
+                        }
+                    }
+                }
                 emit(OP_DECLARE_CLASS, e.pos);
                 emitInt(addConst(e), e.pos);
 
@@ -890,6 +912,24 @@ class BytecodeCompiler {
                 emitInt(addConst(e), e.pos);
 
             case EAbstract(name, underlyingType, fields, methods, params, meta):
+                for (m in methods) {
+                    if (m.body != null) {
+                        var isMethodAsync = false;
+                        if (m.meta != null) {
+                            for (meta in m.meta) {
+                                if (meta.name == ":haxiom.async") {
+                                    isMethodAsync = true;
+                                    break;
+                                }
+                            }
+                        }
+                        var mDyn:Dynamic = m;
+                        mDyn.bytecodeChunk = BytecodeCompiler.compile(m.body, m.args, false, isMethodAsync, debugMode);
+                        if (!debugMode) {
+                            m.body = null;
+                        }
+                    }
+                }
                 emit(OP_DECLARE_ABSTRACT, e.pos);
                 emitInt(addConst(e), e.pos);
 
@@ -939,6 +979,203 @@ class BytecodeCompiler {
 
             default:
                 throw 'Unsupported compile AST node: ${Type.enumConstructor(e.def)}';
+        }
+    }
+
+    static var dummyPos:Pos = { line: 1, col: 1, file: "script" };
+
+    static function stripPositions(expr:Expr):Void {
+        if (expr == null) return;
+        expr.pos = dummyPos;
+        switch (expr.def) {
+            case EClass(_, fields, methods, _, _, _, meta):
+                for (f in fields) {
+                    if (f.expr != null) stripPositions(f.expr);
+                    if (f.meta != null) {
+                        for (m in f.meta) {
+                            if (m.params != null) {
+                                for (p in m.params) stripPositions(p);
+                            }
+                        }
+                    }
+                }
+                for (m in methods) {
+                    if (m.body != null) stripPositions(m.body);
+                    var mDyn:Dynamic = m;
+                    if (mDyn.bytecodeChunk != null) {
+                        stripPositionsFromChunk(mDyn.bytecodeChunk);
+                    }
+                    if (m.meta != null) {
+                        for (meta in m.meta) {
+                            if (meta.params != null) {
+                                for (p in meta.params) stripPositions(p);
+                            }
+                        }
+                    }
+                }
+                if (meta != null) {
+                    for (m in meta) {
+                        if (m.params != null) {
+                            for (p in m.params) stripPositions(p);
+                        }
+                    }
+                }
+            case EFunction(_, _, _, body):
+                stripPositions(body);
+            case EBlock(exprs):
+                for (e in exprs) stripPositions(e);
+            case EVar(_, _, expr, _, meta):
+                if (expr != null) stripPositions(expr);
+                if (meta != null) {
+                    for (m in meta) {
+                        if (m.params != null) {
+                            for (p in m.params) stripPositions(p);
+                        }
+                    }
+                }
+            case EAssign(target, e):
+                stripPositions(target);
+                stripPositions(e);
+            case EBinop(_, e1, e2):
+                stripPositions(e1);
+                stripPositions(e2);
+            case EUnop(_, e):
+                stripPositions(e);
+            case EField(e, _):
+                stripPositions(e);
+            case ESafeField(e, _):
+                stripPositions(e);
+            case ECall(e, args):
+                stripPositions(e);
+                for (a in args) stripPositions(a);
+            case ENew(_, args):
+                for (a in args) stripPositions(a);
+            case EArrayDecl(values):
+                for (v in values) stripPositions(v);
+            case EObjectDecl(fields):
+                for (f in fields) stripPositions(f.expr);
+            case EMapDecl(values):
+                for (v in values) {
+                    stripPositions(v.key);
+                    stripPositions(v.value);
+                }
+            case EIf(cond, e1, e2):
+                stripPositions(cond);
+                stripPositions(e1);
+                if (e2 != null) stripPositions(e2);
+            case EWhile(cond, e):
+                stripPositions(cond);
+                stripPositions(e);
+            case EDoWhile(cond, e):
+                stripPositions(cond);
+                stripPositions(e);
+            case EFor(_, it, e):
+                stripPositions(it);
+                stripPositions(e);
+            case ESwitch(e, cases, defExpr):
+                stripPositions(e);
+                for (c in cases) {
+                    for (v in c.values) stripPositions(v);
+                    if (c.guard != null) stripPositions(c.guard);
+                    stripPositions(c.expr);
+                }
+                if (defExpr != null) stripPositions(defExpr);
+            case EReturn(e):
+                if (e != null) stripPositions(e);
+            case EThrow(e):
+                stripPositions(e);
+            case ETry(tryExpr, catches):
+                stripPositions(tryExpr);
+                for (c in catches) {
+                    stripPositions(c.pattern);
+                    if (c.guard != null) stripPositions(c.guard);
+                    stripPositions(c.body);
+                }
+            case ECast(e, _):
+                stripPositions(e);
+            case EMeta(meta, e):
+                for (m in meta) {
+                    if (m.params != null) {
+                        for (p in m.params) stripPositions(p);
+                    }
+                }
+                stripPositions(e);
+            case EInterface(_, fields, methods, _, _, meta):
+                for (f in fields) {
+                    if (f.meta != null) {
+                        for (m in f.meta) {
+                            if (m.params != null) {
+                                for (p in m.params) stripPositions(p);
+                            }
+                        }
+                    }
+                }
+                for (m in methods) {
+                    if (m.body != null) stripPositions(m.body);
+                    if (m.meta != null) {
+                        for (meta in m.meta) {
+                            if (meta.params != null) {
+                                for (p in meta.params) stripPositions(p);
+                            }
+                        }
+                    }
+                }
+                if (meta != null) {
+                    for (m in meta) {
+                        if (m.params != null) {
+                            for (p in m.params) stripPositions(p);
+                        }
+                    }
+                }
+            case EAbstract(_, _, fields, methods, _, meta):
+                for (f in fields) {
+                    if (f.expr != null) stripPositions(f.expr);
+                    if (f.meta != null) {
+                        for (m in f.meta) {
+                            if (m.params != null) {
+                                for (p in m.params) stripPositions(p);
+                            }
+                        }
+                    }
+                }
+                for (m in methods) {
+                    if (m.body != null) stripPositions(m.body);
+                    var mDyn:Dynamic = m;
+                    if (mDyn.bytecodeChunk != null) {
+                        stripPositionsFromChunk(mDyn.bytecodeChunk);
+                    }
+                    if (m.meta != null) {
+                        for (meta in m.meta) {
+                            if (meta.params != null) {
+                                for (p in meta.params) stripPositions(p);
+                            }
+                        }
+                    }
+                }
+                if (meta != null) {
+                    for (m in meta) {
+                        if (m.params != null) {
+                            for (p in m.params) stripPositions(p);
+                        }
+                    }
+                }
+            default:
+                // Leaf/structural expressions
+        }
+    }
+
+    static function stripPositionsFromChunk(chunk:BytecodeChunk):Void {
+        if (chunk == null || chunk.constants == null) return;
+        for (c in chunk.constants) {
+            if (c == null) continue;
+            if (Reflect.hasField(c, "def") && Reflect.hasField(c, "pos")) {
+                stripPositions(cast c);
+            } else if (Reflect.hasField(c, "bodyChunk")) {
+                var proto:Dynamic = c;
+                if (proto.bodyChunk != null) {
+                    stripPositionsFromChunk(proto.bodyChunk);
+                }
+            }
         }
     }
 }

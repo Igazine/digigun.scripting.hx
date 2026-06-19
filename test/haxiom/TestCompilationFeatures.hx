@@ -809,6 +809,14 @@ class TestCompilationFeatures {
         try {
             engine.executeBytes(bytes);
         } catch (e:Dynamic) {
+            trace("DEBUG MODULARITY TEST EXCEPTION: " + e);
+            if (Std.isOfType(e, haxiom.ScriptException)) {
+                var se:haxiom.ScriptException = cast e;
+                trace("ORIGINAL EXCEPTION: " + se.rawValue);
+                trace("Formatted stack trace:\n" + se.formattedStackTrace);
+                trace("Virtual Stack: " + se.virtualStack);
+            }
+            trace("Haxe Call Stack: " + haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
             deleteDirRecursive(tempDir);
             throw "Execution of bundled bytecode failed: " + e;
         }

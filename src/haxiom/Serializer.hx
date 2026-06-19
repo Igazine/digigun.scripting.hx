@@ -68,6 +68,12 @@ class Serializer {
         }
     }
 
+    static function shouldWrap(val:Dynamic):Bool {
+        if (val == null) return false;
+        if (Std.isOfType(val, BinaryExprHolder)) return false;
+        return Reflect.hasField(val, "def") && Reflect.hasField(val, "pos");
+    }
+
     public static function serializeBytecode(chunk:BytecodeChunk, ?key:HXBCKey):Bytes {
         var payloadOut = new BytesOutput();
         payloadOut.bigEndian = false;
@@ -160,7 +166,18 @@ class Serializer {
         }
         
         // 4. Write constants via Serializer
-        var constsStr = haxe.Serializer.run(chunk.constants != null ? chunk.constants : []);
+        var wrappedConstants = [];
+        if (chunk.constants != null) {
+            for (c in chunk.constants) {
+                if (shouldWrap(c)) {
+                    var serializedBytes = BinaryASTSerializer.serialize(c);
+                    wrappedConstants.push(new BinaryExprHolder(serializedBytes));
+                } else {
+                    wrappedConstants.push(c);
+                }
+            }
+        }
+        var constsStr = haxe.Serializer.run(wrappedConstants);
         var constsBytes = Bytes.ofString(constsStr);
         writeVarInt(payloadOut, constsBytes.length);
         payloadOut.write(constsBytes);
@@ -284,6 +301,13 @@ class Serializer {
         var constsLen = readVarInt(payloadInput);
         var constsStr = payloadInput.readString(constsLen);
         var constants:Array<Dynamic> = haxe.Unserializer.run(constsStr);
+        for (i in 0...constants.length) {
+            var c = constants[i];
+            if (c != null && Std.isOfType(c, BinaryExprHolder)) {
+                var holder:BinaryExprHolder = cast c;
+                constants[i] = BinaryASTSerializer.deserialize(holder.bytes);
+            }
+        }
         
         // 5. Read debug symbols
         var debugSymLength = readVarInt(payloadInput);

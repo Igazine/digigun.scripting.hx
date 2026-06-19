@@ -16,6 +16,28 @@ class Bytecode {
 			Alert.show("Button clicked in the pre-compiled Bytecode example!", "Info", ["OK"]);
 		});
 		container.addChild(btn);
+		return;
+
+		var asdasd = '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!';
+	}
+}
+
+class DCE {
+	var n1:Int = 1;
+	var n2:Int = 2;
+	var thisIsACustomVariableName:String = '!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!';
+
+	public function new() {
+		n1 = 1;
+		n2 = 2;
+	}
+
+	function foo() {
+		return n1 + n2;
+	}
+
+	function bar() {
+		return foo();
 	}
 }
 

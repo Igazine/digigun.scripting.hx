@@ -104,7 +104,7 @@ class HaxiomClass {
     public var parentType:TypeDecl;
     public var parent:HaxiomClass;
     public var fields:Map<String, {name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
-    public var methods:Map<String, {name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
+    public var methods:Map<String, {name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?bytecodeChunk:haxiom.VM.BytecodeChunk, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
     public var staticFields:Map<String, Dynamic> = new Map();
     public var interfaces:Array<TypeDecl> = [];
     public var meta:Array<{name:String, params:Array<Dynamic>}> = [];
@@ -171,7 +171,7 @@ class HaxiomAbstract {
     public var params:Array<String> = [];
     public var underlyingType:TypeDecl;
     public var fields:Map<String, {name:String, type:Null<TypeDecl>, expr:Expr, isStatic:Bool, isPublic:Bool, isFinal:Bool, ?property:{get:String, set:String}, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
-    public var methods:Map<String, {name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
+    public var methods:Map<String, {name:String, args:Array<FunctionArg>, retType:Null<TypeDecl>, body:Expr, isStatic:Bool, isPublic:Bool, ?bytecodeChunk:haxiom.VM.BytecodeChunk, ?meta:Array<{name:String, params:Array<Dynamic>}>}> = new Map();
     public var staticFields:Map<String, Dynamic> = new Map();
     public var meta:Array<{name:String, params:Array<Dynamic>}> = [];
 
@@ -674,6 +674,7 @@ class Interp {
                 default: throw "Unexpected control flow break/continue at top-level";
             }
         } catch (e:Dynamic) {
+            trace("DEBUG ORIGINAL CALL STACK: " + haxe.CallStack.toString(haxe.CallStack.exceptionStack()));
             var traceLines = [];
             var isScriptException = Std.isOfType(e, haxiom.ScriptException);
             
@@ -1867,10 +1868,11 @@ class Interp {
                                     var oldThis = currentThis;
                                     var oldConstrInst = currentConstructorInstance;
                                     currentConstructorInstance = inst;
+                                    pushFrame(parentCls.name + ".new", constr.body != null ? constr.body.pos : { line: 1, col: 1 });
                                     try {
                                         if (useVM) {
                                             var cDyn:Dynamic = constr;
-                                            if (cDyn.bytecodeChunk == null) {
+                                            if (cDyn.bytecodeChunk == null && constr.body != null) {
                                                 cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode);
                                             }
                                             haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, currentThis, parentCls.name + ".new", args);
@@ -2463,11 +2465,11 @@ class Interp {
                         currentThis = inst;
                         var oldConstrInst = currentConstructorInstance;
                         currentConstructorInstance = inst;
-                        pushFrame(cls.name + ".new", constr.body.pos);
+                        pushFrame(cls.name + ".new", constr.body != null ? constr.body.pos : { line: 1, col: 1 });
                         try {
                             if (useVM) {
                                 var cDyn:Dynamic = constr;
-                                if (cDyn.bytecodeChunk == null) {
+                                if (cDyn.bytecodeChunk == null && constr.body != null) {
                                     cDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(constr.body, constr.args, false, false, debugMode);
                                 }
                                 haxiom.VM.runChunk(this, cDyn.bytecodeChunk, cScope, inst, cls.name + ".new", args);
@@ -2802,6 +2804,7 @@ class Interp {
                     }
                 }
                 for (m in methods) {
+                    var mDyn:Dynamic = m;
                     cls.methods.set(m.name, {
                         name: m.name,
                         args: m.args,
@@ -2809,6 +2812,7 @@ class Interp {
                         body: m.body,
                         isStatic: m.isStatic,
                         isPublic: m.isPublic,
+                        bytecodeChunk: mDyn.bytecodeChunk,
                         meta: evaluateMetadata(m.meta, scope)
                     });
                 }
@@ -3012,6 +3016,7 @@ class Interp {
                     }
                 }
                 for (m in methods) {
+                    var mDyn:Dynamic = m;
                     abs.methods.set(m.name, {
                         name: m.name,
                         args: m.args,
@@ -3019,6 +3024,7 @@ class Interp {
                         body: m.body,
                         isStatic: m.isStatic,
                         isPublic: m.isPublic,
+                        bytecodeChunk: mDyn.bytecodeChunk,
                         meta: evaluateMetadata(m.meta, scope)
                     });
                 }
@@ -3371,7 +3377,7 @@ class Interp {
                         fScope.declare(arg.name, val, arg.type);
                     }
                     var funcName = name != null ? name : "anonymous";
-                    pushFrame(funcName, body.pos);
+                    pushFrame(funcName, body != null ? body.pos : { line: 1, col: 1 });
                     try {
                         var res = eval(body, fScope);
                         if (retType != null && typeToString(retType) == "Void") {
@@ -3972,7 +3978,7 @@ class Interp {
                     className = (cast obj : HaxiomAbstractInstance).abstractType.name;
                 }
             }
-            pushFrame(className + "." + method.name, method.body.pos);
+            pushFrame(className + "." + method.name, method.body != null ? method.body.pos : { line: 1, col: 1 });
                 var isMethodAsync = false;
                 if (method.meta != null) {
                     for (m in method.meta) {
@@ -3991,7 +3997,7 @@ class Interp {
                     var res:Dynamic = null;
                     if (useVM) {
                         var mDyn:Dynamic = method;
-                        if (mDyn.bytecodeChunk == null) {
+                        if (mDyn.bytecodeChunk == null && method.body != null) {
                             mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, isMethodAsync, debugMode);
                         }
                         res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, obj, className + "." + method.name, mappedArgs);
@@ -4102,13 +4108,17 @@ class Interp {
             var oldThis = currentThis;
             currentThis = null;
             var className = (obj != null && Std.isOfType(obj, HaxiomInstance)) ? (cast(obj, HaxiomInstance).cls.name) : "static";
-            pushFrame(className + "." + method.name, method.body.pos);
+            pushFrame(className + "." + method.name, method.body != null ? method.body.pos : { line: 1, col: 1 });
             try {
-                var res = eval(method.body, fScope);
-                if (method.retType != null && typeToString(method.retType) == "Void") {
-                    res = null;
+                var res:Dynamic = null;
+                if (useVM) {
+                    var mDyn:Dynamic = method;
+                    if (mDyn.bytecodeChunk == null && method.body != null) {
+                        mDyn.bytecodeChunk = haxiom.BytecodeCompiler.compile(method.body, method.args, false, false, debugMode);
+                    }
+                    res = haxiom.VM.runChunk(this, mDyn.bytecodeChunk, fScope, null, className + "." + method.name, fullArgs);
                 } else {
-                    checkType(res, method.retType, fScope, bindings);
+                    res = eval(method.body, fScope);
                 }
                 currentThis = oldThis;
                 popFrame();
