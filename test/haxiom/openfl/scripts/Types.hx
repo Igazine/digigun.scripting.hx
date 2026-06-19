@@ -1,5 +1,8 @@
 package scripts;
 
+/**
+	Testing type safety. All should fail at compile time.
+**/
 class Types {
 	static public function main() {
 		var failArray:Array<Int> = [1];

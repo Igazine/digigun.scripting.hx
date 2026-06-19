@@ -26,6 +26,12 @@ class Haxiom implements common.IScriptEngine {
      * Enabled by default.
      */
     public var enableDCE:Bool = true;
+    
+    /**
+     * If true, enables static type checking during compilation.
+     * By default, everything is dynamically typed (checking is opt-in).
+     */
+    public var enableStaticTypes:Bool = false;
 
     /**
      * Internal cache storing compiled AST nodes by their raw source code key.
@@ -115,7 +121,7 @@ class Haxiom implements common.IScriptEngine {
     public function compile(source:String, ?filename:String, ?staticTypes:Bool = false):haxiom.AST.Expr {
         if (enableAstCache && astCache.exists(source)) {
             var folded = astCache.get(source);
-            if (staticTypes) {
+            if (staticTypes || enableStaticTypes) {
                 haxiom.StaticTypeChecker.check(folded, interp);
             }
             return folded;
@@ -157,7 +163,7 @@ class Haxiom implements common.IScriptEngine {
                 folded = Optimizer.eliminateDeadCode(folded);
             }
 
-            if (staticTypes) {
+            if (staticTypes || enableStaticTypes) {
                 haxiom.StaticTypeChecker.check(folded, interp);
             }
             
