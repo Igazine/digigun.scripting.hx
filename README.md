@@ -178,12 +178,12 @@ We verify the scripting engine specifications through the unified Wren test runn
 ### Running Wren Tests
 To execute tests on the **Haxe Eval** target:
 ```bash
-haxe -cp src -cp test --run wren.TestRunner
+haxe -L digigun.scripting.hx -cp test --run wren.TestRunner
 ```
 
 To execute tests on the **JavaScript / Node.js** target:
 ```bash
-haxe -cp src -cp test/wren -main TestWren -js bin/test_wren.js && node bin/test_wren.js
+haxe -L digigun.scripting.hx -cp test/wren -main TestWren -js bin/test_wren.js && node bin/test_wren.js
 ```
 
 ---
