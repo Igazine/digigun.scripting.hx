@@ -1,1 +1,0 @@
-haxe -cp test -L digigun.scripting.hx -main haxiom.CompileExample --interp

@@ -1,5 +1,5 @@
 # Placeholder hxml file for language server
---library digigun.scripting.hx
---class-path test
---main haxiom.TestHaxiom
+--class-path src
+--class-path test/wren
+--main TestWren
 --interp

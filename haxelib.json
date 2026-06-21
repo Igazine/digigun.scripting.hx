@@ -4,12 +4,13 @@
   "license": "MIT",
   "tags": [
     "scripting",
-    "wren"
+    "wren",
+    "dart",
+    "gravity"
   ],
-  "description": "The Wren programming language on Haxe.",
+  "description": "Embeddable scripting engines for Haxe (Wren, Dart, Gravity).",
   "version": "0.0.1",
   "classPath": "src",
-  "main": "haxiom.LibRun",
   "releasenote": "Initial release.",
   "contributors": [
     "Igazine"
